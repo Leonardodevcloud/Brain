@@ -31,7 +31,7 @@ const COLUNAS: { status: StatusTarefa; titulo: string }[] = [
   { status: "feita", titulo: "Feita" },
 ];
 const NOME_STATUS: Record<StatusTarefa, string> = { a_fazer: "A fazer", fazendo: "Fazendo", feita: "Feita" };
-const NOME_ORIGEM: Record<TarefaDTO["origem"], string> = { manual: "criada à mão", ata: "veio de uma ata", argos: "criada pelo Argos", claude: "criada pelo Claude" };
+const NOME_ORIGEM: Record<TarefaDTO["origem"], string> = { manual: "criada à mão", ata: "veio de uma ata", argos: "criada pelo Argos", claude: "criada pelo Claude", email: "veio de um e-mail" };
 
 // ───────────────────────────── Datas ─────────────────────────────
 

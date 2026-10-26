@@ -1,7 +1,7 @@
 import type { Executor } from "../conexao.js";
 
 export type StatusTarefa = "a_fazer" | "fazendo" | "feita";
-export type OrigemTarefa = "manual" | "ata" | "argos" | "claude";
+export type OrigemTarefa = "manual" | "ata" | "argos" | "claude" | "email";
 
 export interface TarefaLinha {
   id: string;

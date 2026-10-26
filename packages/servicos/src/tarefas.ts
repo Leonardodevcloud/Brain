@@ -252,7 +252,7 @@ export async function ligarRegistro(ctx: Contexto, ator: Ator, idOuCodigo: strin
 // ───────────────────────────── Agenda ─────────────────────────────
 
 /** Acesso à agenda com permissão de escrita (o escopo novo). */
-async function acessoAgenda(ctx: Contexto) {
+export async function acessoAgenda(ctx: Contexto) {
   if (!ctx.google || !ctx.cofre) throw AppError.indisponivel("O Google Agenda não está configurado.");
   const salvo = await integracoes.obter(ctx.pool, "google");
   if (!salvo?.segredo) throw AppError.indisponivel("Conecte o Google Agenda em Integrações.");

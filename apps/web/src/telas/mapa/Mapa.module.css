@@ -700,8 +700,9 @@
 @media (max-width: 860px) {
   .tela {
     --m-topo: 148px;
-    margin: -24px -16px -96px;
-    height: calc(100dvh - 61px - env(safe-area-inset-bottom));
+    /* Ocupa o espaço entre o topo (56px) e a barra de baixo (66px) do celular. */
+    margin: -8px -16px calc(-104px - env(safe-area-inset-bottom));
+    height: calc(100dvh - 122px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
   .topo {
     padding: 12px 14px;

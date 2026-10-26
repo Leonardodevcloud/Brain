@@ -1,0 +1,369 @@
+.pagina {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.topo h1 {
+  font-size: clamp(24px, 4vw, 30px);
+  letter-spacing: -0.02em;
+}
+
+.semana {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.navSemana {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mes {
+  font-weight: 600;
+}
+.navBotoes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dias {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.dia {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 0 7px;
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  background: var(--superficie);
+  font: inherit;
+  font-size: 11px;
+  color: var(--texto-2);
+  cursor: pointer;
+  transition:
+    background-color var(--rapido) var(--curva),
+    border-color var(--rapido) var(--curva);
+}
+.dia strong {
+  font-size: 17px;
+  color: var(--texto);
+  font-variant-numeric: tabular-nums;
+}
+.dia:hover {
+  border-color: var(--acento);
+}
+.diaHoje strong {
+  color: var(--acento-ativo);
+}
+.diaAtivo,
+.diaAtivo:hover {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #ede9fe;
+}
+.diaAtivo strong {
+  color: #fff;
+}
+.ponto,
+.semPonto {
+  width: 5px;
+  height: 5px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--acento);
+}
+.semPonto {
+  background: transparent;
+}
+.diaAtivo .ponto {
+  background: #fff;
+}
+
+.lista {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tituloDia {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-2);
+}
+.itens {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.item {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  color: var(--texto);
+}
+.item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--acento);
+}
+a.item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px 12px 16px;
+}
+a.item:hover {
+  text-decoration: none;
+  color: var(--texto);
+  border-color: #f59e0b;
+}
+.itemTarefa::before {
+  background: #f59e0b;
+}
+.itemLembrete::before {
+  background: #10b981;
+}
+.itemAberto {
+  border-color: var(--acento);
+}
+.alternar {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px 12px 16px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.alternar:disabled {
+  cursor: default;
+}
+.quando {
+  flex-shrink: 0;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+}
+.quando strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.quando span {
+  font-size: 11px;
+  color: var(--texto-suave);
+}
+.corpo {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.titulo {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.detalhe {
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.etiquetas:empty {
+  display: none;
+}
+.etiqueta {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--acento-fundo);
+  color: var(--acento-ativo);
+}
+.etiquetaAmbar {
+  background: #fef3c7;
+  color: #92400e;
+}
+.etiquetaVerde {
+  background: #dcfce7;
+  color: #166534;
+}
+.seta {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--texto-suave);
+  transition: transform var(--rapido) var(--curva);
+}
+.expandido {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 14px 76px;
+}
+.bloco {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bloco ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.blocoTitulo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--texto-2);
+}
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  border: 1px dashed var(--borda-forte);
+  border-radius: 14px;
+  color: var(--texto-2);
+  text-align: center;
+}
+
+.fab {
+  display: none;
+}
+
+/* Diálogo do lembrete */
+.dialogo {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--borda);
+  border-radius: 18px;
+  background: var(--superficie);
+  color: var(--texto);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
+}
+.dialogo::backdrop {
+  background: rgba(14, 13, 18, 0.45);
+}
+.formLembrete {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+.dialogoTopo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dialogoTopo h2 {
+  font-size: 18px;
+}
+.linhaCampos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--acento);
+}
+.dialogoAcoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 860px) {
+  .novoDesktop {
+    display: none;
+  }
+  .topo p {
+    display: none;
+  }
+  .fab {
+    position: fixed;
+    right: 16px;
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    z-index: 25;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 48px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 16px;
+    background: var(--acento);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    box-shadow: 0 8px 22px rgba(124, 58, 237, 0.4);
+    cursor: pointer;
+  }
+  .itens {
+    padding-bottom: 64px;
+  }
+  .expandido {
+    padding-left: 16px;
+  }
+  .dialogo {
+    margin: auto auto 0;
+    width: 100%;
+    max-width: none;
+    border-radius: 20px 20px 0 0;
+  }
+  .formLembrete {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dia,
+  .seta {
+    transition: none;
+  }
+}

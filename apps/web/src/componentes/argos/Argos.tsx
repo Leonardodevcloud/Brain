@@ -283,6 +283,15 @@ export function Argos() {
     return () => window.removeEventListener("argos:perguntar", perguntar);
   }, [processar]);
 
+  // Botão do Argos na barra de baixo (celular) abre a escuta.
+  useEffect(() => {
+    const abrir = () => {
+      if (faseRef.current === "fechado" || faseRef.current === "pronto" || faseRef.current === "erro") void ouvir("continuo");
+    };
+    window.addEventListener("argos:ouvir", abrir);
+    return () => window.removeEventListener("argos:ouvir", abrir);
+  }, [ouvir]);
+
   function alternarMudo() {
     const novo = !mudo;
     setMudo(novo);

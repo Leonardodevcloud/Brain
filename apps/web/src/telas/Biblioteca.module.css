@@ -93,3 +93,14 @@ a.linha:hover {
   justify-content: center;
   gap: 16px;
 }
+
+/* Celular: os três filtros lado a lado, ocupando a largura. */
+@media (max-width: 600px) {
+  .filtros > select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .buscaTexto {
+    flex-basis: 100%;
+  }
+}

@@ -183,7 +183,7 @@ export interface TarefaDTO {
   responsavel: { id: string | null; nome: string } | null;
   prazo: string | null;
   atrasada: boolean;
-  origem: "manual" | "ata" | "argos" | "claude";
+  origem: "manual" | "ata" | "argos" | "claude" | "email";
   clienteRef: string | null;
   evento: { id: string; titulo: string; inicio: string | null; url: string | null } | null;
   /** Registros ligados (o primeiro é a origem, quando houver). */
@@ -201,4 +201,53 @@ export interface ResumoTarefasDTO {
   minhas: number;
   atrasadas: number;
   abertas: number;
+}
+
+/** Um item da aba Agenda: evento do Google, prazo de tarefa ou lembrete criado pelo Cérebro. */
+export interface ItemAgendaDTO {
+  id: string;
+  tipo: "evento" | "tarefa" | "lembrete";
+  titulo: string;
+  /** ISO com hora, ou "AAAA-MM-DD" para o dia inteiro. */
+  inicio: string;
+  fim: string | null;
+  diaInteiro: boolean;
+  /** Link da chamada (Meet), quando houver. */
+  chamada: string | null;
+  /** Link para abrir o evento no Google Agenda. */
+  url: string | null;
+  participantes: string[];
+  /** Tarefas abertas na pauta deste evento. */
+  tarefas: { codigo: string; titulo: string }[];
+  /** Para itens do tipo tarefa. */
+  tarefa: { codigo: string; responsavel: string | null; atrasada: boolean } | null;
+}
+
+export interface AgendaDTO {
+  de: string;
+  ate: string;
+  /** "ok" | "desligada" (sem Google) | "erro" (Google não respondeu). Os prazos das tarefas aparecem mesmo assim. */
+  google: "ok" | "desligada" | "erro";
+  itens: ItemAgendaDTO[];
+}
+
+/** E-mail recebido na caixa do Cérebro e o que aconteceu com ele. */
+export interface EmailDTO {
+  id: string;
+  remetente: string;
+  assunto: string;
+  recebidoEm: string;
+  trecho: string;
+  /** analisando = IA ainda não leu; novo = sem IA ou falhou; registro = virou rascunho/registro; irrelevante = IA achou que não é conhecimento. */
+  situacao: "analisando" | "novo" | "registro" | "irrelevante" | "ignorado" | "tarefa";
+  pendente: boolean;
+  registro: { id: string; codigo: string; titulo: string; status: string } | null;
+  tarefa: { codigo: string; titulo: string; status: string } | null;
+}
+
+export interface CaixaEmailDTO {
+  caixa: string | null;
+  ultimaLeituraEm: string | null;
+  pendentes: number;
+  emails: EmailDTO[];
 }

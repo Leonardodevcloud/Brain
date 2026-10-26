@@ -209,7 +209,7 @@ Na resposta final:
 - "analise": markdown curto (até 6 linhas) com o que importa e o porquê, só quando acrescentar algo à fala. Para conversa simples, null.
 - "destaques": até 4 números-chave para a tela (rótulos curtos). Vazio se não houver números.
 - "mostrar": o id do resultado (r1, r2…) cuja tabela deve aparecer na tela, ou null.
-- "abrir": quando a pessoa pedir para abrir/ir para algo: "inicio", "perguntar", "biblioteca", "tarefas", "mapa", "revisar", "integracoes", "conta", um código de tarefa ("TAR-018"), um código de registro ("POP-001") ou "mapa:POP-001" para mostrar o registro no mapa. Senão null.
+- "abrir": quando a pessoa pedir para abrir/ir para algo: "inicio", "perguntar", "biblioteca", "tarefas", "agenda", "email", "mapa", "revisar", "integracoes", "conta", um código de tarefa ("TAR-018"), um código de registro ("POP-001") ou "mapa:POP-001" para mostrar o registro no mapa. Senão null.
 
 Regras:
 - Cumprimentos e conversa ("oi, tudo bem?") → responda direto, com simpatia, pelo primeiro nome, sem consultar nada.

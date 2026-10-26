@@ -1,24 +1,41 @@
-.busca {
+.pagina {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 20px;
 }
-.caixaBusca {
+.titulos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.titulos h1 {
+  font-size: clamp(24px, 4vw, 30px);
+  letter-spacing: -0.02em;
+}
+
+/* Busca / Argos */
+.busca {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 6px 6px 16px;
+  gap: 10px;
+  padding: 6px 6px 6px 14px;
   background: var(--superficie);
   border: 1px solid var(--borda-forte);
-  border-radius: var(--raio-g);
-  transition: border-color var(--rapido) var(--curva);
+  border-radius: 14px;
 }
-.caixaBusca:focus-within {
+.busca:focus-within {
   border-color: var(--acento);
   box-shadow: var(--foco);
 }
+.lupa {
+  flex-shrink: 0;
+  color: var(--texto-suave);
+}
 .entradaBusca {
-  flex-grow: 1;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 40px;
   border: 0;
@@ -26,77 +43,198 @@
   background: transparent;
   font: inherit;
   font-size: 15px;
-  color: var(--texto);
 }
 .entradaBusca:focus-visible {
   box-shadow: none;
 }
-.tecla {
-  font-size: 12px;
-  color: var(--texto-suave);
-  border: 1px solid var(--borda);
-  border-radius: 4px;
-  padding: 1px 6px;
+.botaoBusca {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  color: #fff;
+  cursor: pointer;
 }
-@media (max-width: 860px) {
-  .tecla {
-    display: none;
-  }
+.botaoBusca:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
 }
 
-.grade {
+/* Três números do dia */
+.numeros {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.numero {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  color: var(--texto);
+  transition: border-color var(--rapido) var(--curva);
+}
+.numero:hover {
+  text-decoration: none;
+  color: var(--texto);
+  border-color: var(--acento);
+}
+.numero strong {
+  font-size: 26px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.numero span {
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.numeroAlerta strong {
+  color: var(--erro);
+}
+
+.colunas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
 }
-.grade > article {
+.cartao {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-.listaCartao > li:first-child {
-  border-top: 1px solid var(--divisoria);
-}
-.linha {
-  display: flex;
   gap: 12px;
-  padding: 10px 0;
-  align-items: flex-start;
-}
-.texto {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
 }
-.tituloLink {
-  color: var(--texto);
-  font-weight: 500;
+.cabecalho {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
-.tituloLink:hover {
-  color: var(--acento-ativo);
+.cabecalho h2 {
+  font-size: 15px;
+  font-weight: 600;
 }
-.horario {
-  width: 52px;
+
+/* Próxima reunião */
+.reuniao {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hora {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--acento-fundo);
+  color: var(--acento-ativo);
 }
-.vazio {
-  padding: 10px 0 0;
-  border-top: 1px solid var(--divisoria);
+.hora strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.hora span {
+  font-size: 11px;
+}
+.reuniaoTexto {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.reuniaoTitulo {
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.atividade {
-  padding: 0;
+/* Tarefas */
+.tarefas {
+  display: flex;
+  flex-direction: column;
 }
-.linhaAtividade {
+.tarefa {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--divisoria);
+}
+.tarefa:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.marcar {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  accent-color: var(--acento);
+}
+.tarefaTexto {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.tarefaTitulo {
+  color: var(--texto);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.tarefaTitulo:hover {
+  color: var(--acento-ativo);
+}
+
+/* Aviso curto */
+.aviso {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 14px 20px;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--alerta-fundo, #fffbeb);
+  border: 1px solid #fde68a;
+  color: var(--alerta-texto, #92400e);
+  font-size: 14px;
 }
-.quando {
-  font-variant-numeric: tabular-nums;
-  width: 72px;
-  flex-shrink: 0;
+.aviso:hover {
+  text-decoration: none;
+  color: var(--alerta-texto, #92400e);
+}
+.aviso strong {
+  margin-left: auto;
+}
+
+@media (max-width: 760px) {
+  .pagina {
+    gap: 14px;
+  }
+  .colunas {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .numeros {
+    gap: 8px;
+  }
+  .numero {
+    padding: 12px;
+  }
+  .numero strong {
+    font-size: 22px;
+  }
+  .numero span {
+    font-size: 12px;
+  }
 }

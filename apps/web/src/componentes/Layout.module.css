@@ -164,63 +164,253 @@
   outline: none;
 }
 
-/* Celular: a lateral vira uma barra inferior com os cinco destinos. */
+/* Elementos só do celular ficam escondidos no computador. */
+.topoCelular,
+.barra {
+  display: none;
+}
+
+/* ───────────── Celular ───────────── */
 @media (max-width: 860px) {
   .casca {
     flex-direction: column;
   }
   .lateral {
-    position: fixed;
-    inset: auto 0 0 0;
-    top: auto;
-    height: auto;
-    width: 100%;
-    z-index: 5;
-    flex-direction: row;
-    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
-    border-right: 0;
-    border-top: 1px solid var(--borda);
-  }
-  .marca,
-  .espaco,
-  .perfil {
     display: none;
   }
-  .itens {
-    flex-direction: row;
-    flex-grow: 1;
-    justify-content: space-around;
+  .principal {
+    padding: 8px 16px calc(104px + env(safe-area-inset-bottom));
   }
-  .item {
-    flex-direction: column;
-    gap: 2px;
-    min-height: 52px;
-    min-width: 56px;
-    padding: 6px 4px;
-    font-size: 11px;
-    justify-content: center;
+
+  .topoCelular {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    background: color-mix(in srgb, var(--fundo) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px);
+    -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  }
+  .marcaCelular {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--texto);
+  }
+  .marcaCelular:hover {
+    text-decoration: none;
+    color: var(--texto);
+  }
+  .avatarBotao {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--borda);
+    background: var(--superficie);
+    color: var(--texto-2);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .barra {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: end;
+    padding: 4px 4px calc(6px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--superficie) 94%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
+    border-top: 1px solid var(--borda);
+  }
+  .aba {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    min-height: 54px;
+    padding: 6px 2px 2px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    color: var(--texto-2);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
-  .rotulo {
-    flex-grow: 0;
+  .aba:hover {
+    text-decoration: none;
+    color: var(--texto);
   }
-  .contador {
+  .abaAtiva,
+  .abaAtiva:hover {
+    color: var(--acento-ativo);
+    font-weight: 600;
+  }
+  .abaArgos {
+    color: var(--texto-2);
+  }
+  .orbeArgos {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    margin-top: -26px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 40%, #1c1726, #0e0d12 70%);
+    box-shadow:
+      0 8px 22px rgba(124, 58, 237, 0.45),
+      0 0 0 4px var(--superficie);
+  }
+  .aba .contador {
     position: absolute;
     top: 2px;
-    right: 6px;
-    min-width: 16px;
-    height: 16px;
+    left: calc(50% + 6px);
+    min-width: 17px;
+    height: 17px;
     font-size: 10px;
     padding: 0 4px;
   }
-  .principal {
-    padding: 24px 16px 96px;
+
+  /* Gaveta "Mais" */
+  .veu {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(14, 13, 18, 0.45);
+    animation: aparecer 160ms var(--curva);
   }
-  /* Na barra de baixo cabem seis destinos; Integrações fica na conta. */
-  .soDesktop {
-    display: none !important;
+  .gaveta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+    background: var(--superficie);
+    border-radius: 22px 22px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.18);
+    animation: subir 220ms var(--curva);
   }
-  .item {
-    min-width: 48px;
+  .alca {
+    width: 40px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--borda-forte);
+    margin: 2px auto 14px;
+  }
+  .gavetaTopo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 2px 14px;
+  }
+  .avatarGrande {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--acento-fundo);
+    color: var(--acento-ativo);
+    font-weight: 600;
+  }
+  .gavetaTopo .perfilTexto {
+    flex-grow: 1;
+  }
+  .fecharGaveta {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--superficie-2);
+    color: var(--texto-2);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  .grade {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .blocoGaveta {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 6px 14px;
+    border: 1px solid var(--borda);
+    border-radius: 16px;
+    color: var(--texto);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+  }
+  .blocoGaveta svg {
+    color: var(--acento);
+  }
+  .blocoGaveta:hover {
+    text-decoration: none;
+    color: var(--texto);
+    background: var(--superficie-2);
+  }
+  .blocoAtivo {
+    border-color: var(--acento);
+    background: var(--acento-fundo);
+  }
+  .blocoGaveta .contador {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+  }
+  .sair {
+    width: 100%;
+    margin-top: 14px;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    background: transparent;
+    color: var(--erro);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+}
+@keyframes aparecer {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes subir {
+  from {
+    transform: translateY(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .veu,
+  .gaveta {
+    animation: none;
   }
 }

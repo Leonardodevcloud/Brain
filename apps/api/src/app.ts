@@ -3,6 +3,7 @@ import express, { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { exigirLogin, tratarErros, type Deps } from "./http/base.js";
+import { rotasAgenda } from "./rotas/agenda.js";
 import { rotasAuth } from "./rotas/auth.js";
 import { rotasPainel } from "./rotas/painel.js";
 import { rotasPublicas } from "./rotas/publicas.js";
@@ -43,6 +44,7 @@ export function criarApp(deps: Deps) {
   protegida.use(rotasRegistros(deps));
   protegida.use(rotasPainel(deps));
   protegida.use(rotasTarefas(deps));
+  protegida.use(rotasAgenda(deps));
   api.use(protegida);
 
   api.use((_req, res) => {

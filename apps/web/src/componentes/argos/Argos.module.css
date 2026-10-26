@@ -360,11 +360,9 @@
 }
 
 @media (max-width: 860px) {
+  /* No celular o Argos fica no centro da barra de baixo. */
   .lancador {
-    right: 14px;
-    bottom: calc(72px + env(safe-area-inset-bottom));
-    width: 54px;
-    height: 54px;
+    display: none;
   }
   .dicaLancador {
     display: none;

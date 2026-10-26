@@ -1,5 +1,5 @@
 import { AppError, TIPOS_REGISTRO, type AtaDados, type TipoRegistro } from "@cerebro/core";
-import { emTransacao, fontesProcessadas, integracoes, registros, reunioes } from "@cerebro/db";
+import { emails as caixa, emTransacao, fontesProcessadas, integracoes, registros, reunioes } from "@cerebro/db";
 import {
   SISTEMA_ATA,
   SISTEMA_EXTRACAO,
@@ -214,9 +214,15 @@ export async function sincronizarEmail(ctx: Contexto) {
   await emTransacao(ctx.pool, async (db) => {
     for (const e of emails) {
       const texto = limparCorpoEmail(e.texto);
-      if (texto.length < 40) continue;
+      const chave = `email:${e.messageId ?? `${ctx.imap!.usuario}:${e.uid}`}`;
+      // Todo e-mail fica guardado para a aba E-mail; só os com conteúdo vão para a IA.
+      await caixa.guardar(db, { chave, remetente: e.de, assunto: e.assunto, recebidoEm: e.data ?? null, texto });
+      if (texto.length < 40) {
+        await fontesProcessadas.marcar(db, chave, "irrelevante");
+        continue;
+      }
       await fila.extrairEmail(db, {
-        chave: `email:${e.messageId ?? `${ctx.imap!.usuario}:${e.uid}`}`,
+        chave,
         assunto: e.assunto,
         de: e.de,
         data: e.data?.toISOString() ?? null,

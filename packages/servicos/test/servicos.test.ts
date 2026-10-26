@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EmissorTokens } from "@cerebro/auth";
 import { criarPoolLeitura, sincronizarAcesso } from "@cerebro/central";
 import { esquemaCriarRegistro, esquemaPergunta, type AtaDados, type UsuarioDTO } from "@cerebro/core";
-import { integracoes, jobs, type Pool } from "@cerebro/db";
+import { emails as caixaDb, integracoes, jobs, type Pool } from "@cerebro/db";
 import {
   ATOR_SISTEMA,
   acesso,
@@ -23,6 +23,8 @@ import {
   responder,
   tarefas,
   documentos,
+  agenda,
+  caixaEmail,
   type Ator,
   type Contexto,
 } from "../src/index.js";
@@ -303,6 +305,53 @@ describe("tarefas", () => {
   it("sem a agenda com escrita, explica que precisa reconectar", async () => {
     const t = await tarefas.criarTarefa(ctx, atorAdmin, { titulo: "Lembrete" });
     await expect(tarefas.criarLembrete(ctx, atorAdmin, t.id)).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+describe("agenda e e-mail", () => {
+  it("sem Google, a agenda mostra os prazos das tarefas da semana", async () => {
+    const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bahia" }).format(new Date());
+    const t = await tarefas.criarTarefa(ctx, atorAdmin, { titulo: "Prazo de hoje na agenda", prazo: hoje });
+    const a = await agenda.listarAgenda(ctx, atorAdmin, hoje, 7);
+    expect(a.google).toBe("desligada");
+    expect(a.itens.some((i) => i.tipo === "tarefa" && i.tarefa?.codigo === t.codigo)).toBe(true);
+    await expect(agenda.criarLembrete(ctx, atorAdmin, { titulo: "Conferir saques", quando: `${hoje}T18:00` })).rejects.toMatchObject({ status: 503 });
+    await expect(agenda.criarLembrete(ctx, atorAdmin, { titulo: "x", quando: hoje })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("guarda o e-mail, mostra como pendente e vira tarefa, registro ou ignorado", async () => {
+    await caixaDb.guardar(pool, { chave: "email:teste-1", remetente: "Tatiana <t@rede.com>", assunto: "Falta de motoboy pela manhã", recebidoEm: new Date(), texto: "Hoje a loja ficou sem motoboy das 8h às 10h." });
+    await caixaDb.guardar(pool, { chave: "email:teste-1", remetente: "dup", assunto: "dup", recebidoEm: null, texto: "dup" });
+    await caixaDb.guardar(pool, { chave: "email:teste-2", remetente: "noreply@x.com", assunto: "Fatura", recebidoEm: new Date(), texto: "Sua fatura chegou." });
+
+    let caixa = await caixaEmail.listarEmails(ctx, "pendentes");
+    expect(caixa.emails.filter((e) => e.assunto === "Falta de motoboy pela manhã")).toHaveLength(1);
+    expect(caixa.pendentes).toBeGreaterThanOrEqual(2);
+    const falta = caixa.emails.find((e) => e.assunto.startsWith("Falta"))!;
+    const fatura = caixa.emails.find((e) => e.assunto === "Fatura")!;
+
+    const comTarefa = await caixaEmail.emailParaTarefa(ctx, atorMembro, falta.id);
+    expect(comTarefa.situacao).toBe("tarefa");
+    expect(comTarefa.tarefa?.codigo).toMatch(/^TAR-/);
+    const t = await tarefas.obterTarefa(ctx, comTarefa.tarefa!.codigo);
+    expect(t.origem).toBe("email");
+    expect(t.descricao).toContain("Tatiana");
+
+    const ignorado = await caixaEmail.ignorarEmail(ctx, atorMembro, fatura.id);
+    expect(ignorado.situacao).toBe("ignorado");
+    expect(ignorado.pendente).toBe(false);
+    expect((await caixaEmail.listarEmails(ctx, "ignorados")).emails.some((e) => e.id === fatura.id)).toBe(true);
+    const devolvido = await caixaEmail.ignorarEmail(ctx, atorMembro, fatura.id, true);
+    expect(devolvido.pendente).toBe(true);
+
+    const comRegistro = await caixaEmail.emailParaRegistro(ctx, atorMembro, fatura.id);
+    expect(comRegistro.situacao).toBe("registro");
+    expect(comRegistro.registro?.status).toBe("rascunho");
+    caixa = await caixaEmail.listarEmails(ctx, "registro");
+    expect(caixa.emails.some((e) => e.id === fatura.id)).toBe(true);
+
+    await expect(caixaEmail.ignorarEmail(ctx, ATOR_SISTEMA, fatura.id)).rejects.toMatchObject({ status: 403 });
+    await expect(caixaEmail.emailParaTarefa(ctx, atorAdmin, "00000000-0000-0000-0000-000000000000")).rejects.toMatchObject({ status: 404 });
   });
 });
 

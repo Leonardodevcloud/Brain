@@ -9,6 +9,8 @@ export * as fontes from "./fontes.js";
 export * as painel from "./painel.js";
 export * as tarefas from "./tarefas.js";
 export * as documentos from "./documentos.js";
+export * as agenda from "./agenda.js";
+export * as caixaEmail from "./emails.js";
 export { montarMapa, invalidarCacheMapa } from "./mapa.js";
 export {
   atenderFala,
