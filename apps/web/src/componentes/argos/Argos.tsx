@@ -145,16 +145,14 @@ export function Argos() {
       falhar("Foi rápido demais. Segure o espaço enquanto fala, ou digite abaixo.", true);
       return;
     }
-    // Microfone mudo de verdade (nenhum som em toda a gravação): nem adianta mandar para transcrição.
-    if (!falou && pico < 0.004) {
-      falhar("O microfone não captou som. Confira se o navegador está usando o microfone certo (cadeado ao lado do endereço › Microfone), ou digite abaixo.", true);
-      return;
-    }
+    // O medidor de volume pode falhar em alguns navegadores (fica zerado com o microfone bom):
+    // por isso ele nunca impede o envio. Quem decide se houve fala é a transcrição.
+    console.info("[Argos] gravação", { duracaoMs: Math.round(duracao), bytes: audio.size, tipo: audio.type, falou, pico: Number(pico.toFixed(3)) });
     try {
       const { texto: transcrito } = await api<{ texto: string }>("/argos/transcrever", { metodo: "POST", arquivo: audio });
       if (minha !== geracao.current) return;
       // Sem fala, o Whisper às vezes "inventa" frases curtas de legenda.
-      if (!transcrito.trim() || (!falou && ALUCINACAO.test(transcrito.trim()))) {
+      if (!transcrito.trim() || ALUCINACAO.test(transcrito.trim())) {
         falhar("Não entendi o que foi dito. Tente de novo, um pouco mais perto do microfone.");
         return;
       }
@@ -215,14 +213,13 @@ export function Argos() {
       if (d > MAX_GRAVACAO_MS) void enviar();
       else if (modoRef.current === "continuo") {
         if (g.falou && performance.now() - g.ultimaVoz > SILENCIO_FIM_MS) void enviar();
+        // Sem medidor confiável (pico zerado), não dá para saber se a pessoa parou: envia no tempo limite.
         else if (!g.falou && d > SEM_FALA_MS) {
-          g.cancelar();
-          falhar(
-            g.pico < 0.004
-              ? "O microfone não captou som. Confira se o navegador está usando o microfone certo (cadeado ao lado do endereço › Microfone), ou digite abaixo."
-              : "Não ouvi nada. Tente de novo ou digite abaixo.",
-            true,
-          );
+          if (g.pico < 0.004) void enviar();
+          else {
+            g.cancelar();
+            falhar("Não ouvi nada. Tente de novo ou digite abaixo.", true);
+          }
         }
       }
     }, 120);

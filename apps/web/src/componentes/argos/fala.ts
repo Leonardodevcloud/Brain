@@ -12,9 +12,11 @@ function escolherVoz(): SpeechSynthesisVoice | null {
   const pt = vozes.filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith("pt"));
   const nota = (v: SpeechSynthesisVoice) =>
     (v.lang.toLowerCase().replace("_", "-") === "pt-br" ? 4 : 0) +
-    (/natural|neural|online/i.test(v.name) ? 3 : 0) +
-    (/google/i.test(v.name) ? 2 : 0) +
-    (/francisca|thalita|luciana|antonio|maria|daniel/i.test(v.name) ? 1 : 0);
+    // Vozes locais (Microsoft Maria/Daniel, do Windows) são as mais confiáveis; as do Google dependem da rede.
+    (v.localService ? 3 : 0) +
+    (/natural|neural/i.test(v.name) ? 2 : 0) +
+    (/google/i.test(v.name) ? 1 : 0) +
+    (/francisca|thalita|maria/i.test(v.name) ? 1 : 0);
   vozEscolhida = pt.sort((a, b) => nota(b) - nota(a))[0] ?? null;
   return vozEscolhida;
 }
@@ -77,6 +79,7 @@ export function falar(texto: string, eventos: { aoPalavra?: () => void; aoFim?: 
 
   sintese.cancel();
   const voz = escolherVoz();
+  console.info("[Argos] voz", { escolhida: voz?.name ?? null, idioma: voz?.lang ?? "pt-BR", vozesInstaladas: sintese.getVoices().length });
   filaAtual = dividir(texto).map((trecho, i, todos) => {
     const u = new SpeechSynthesisUtterance(trecho);
     if (voz) u.voice = voz;
@@ -90,7 +93,10 @@ export function falar(texto: string, eventos: { aoPalavra?: () => void; aoFim?: 
     if (i === todos.length - 1) u.onend = fim;
     u.onerror = (e) => {
       // "interrupted"/"canceled" = outra fala tomou o lugar; o resto é falha real.
-      if (e.error !== "interrupted" && e.error !== "canceled") fim();
+      if (e.error !== "interrupted" && e.error !== "canceled") {
+        console.warn("[Argos] a voz falhou", e.error);
+        fim();
+      }
     };
     return u;
   });
@@ -104,7 +110,10 @@ export function falar(texto: string, eventos: { aoPalavra?: () => void; aoFim?: 
 
   // Se a voz não começar (bloqueada, sem vozes instaladas), não deixa a esfera "falando" para sempre.
   window.setTimeout(() => {
-    if (!comecou && !sintese.speaking) fim();
+    if (!comecou && !sintese.speaking) {
+      console.warn("[Argos] a voz não começou", { vozesInstaladas: sintese.getVoices().length });
+      fim();
+    }
   }, 2500);
   // Teto de segurança: ~ 85 ms por letra + folga.
   window.setTimeout(fim, 4000 + texto.length * 85);

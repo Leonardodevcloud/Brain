@@ -31,21 +31,51 @@ const LINHAS_PARA_TELA = 50;
 // Colunas com nomes de pessoas: o valor é mascarado antes de ir para a IA.
 const COLUNA_DE_PESSOA = /(^|_)(nome_prof|nome_profissional|profissional|motoboy|user_name|full_name|nome_motoboy|colaborador|vendedor|gestor|responsavel)($|_)/i;
 
+/** Distância de edição: tolera palavras que o Whisper ou a digitação erram ("usponiblidade"). */
+function distancia(a: string, b: string): number {
+  const linha = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let anterior = linha[0]!;
+    linha[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const atual = linha[j]!;
+      linha[j] = Math.min(linha[j]! + 1, linha[j - 1]! + 1, anterior + (a[i - 1] === b[j - 1] ? 0 : 1));
+      anterior = atual;
+    }
+  }
+  return linha[b.length]!;
+}
+
+/** Alguma palavra da frase parece com o termo (erro de até ~25% das letras)? */
+function pareceCom(palavras: string[], termo: string) {
+  const tolerancia = Math.floor(termo.length / 4);
+  return palavras.some((p) => p.length >= termo.length - tolerancia && distancia(p, termo) <= tolerancia);
+}
+
 /** Regras rápidas para responder sem IA as perguntas mais comuns. */
 export function planoRapido(pergunta: string): PlanoDados | null {
-  const t = pergunta.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (/disponib|escala|motoboys? (na|nas) loja|em loja|faltando/.test(t)) {
+  const t = pergunta.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const palavras = t.split(" ");
+
+  const sobreFaltas = /\b(mais (falta|faltas|faltando|furo|furos|critic[ao]s?|problema)|(loja|lojas|regiao|praca)s? (mais )?critic[ao]s?|critic[ao]s?|pior(es)?|mais (desfalcad[ao]|vazia)|faltou|faltaram|furou|furaram|pior(es)? loja|lojas? (com|sem) (falta|faltas|motoboy)|onde (esta|ta) faltando|quem faltou)\b/.test(t);
+  if (
+    sobreFaltas ||
+    /disponib|dispon|escala|em loja|faltando|faltas\b|motoboys? (na|nas|em) loja|quantos motoboys|motoboys? (tem|temos|ha)|(como|situacao) (ta|esta|da) (a )?(operacao|rua)|cobertura/.test(t) ||
+    pareceCom(palavras, "disponibilidade")
+  ) {
     // "disponibilidade em Salvador", "na regiao de Feira de Santana" → filtra a região e abre por loja.
-    const lugar = /\b(?:em|na|no|regiao(?: de)?|praca(?: de)?)\s+(?!loja|lojas\b|cada\b|tempo\b|turno|momento|periodo|hora|regiao|praca)([a-z][a-z]+(?:\s+(?:de\s+|do\s+|da\s+)?[a-z]+){0,3}?)\s*(?:agora|hoje|neste momento|nesse momento)?\s*[?.!]*$/.exec(t);
+    const lugar = /\b(?:em|na|no|regiao(?: de)?|praca(?: de)?)\s+(?!loja|lojas\b|cada\b|tempo\b|turno|momento|periodo|hora|regiao|praca|aberto|rua|campo|operacao|escala)([a-z][a-z]+(?:\s+(?:de\s+|do\s+|da\s+)?[a-z]+){0,3}?)\s*(?:agora|hoje|neste momento|nesse momento)?$/.exec(t.split(/\s+(?:qual|quais|e qual|quem|onde)\b/)[0]!);
     const regiao = lugar?.[1]?.trim();
     const parametros: Record<string, string> = {};
     if (regiao && regiao.length >= 3) Object.assign(parametros, { regiao, por: "loja" });
-    else if (/por loja|cada loja/.test(t)) parametros.por = "loja";
+    if (sobreFaltas || /por loja|cada loja|qual loja|quais lojas/.test(t)) parametros.por = "loja";
+    if (sobreFaltas) parametros.ordenar = "faltas";
     return { ferramenta: "disponibilidade", parametros, tabelas: [] };
   }
-  if (/fatur|margem|receita/.test(t)) return { ferramenta: "faturamento", parametros: {}, tabelas: [] };
-  if (/saque/.test(t)) return { ferramenta: "saques", parametros: {}, tabelas: [] };
-  if (/entrega|sla|no prazo|fora do prazo/.test(t) && /hoje|agora/.test(t)) return { ferramenta: "entregas", parametros: {}, tabelas: [] };
+  if (/fatur|margem|receita|quanto (a gente )?(ganhou|ganhamos|lucr)/.test(t) || pareceCom(palavras, "faturamento"))
+    return { ferramenta: "faturamento", parametros: {}, tabelas: [] };
+  if (/saque|sacar|sacaram|retirada/.test(t)) return { ferramenta: "saques", parametros: {}, tabelas: [] };
+  if (/entrega|sla|no prazo|fora do prazo|atras/.test(t) && /hoje|agora|dia/.test(t)) return { ferramenta: "entregas", parametros: {}, tabelas: [] };
   return null;
 }
 
@@ -116,15 +146,29 @@ const formatarNumero = (v: unknown) =>
   typeof v === "number" ? v.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : String(v ?? "—");
 
 /** Fala e destaques sem IA, para as consultas prontas. */
-function falaSemIa(nome: string, t: ResultadoPronto["totais"], parametros: Record<string, unknown> = {}): Pick<AnaliseDados, "fala" | "destaques"> {
+function falaSemIa(
+  nome: string,
+  t: ResultadoPronto["totais"],
+  parametros: Record<string, unknown> = {},
+  linhas: Record<string, unknown>[] = [],
+): Pick<AnaliseDados, "fala" | "destaques"> {
   const n = (k: string) => formatarNumero(t[k]);
   const reais = (k: string) => (typeof t[k] === "number" ? (t[k] as number).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—");
   switch (nome) {
     case "disponibilidade": {
       const regiao = typeof parametros.regiao === "string" ? parametros.regiao.replace(/(^|\s)(?!(?:de|da|do)\b)(\p{L})/gu, (_m, e: string, l: string) => e + l.toUpperCase()) : "";
       if (regiao && !t.titulares) return { fala: `Não encontrei a região ${regiao} na disponibilidade de agora.`, destaques: [] };
+      let piores = "";
+      if (parametros.ordenar === "faltas") {
+        const comFalta = linhas.filter((l) => Number(l.faltando) + Number(l.sem_contato) > 0).slice(0, 3);
+        const desc = (l: Record<string, unknown>) =>
+          `${String(l.loja ?? l.regiao)}, com ${Number(l.faltando)} faltando${Number(l.sem_contato) ? ` e ${Number(l.sem_contato)} sem contato` : ""}`;
+        piores = comFalta.length
+          ? ` A loja com mais faltas é ${desc(comFalta[0]!)}.${comFalta[1] ? ` Depois vem ${desc(comFalta[1])}.` : ""}`
+          : " Nenhuma loja com falta agora.";
+      }
       return {
-        fala: `${regiao ? `Em ${regiao}, agora` : "Agora"} são ${n("em_loja")} motoboys em loja de ${n("titulares")} vagas titulares, ${n("pct_em_loja")}%. ${n("faltando")} faltando, ${n("sem_contato")} sem contato e ${n("a_confirmar")} a confirmar.`,
+        fala: `${regiao ? `Em ${regiao}, agora` : "Agora"} são ${n("em_loja")} motoboys em loja de ${n("titulares")} vagas titulares, ${n("pct_em_loja")}%. ${n("faltando")} faltando, ${n("sem_contato")} sem contato e ${n("a_confirmar")} a confirmar.${piores}`,
         destaques: [
           { rotulo: "Em loja", valor: `${n("em_loja")} de ${n("titulares")}` },
           { rotulo: "% em loja", valor: `${n("pct_em_loja")}%` },
@@ -201,7 +245,7 @@ export async function consultarCentral(ctx: Contexto, ator: Ator, pergunta: stri
     : await consultaLivre(ctx, pergunta, plano.tabelas);
 
   const analise = await analisar(ctx, pergunta, resultado);
-  const semIa = pronta ? falaSemIa(pronta.nome, resultado.totais, plano.parametros) : { fala: "", destaques: [] };
+  const semIa = pronta ? falaSemIa(pronta.nome, resultado.totais, plano.parametros, resultado.linhas) : { fala: "", destaques: [] };
   const fala =
     analise?.fala ||
     semIa.fala ||

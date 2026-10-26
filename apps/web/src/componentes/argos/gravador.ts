@@ -2,6 +2,14 @@
  * Grava o microfone e mede o volume em tempo real (para a esfera reagir à voz
  * e para parar sozinho quando a pessoa fica em silêncio).
  */
+function criarContextoSemSaida(): AudioContext {
+  try {
+    return new AudioContext({ sinkId: { type: "none" } } as AudioContextOptions);
+  } catch {
+    return new AudioContext();
+  }
+}
+
 export class Gravador {
   private stream: MediaStream | null = null;
   private gravador: MediaRecorder | null = null;
@@ -30,6 +38,8 @@ export class Gravador {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
+    const trilha = this.stream.getAudioTracks()[0];
+    console.info("[Argos] microfone", { nome: trilha?.label, mudo: trilha?.muted, estado: trilha?.readyState, ajustes: trilha?.getSettings?.() });
     const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((m) => MediaRecorder.isTypeSupported(m));
     this.gravador = new MediaRecorder(this.stream, mime ? { mimeType: mime, audioBitsPerSecond: 48_000 } : undefined);
     this.partes = [];
@@ -38,9 +48,13 @@ export class Gravador {
     };
     this.gravador.start(250);
 
-    this.contexto = new AudioContext();
+    // Só medimos o volume, não tocamos nada: sem saída de som o Chrome não depende da placa de áudio
+    // (evita "The AudioContext encountered an error from the audio device", que zera o medidor e
+    // ainda atrapalha a voz do Argos).
+    this.contexto = criarContextoSemSaida();
     // Alguns navegadores criam o contexto suspenso; sem isso o volume fica zerado.
     if (this.contexto.state === "suspended") await this.contexto.resume().catch(() => undefined);
+    console.info("[Argos] áudio do navegador", { estado: this.contexto.state, taxa: this.contexto.sampleRate });
     const fonte = this.contexto.createMediaStreamSource(this.stream);
     this.analisador = this.contexto.createAnalyser();
     this.analisador.fftSize = 512;

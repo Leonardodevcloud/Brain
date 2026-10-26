@@ -33,7 +33,10 @@ export class TranscricaoCompativelOpenAI implements ProvedorTranscricao {
     formulario.append("response_format", "json");
     formulario.append("temperature", "0");
     // Vocabulário da casa ajuda o Whisper com nomes próprios.
-    formulario.append("prompt", "Central Tutts, motoboy, POP, Cérebro, Argos, Notion, Fathom, Plific, SLA, roteirizador.");
+    formulario.append(
+      "prompt",
+      "Argos, como está a disponibilidade hoje? Qual loja está com mais faltas? Motoboys em loja, faltando, sem contato. Entregas de hoje, SLA, faturamento, margem, saques em aberto. Central Tutts, Cérebro, POP, Plific, roteirizador.",
+    );
 
     const resposta = await fetch(`${this.cfg.baseUrl.replace(/\/$/, "")}/audio/transcriptions`, {
       method: "POST",

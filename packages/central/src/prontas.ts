@@ -37,9 +37,10 @@ export const CONSULTAS_PRONTAS: ConsultaPronta[] = [
   {
     nome: "disponibilidade",
     descricao: "Como está a escala/disponibilidade de motoboys AGORA: por região (ou loja), titulares, em loja, confirmados, faltando, sem contato, a confirmar, vagas abertas.",
-    parametros: { regiao: "nome (ou parte) da região, opcional", por: "'regiao' (padrão) ou 'loja'" },
+    parametros: { regiao: "nome (ou parte) da região, opcional", por: "'regiao' (padrão) ou 'loja'", ordenar: "'faltas' para as lojas com mais faltas primeiro (opcional)" },
     async executar(pool, p) {
       const porLoja = p.por === "loja";
+      const porFaltas = p.ordenar === "faltas";
       const regiao = texto(p.regiao) ? semAcento(texto(p.regiao) as string) : undefined;
       const sql = `
         WITH vagas AS (
@@ -63,8 +64,8 @@ export const CONSULTAS_PRONTAS: ConsultaPronta[] = [
                ROUND(100.0 * COUNT(*) FILTER (WHERE preenchida AND status = 'EM LOJA') / NULLIF(COUNT(*), 0), 1) AS pct_em_loja
           FROM vagas
          GROUP BY ${porLoja ? "regiao, loja" : "1"}
-         ORDER BY pct_em_loja ASC NULLS FIRST, titulares DESC`;
-      return rodar(pool, porLoja ? "Disponibilidade por loja agora" : "Disponibilidade por região agora", sql, regiao ? [regiao] : [], (r) => {
+         ORDER BY ${porFaltas ? "COUNT(*) FILTER (WHERE preenchida AND status IN ('FALTANDO', 'SEM CONTATO')) DESC, COUNT(*) FILTER (WHERE preenchida AND status = 'FALTANDO') DESC, pct_em_loja ASC NULLS FIRST" : "pct_em_loja ASC NULLS FIRST, titulares DESC"}`;
+      return rodar(pool, porFaltas ? "Lojas com mais faltas agora" : porLoja ? "Disponibilidade por loja agora" : "Disponibilidade por região agora", sql, regiao ? [regiao] : [], (r) => {
         const titulares = soma(r.linhas, "titulares");
         const emLoja = soma(r.linhas, "em_loja");
         return {

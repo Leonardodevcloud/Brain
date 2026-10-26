@@ -33,22 +33,37 @@ const sem = (t: string) =>
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
 
+const NOMES_TELA: [RegExp, string][] = [
+  [/\bmapas?\b/, "mapa"],
+  [/\bbiblioteca\b/, "biblioteca"],
+  [/\b(revisar|revisao|revisoes|aprovacao|aprovacoes)\b/, "revisar"],
+  [/\bintegrac(ao|oes)\b/, "integracoes"],
+  [/\b(minha conta|conta|perfil|senha)\b/, "conta"],
+  [/\b(inicio|home|tela inicial|pagina inicial|painel)\b/, "inicio"],
+  [/\b(perguntar|perguntas)\b/, "perguntar"],
+];
+const VERBO_IR = /\b(abr\w*|mostr\w*|exib\w*|vai|va|vamos|ir|leva\w*|entr\w*|naveg\w*|quero ver|me (leva|mostra)|coloca|bota|volta\w*)\b/;
+
 /** Comandos óbvios não precisam da IA: respondem na hora e funcionam mesmo sem DeepSeek. */
 export function interpretarRapido(fala: string): IntencaoAssistente | null {
-  const t = sem(fala).replace(/[.,!?]/g, " ").replace(/\s+/g, " ").trim().replace(/^(argos|ei argos|oi argos)\s+/, "");
+  const t = sem(fala).replace(/[^a-z0-9 -]/g, " ").replace(/\s+/g, " ").trim().replace(/^(ei |oi |ola |e ai )?argos\s+/, "");
   const vazio = { alvo: null, tipo: null, titulo: null, conteudo: null, fala: null };
+  const palavras = t.split(" ").filter(Boolean).length;
 
-  const tela = t.match(
-    /^(?:abr(?:e|ir|a)|mostr(?:a|ar|e)|v(?:ai|a|ou) (?:pra|para)|ir (?:pra|para)|leva(?:r)? (?:pra|para)|quero ver)\s+(?:o |a |as |os )?(inicio|biblioteca|mapa|revisar|revisao|integracoes|perguntar|minha conta|conta)$/,
-  );
-  if (tela) {
-    const nome = tela[1]!.replace("revisao", "revisar").replace("minha conta", "conta");
-    return { intencao: "navegar", ...vazio, alvo: nome };
+  // "abre o mapa", "pode abrir o mapa pra mim?", "me leva pra biblioteca", "volta pro início".
+  if (palavras <= 12 && VERBO_IR.test(t)) {
+    const codigo = /\b([a-z]{2,4})[ -]?(\d{1,4})\b/.exec(t);
+    if (codigo && /\b(pop|pol|dec|ata|cli|not|ref)\b/.test(codigo[1]!)) {
+      const alvo = `${codigo[1]}-${codigo[2]}`;
+      return { intencao: /\bmapa\b/.test(t) ? "mapa" : "abrir", ...vazio, alvo };
+    }
+    const tela = NOMES_TELA.find(([re]) => re.test(t));
+    if (tela) return { intencao: "navegar", ...vazio, alvo: tela[1] };
   }
-  if (/(o que|tem (?:algo|alguma coisa)|quais|quantos?).*(revisar|aprovar|pendent|pendencia|vencid)/.test(t)) {
+  if (/(o que|tem (algo|alguma coisa)|quais|quantos?|alguma coisa).*(revisar|aprovar|pendent|pendencia|vencid)/.test(t)) {
     return { intencao: "pendencias", ...vazio };
   }
-  if (planoRapido(t) && !/\b(como (funciona|fazer|tratamos|trata)|qual (o|a) (regra|politica|procedimento)|pop)\b/.test(t)) {
+  if (planoRapido(t) && !/\b(como (funciona|fazer|tratamos|trata|e o processo)|qual (o|a) (regra|politica|procedimento|processo)|pop)\b/.test(t)) {
     return { intencao: "dados", ...vazio };
   }
   if (ehConversa(t)) return { intencao: "conversa", ...vazio, fala: null };

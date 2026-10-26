@@ -337,6 +337,13 @@ describe("mapa", () => {
 });
 
 describe("Argos", () => {
+  it("entende comandos de tela falados de vários jeitos", () => {
+    for (const f of ["Argos, abre o mapa", "pode abrir o mapa pra mim?", "abra o mapa por favor"]) expect(interpretarRapido(f)).toMatchObject({ intencao: "navegar", alvo: "mapa" });
+    expect(interpretarRapido("me leva pra biblioteca")).toMatchObject({ intencao: "navegar", alvo: "biblioteca" });
+    expect(interpretarRapido("mostra a POP 001 no mapa")).toMatchObject({ intencao: "mapa", alvo: "pop-001" });
+    expect(interpretarRapido("qual a loja mais crítica agora")).toMatchObject({ intencao: "dados" });
+  });
+
   it("responde cumprimento pelo nome, sem virar lacuna", async () => {
     const r = await atenderFala({ ...ctx, ia: null }, atorAdmin, "oi, tudo bem ?");
     expect(r.intencao).toBe("conversa");
@@ -424,6 +431,13 @@ describe("Argos consultando a Central", () => {
     expect(r.dados?.origem).toBe("pronta");
     expect(r.dados?.totais).toMatchObject({ titulares: 4, em_loja: 2, faltando: 1, vagas_abertas: 1, pct_em_loja: 50 });
     expect(r.fala).toMatch(/2 motoboys em loja de 4/);
+  });
+
+  it("entende fala com erro de transcrição e aponta a loja com mais faltas", async () => {
+    const r = await atenderFala({ ...ctx, ia: null, central: leitura }, atorAdmin, "como ta a usponiblidade hoje ? qual loja esta com mais faltas ?");
+    expect(r.intencao).toBe("dados");
+    expect(r.dados?.titulo).toBe("Lojas com mais faltas agora");
+    expect(r.fala).toMatch(/A loja com mais faltas é Loja Centro, com 1 faltando/);
   });
 
   it("filtra a região falada, sem acento e sem caixa", async () => {
