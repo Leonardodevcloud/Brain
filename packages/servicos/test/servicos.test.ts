@@ -604,6 +604,25 @@ describe("Argos", () => {
     expect(interpretarRapido("abre as tarefas")).toMatchObject({ intencao: "navegar", alvo: "tarefas" });
   });
 
+  it("agente: o histórico da conversa vai como contexto, com os nomes mascarados", async () => {
+    let visto = "";
+    const ia = roteiro([
+      (p) => {
+        visto = p.mensagens.map((m) => m.conteudo).join("\n");
+        return { acao: "responder", fala: "O pior foi o [PESSOA_1]." };
+      },
+    ]);
+    const historico = [
+      { pergunta: "produção por motoboy hoje em Brasília", resposta: "Antônio Carlos Jansem teve 4 entregas fora do prazo.\n[Tabela mostrada: Produção por motoboy]\nNome prof | Entregas\nAntônio Carlos Jansem | 5\nAilton Silva dos Santos | 6" },
+    ];
+    const r = await atenderFala({ ...ctx, ia }, atorAdmin, "e quem foi o pior?", historico);
+    expect(visto).toContain("Tabela mostrada");
+    expect(visto).not.toContain("Antônio Carlos Jansem");
+    expect(visto).not.toContain("Ailton Silva dos Santos");
+    expect(r.fala).not.toContain("[PESSOA_");
+    expect(r.fala).toMatch(/Antônio Carlos Jansem|Ailton Silva dos Santos/);
+  });
+
   it("agente: não duplica tarefa no mesmo pedido", async () => {
     const ia = roteiro([
       () => ({ acao: "criar_tarefa", titulo: "Ligar para a Rede Gama" }),

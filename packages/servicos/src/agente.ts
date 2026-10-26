@@ -107,9 +107,12 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
   const esconder = (texto: string, nomes: string[] = []) => mascarar(texto, { nomes, mapaAnterior: mapa }).texto;
 
   const mensagens: Mensagem[] = [];
-  for (const t of historico.slice(-4)) {
-    mensagens.push({ papel: "user", conteudo: esconder(`Pergunta:\n${embrulharDados(t.pergunta)}`) });
-    mensagens.push({ papel: "assistant", conteudo: esconder(json({ acao: "responder", fala: t.resposta })) });
+  for (const t of historico.slice(-8)) {
+    // O histórico pode trazer nomes de pessoas (respostas e tabelas anteriores): também vão mascarados.
+    const nomes = nomesNoTexto(`${t.pergunta}\n${t.resposta}`);
+    mensagens.push({ papel: "user", conteudo: esconder(`Pergunta:\n${embrulharDados(t.pergunta)}`, nomes) });
+    // Mascara antes de virar JSON (no JSON a quebra de linha vira "\\n" e gruda no nome).
+    mensagens.push({ papel: "assistant", conteudo: json({ acao: "responder", fala: esconder(t.resposta, nomes) }) });
   }
   const hora = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bahia" });
   mensagens.push({
@@ -327,6 +330,17 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
     }
   }
   return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS, confirmar: false };
+}
+
+/**
+ * Prováveis nomes próprios num texto livre ("Antônio Carlos Jansem", "Marcos Gabriel"):
+ * duas a cinco palavras com inicial maiúscula. Lojas e empresas também entram — mascarar a mais é inofensivo,
+ * o marcador volta a ser o nome na resposta.
+ */
+export function nomesNoTexto(texto: string): string[] {
+  // Só espaços na mesma linha: nome de uma linha não emenda com a palavra da linha de cima.
+  const achados = texto.match(/(?<![\p{L}\p{N}])\p{Lu}\p{Ll}+(?:[ \t]+(?:d[aeo]s?[ \t]+)?\p{Lu}\p{Ll}+){1,4}(?![\p{L}\p{N}])/gu) ?? [];
+  return [...new Set(achados)].filter((n) => n.length >= 5).slice(0, 80);
 }
 
 /** Valores de colunas de pessoa, para a máscara. */

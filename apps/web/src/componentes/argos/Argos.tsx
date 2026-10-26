@@ -1,5 +1,5 @@
 import type { RespostaAssistenteDTO } from "@cerebro/core/publico";
-import { ArrowRight, ChevronDown, Keyboard, Mic, Volume2, VolumeX, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Keyboard, Maximize2, Mic, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -7,6 +7,7 @@ import { ErroApi, api } from "../../api/cliente";
 import { desbloquearFala, falar, nivelFala, pararFala } from "./fala";
 import { Escuta, Gravador } from "./gravador";
 import { DadosCentral } from "./DadosCentral";
+import { conversa as fio, useConversa, type TurnoConversa } from "./conversa";
 import { Orbe, type EstadoOrbe } from "./Orbe";
 import css from "./Argos.module.css";
 
@@ -69,10 +70,8 @@ export function Argos() {
   const [fase, setFase] = useState<Fase>("fechado");
   const [modo, setModo] = useState<Modo>("segurando");
   const [texto, setTexto] = useState("");
-  const [resposta, setResposta] = useState<RespostaAssistenteDTO | null>(null);
   const [erro, setErro] = useState<{ mensagem: string; digitar: boolean } | null>(null);
   const [mudo, setMudo] = useState(lerMudo);
-  const [completo, setCompleto] = useState(false);
   const [digitado, setDigitado] = useState("");
   const [segundos, setSegundos] = useState(0);
   const [movimento] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -89,8 +88,9 @@ export function Argos() {
   const energia = useRef(0);
   const campo = useRef<HTMLInputElement>(null);
   const geracao = useRef(0); // invalida respostas de pedidos cancelados
-  // Conversa recente (some ao recarregar a página): deixa o Argos entender "e em Salvador?".
-  const historico = useRef<{ pergunta: string; resposta: string; em: number }[]>([]);
+  // A conversa (compartilhada com a tela Perguntar): o histórico dá contexto para "e em Salvador?".
+  const turnos = useConversa();
+  const fioRef = useRef<HTMLDivElement>(null);
   // Modo conversa (como a voz do ChatGPT): depois de responder, o Argos volta a ouvir sozinho,
   // e dá para interromper falando por cima. Liga quando a pessoa fala; desliga ao digitar, fechar ou se despedir.
   const [conversa, setConversa] = useState(false);
@@ -127,19 +127,16 @@ export function Argos() {
     async (fala: string) => {
       const minha = ++geracao.current;
       setTexto(limparTranscricao(fala));
-      setResposta(null);
-      setCompleto(false);
       setFase("pensando");
+      const historico = fio.historicoParaApi();
+      const id = fio.adicionar(limparTranscricao(fala));
       try {
-        // Depois de 15 min parado, a conversa recomeça do zero.
-        const recentes = historico.current.filter((h) => Date.now() - h.em < 15 * 60_000).slice(-4);
-        const r = await api<RespostaAssistenteDTO>("/argos", {
-          metodo: "POST",
-          corpo: { texto: fala, historico: recentes.map(({ pergunta, resposta }) => ({ pergunta, resposta })) },
-        });
-        if (minha !== geracao.current) return;
-        historico.current = [...recentes, { pergunta: limparTranscricao(fala), resposta: r.fala.slice(0, 2000), em: Date.now() }].slice(-4);
-        setResposta(r);
+        const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto: fala, historico } });
+        if (minha !== geracao.current) {
+          fio.remover(id);
+          return;
+        }
+        fio.responder(id, r);
         // O Argos pode ter criado tarefa, reunião ou rascunho: as telas abertas se atualizam.
         void qc.invalidateQueries({ queryKey: ["tarefas"] });
         void qc.invalidateQueries({ queryKey: ["agenda"] });
@@ -170,8 +167,13 @@ export function Argos() {
           },
         });
       } catch (e) {
-        if (minha !== geracao.current) return;
-        falhar(e instanceof ErroApi ? e.message : "Não consegui responder agora. Tente de novo.");
+        if (minha !== geracao.current) {
+          fio.remover(id);
+          return;
+        }
+        const msg = e instanceof ErroApi ? e.message : "Não consegui responder agora. Tente de novo.";
+        fio.falhar(id, msg);
+        setFase("erro");
       }
     },
     [falhar, navegar, qc, mudarConversa],
@@ -205,7 +207,6 @@ export function Argos() {
       if (falou && limpo.length < 40 && DESPEDIDA.test(limpo)) {
         mudarConversa(false);
         setTexto(limpo);
-        setResposta(null);
         setFase("pronto");
         if (!mudoRef.current) falar("De nada! Qualquer coisa, é só chamar.");
         return;
@@ -239,7 +240,6 @@ export function Argos() {
       automatico.current = auto;
       if (!auto) mudarConversa(true); // falou com o Argos = modo conversa
       setErro(null);
-      if (!auto) setResposta(null);
       setTexto("");
       setModo(m);
       setSegundos(0);
@@ -263,6 +263,12 @@ export function Argos() {
     [falhar, mudarConversa],
   );
   ouvirRef.current = ouvir;
+
+  // A conversa rola sozinha para a última mensagem.
+  useEffect(() => {
+    const el = fioRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: movimento ? "smooth" : "auto" });
+  }, [turnos, fase, movimento]);
 
   const fechar = useCallback(() => {
     geracao.current++;
@@ -316,6 +322,8 @@ export function Argos() {
   // Atalhos globais: Espaço (segurar = falar; tocar = ouvir até o silêncio) e Esc.
   useEffect(() => {
     const descer = (e: KeyboardEvent) => {
+      // Com uma janela aberta por cima (tabela ampliada), o Esc fecha só ela.
+      if (e.key === "Escape" && document.querySelector("dialog[open]")) return;
       if (e.key === "Escape" && faseRef.current !== "fechado") {
         e.preventDefault();
         fechar();
@@ -403,6 +411,8 @@ export function Argos() {
   }
 
   const aberto = fase !== "fechado";
+  const temTurnos = turnos.length > 0;
+  const temDados = turnos.some((t) => t.resposta?.dados);
   const podeDigitar = fase === "pronto" || fase === "erro";
 
   return (
@@ -418,8 +428,24 @@ export function Argos() {
 
       {aberto && (
         <div className={css.camada} onMouseDown={(e) => e.target === e.currentTarget && fase !== "ouvindo" && fechar()}>
-          <section className={css.painel} role="dialog" aria-modal="false" aria-label="Argos, assistente de voz">
+          <section
+            className={`${css.painel} ${temTurnos ? css.painelChat : ""} ${temDados ? css.painelLargo : ""}`}
+            role="dialog"
+            aria-modal="false"
+            aria-label="Argos, assistente de voz"
+          >
             <header className={css.topo}>
+              {temTurnos && (
+                <button
+                  type="button"
+                  className={css.orbeMini}
+                  onClick={() => (fase === "ouvindo" ? void enviar() : fase !== "transcrevendo" && fase !== "pensando" ? void ouvir("continuo") : undefined)}
+                  aria-label={fase === "ouvindo" ? "Enviar" : "Falar"}
+                  title={fase === "ouvindo" ? "Enviar" : "Falar"}
+                >
+                  <Orbe estado={ESTADO_ORBE[fase]} nivel={nivel} tamanho={38} movimento={movimento} />
+                </button>
+              )}
               <span className={css.marca}>
                 <span className={`${css.ponto} ${fase === "ouvindo" || conversa ? css.pontoAoVivo : ""}`} aria-hidden="true" />
                 Argos{conversa && <span className={css.modoConversa}>conversa</span>}
@@ -430,6 +456,40 @@ export function Argos() {
                 {(fase === "transcrevendo" || fase === "pensando") && <span className={css.reticencias} aria-hidden="true" />}
               </span>
               <span className={css.acoesTopo}>
+                {temTurnos && (
+                  <>
+                    <button
+                      type="button"
+                      className={css.icone}
+                      onClick={() => {
+                        geracao.current++;
+                        gravador.current.cancelar();
+                        escuta.current.parar();
+                        pararFala();
+                        mudarConversa(false);
+                        fio.limpar();
+                        setErro(null);
+                        setFase("pronto");
+                      }}
+                      title="Nova conversa"
+                      aria-label="Nova conversa"
+                    >
+                      <RotateCcw size={15} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className={css.icone}
+                      onClick={() => {
+                        navegar("/perguntar");
+                        fechar();
+                      }}
+                      title="Abrir em tela cheia"
+                      aria-label="Abrir a conversa em tela cheia"
+                    >
+                      <Maximize2 size={15} aria-hidden="true" />
+                    </button>
+                  </>
+                )}
                 <button type="button" className={css.icone} onClick={alternarMudo} aria-pressed={mudo} title={mudo ? "Ligar a voz" : "Silenciar a voz"} aria-label={mudo ? "Ligar a voz" : "Silenciar a voz"}>
                   {mudo ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
                 </button>
@@ -439,72 +499,46 @@ export function Argos() {
               </span>
             </header>
 
-            <button
-              type="button"
-              className={css.palco}
-              onClick={() => (fase === "ouvindo" ? void enviar() : fase !== "transcrevendo" && fase !== "pensando" ? void ouvir("continuo") : undefined)}
-              aria-label={fase === "ouvindo" ? "Enviar" : "Falar de novo"}
-            >
-              <Orbe estado={ESTADO_ORBE[fase]} nivel={nivel} tamanho={148} movimento={movimento} />
-            </button>
-
-            <div className={css.conversa} aria-live="polite">
-              {fase === "ouvindo" && (
-                <p className={css.convite}>{automatico.current && segundos < 2 ? "Pode continuar…" : segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>
-              )}
-              {fase === "transcrevendo" && <p className={css.convite}>Entendendo o que você disse…</p>}
-              {texto && fase !== "ouvindo" && fase !== "transcrevendo" && <p className={css.voce}>“{texto}”</p>}
-              {fase === "pensando" && <p className={css.convite}>Pensando e consultando os dados…</p>}
-              {erro && <p className={css.erro}>{erro.mensagem}</p>}
-
-              {resposta && (fase === "falando" || fase === "pronto" || (fase === "ouvindo" && automatico.current)) && (
-                <div className={css.resposta}>
-                  <p className={css.fala}>{resposta.fala}</p>
-                  {resposta.dados && <DadosCentral dados={resposta.dados} />}
-                  {resposta.fontes.length > 0 && (
-                    <div className={css.fontes}>
-                      {resposta.fontes.slice(0, 4).map((f) => (
-                        <Link key={f.registroId} to={`/registros/${f.codigo}`} className={css.fonte} onClick={fechar}>
-                          <span className={css.fonteCodigo}>{f.codigo}</span> {f.titulo}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                  {resposta.detalhe && (
-                    <>
-                      <button type="button" className={css.verMais} onClick={() => setCompleto((v) => !v)} aria-expanded={completo}>
-                        {completo ? "Esconder resposta completa" : "Ver resposta completa"}
-                        <ChevronDown size={14} aria-hidden="true" style={{ transform: completo ? "rotate(180deg)" : undefined }} />
-                      </button>
-                      {completo && (
-                        <div className={css.completo}>
-                          <Suspense fallback={null}>
-                            <Conteudo
-                              texto={resposta.detalhe.replace(/\[(\d+)\]/g, (marca, n: string) => {
-                                const f = resposta.fontes.find((x) => x.indice === Number(n));
-                                return f ? `[[${n}]](/registros/${f.codigo})` : marca;
-                              })}
-                            />
-                          </Suspense>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {resposta.acao && !resposta.acao.automatica && (
-                    <button
-                      type="button"
-                      className={`botao botao-primario ${css.acao}`}
-                      onClick={() => {
-                        navegar(resposta.acao!.destino);
-                        fechar();
-                      }}
-                    >
-                      {resposta.acao.rotulo} <ArrowRight size={15} aria-hidden="true" />
-                    </button>
-                  )}
+            {!temTurnos ? (
+              <>
+                <button
+                  type="button"
+                  className={css.palco}
+                  onClick={() => (fase === "ouvindo" ? void enviar() : fase !== "transcrevendo" && fase !== "pensando" ? void ouvir("continuo") : undefined)}
+                  aria-label={fase === "ouvindo" ? "Enviar" : "Falar de novo"}
+                >
+                  <Orbe estado={ESTADO_ORBE[fase]} nivel={nivel} tamanho={148} movimento={movimento} />
+                </button>
+                <div className={css.conversa} aria-live="polite">
+                  {fase === "ouvindo" && <p className={css.convite}>{segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>}
+                  {fase === "transcrevendo" && <p className={css.convite}>Entendendo o que você disse…</p>}
+                  {(fase === "pronto" || fase === "erro") && !erro && <p className={css.convite}>Pergunte sobre a operação, peça uma tarefa ou marque uma reunião.</p>}
+                  {erro && <p className={css.erro}>{erro.mensagem}</p>}
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <div ref={fioRef} className={css.fio} aria-live="polite">
+                {turnos.map((t) => (
+                  <TurnoArgos
+                    key={t.id}
+                    t={t}
+                    irPara={(destino) => {
+                      navegar(destino);
+                      fechar();
+                    }}
+                    fechar={fechar}
+                  />
+                ))}
+                {fase === "ouvindo" && (
+                  <p className={css.statusFio}>
+                    <span className={css.pontoOuvindo} aria-hidden="true" />
+                    {automatico.current && segundos < 2 ? "Pode continuar…" : "Estou ouvindo…"}
+                  </p>
+                )}
+                {fase === "transcrevendo" && <p className={css.statusFio}>Entendendo o que você disse…</p>}
+                {erro && <p className={css.erro}>{erro.mensagem}</p>}
+              </div>
+            )}
 
             <footer className={css.rodape}>
               {conversa && (fase === "falando" || fase === "ouvindo") ? (
@@ -554,5 +588,62 @@ export function Argos() {
         </div>
       )}
     </>
+  );
+}
+
+/** Uma troca da conversa: o que a pessoa disse e a resposta do Argos (com dados, fontes e ação). */
+function TurnoArgos({ t, irPara, fechar }: { t: TurnoConversa; irPara: (destino: string) => void; fechar: () => void }) {
+  const [completo, setCompleto] = useState(false);
+  const r = t.resposta;
+  return (
+    <article className={css.turno}>
+      <p className={css.bolhaVoce}>{t.pergunta}</p>
+      {!r && !t.erro && (
+        <p className={css.statusFio}>
+          Pensando e consultando os dados<span className={css.reticencias} aria-hidden="true" />
+        </p>
+      )}
+      {t.erro && <p className={css.erro}>{t.erro}</p>}
+      {r && (
+        <div className={css.bolhaArgos}>
+          <p className={css.falaTurno}>{r.fala}</p>
+          {r.dados && <DadosCentral dados={r.dados} compacto />}
+          {r.fontes.length > 0 && (
+            <div className={css.fontesTurno}>
+              {r.fontes.slice(0, 4).map((f) => (
+                <Link key={f.registroId} to={`/registros/${f.codigo}`} className={css.fonte} onClick={fechar}>
+                  <span className={css.fonteCodigo}>{f.codigo}</span> {f.titulo}
+                </Link>
+              ))}
+            </div>
+          )}
+          {r.detalhe && (
+            <>
+              <button type="button" className={css.verMais} onClick={() => setCompleto((v) => !v)} aria-expanded={completo}>
+                {completo ? "Esconder resposta completa" : "Ver resposta completa"}
+                <ChevronDown size={14} aria-hidden="true" style={{ transform: completo ? "rotate(180deg)" : undefined }} />
+              </button>
+              {completo && (
+                <div className={css.completo}>
+                  <Suspense fallback={null}>
+                    <Conteudo
+                      texto={r.detalhe.replace(/\[(\d+)\]/g, (marca, n: string) => {
+                        const f = r.fontes.find((x) => x.indice === Number(n));
+                        return f ? `[[${n}]](/registros/${f.codigo})` : marca;
+                      })}
+                    />
+                  </Suspense>
+                </div>
+              )}
+            </>
+          )}
+          {r.acao && !r.acao.automatica && (
+            <button type="button" className={`botao botao-primario botao-pequeno ${css.acaoTurno}`} onClick={() => irPara(r.acao!.destino)}>
+              {r.acao.rotulo} <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
+    </article>
   );
 }

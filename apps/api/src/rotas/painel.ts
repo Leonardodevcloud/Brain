@@ -46,8 +46,8 @@ export function rotasPainel({ ctx }: Deps) {
         texto: z.string().trim().min(2).max(1000),
         // Últimas trocas da conversa, para perguntas de continuação ("e em Salvador?").
         historico: z
-          .array(z.object({ pergunta: z.string().max(1000), resposta: z.string().max(2000) }))
-          .max(6)
+          .array(z.object({ pergunta: z.string().max(1000), resposta: z.string().max(4000) }))
+          .max(10)
           .default([]),
       }),
       req.body,

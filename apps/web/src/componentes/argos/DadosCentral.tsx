@@ -1,6 +1,6 @@
 import type { DadosCentralDTO } from "@cerebro/core/publico";
-import { ChevronDown, Database } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { ChevronDown, Database, Maximize2, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import css from "./DadosCentral.module.css";
 
 const Conteudo = lazy(() => import("../Conteudo").then((m) => ({ default: m.Conteudo })));
@@ -8,6 +8,8 @@ const Conteudo = lazy(() => import("../Conteudo").then((m) => ({ default: m.Cont
 const MOEDA = /(valor|fatur|cobrado|pago|amount|receita|custo|preco|ticket|saldo)/i;
 const PERCENTUAL = /(pct|percent|sla|taxa|margem)/i;
 const LINHAS_VISIVEIS = 8;
+/** No chat do Argos a tabela começa curta; o resto abre em "Ampliar". */
+const LINHAS_COMPACTO = 5;
 
 const ROTULOS: Record<string, string> = { regiao: "Região", os: "OS", pct_em_loja: "% em loja", sla_pct: "SLA", margem_pct: "Margem" };
 
@@ -44,11 +46,81 @@ function formatar(coluna: string, valor: unknown): string {
 const numerica = (coluna: string, linhas: Record<string, unknown>[]) =>
   linhas.slice(0, 5).every((l) => l[coluna] === null || typeof l[coluna] === "number" || (typeof l[coluna] === "string" && /^-?\d+(\.\d+)?$/.test(l[coluna] as string)));
 
+function Tabela({ dados, linhas, compacto }: { dados: DadosCentralDTO; linhas: Record<string, unknown>[]; compacto?: boolean }) {
+  return (
+    <table className={`${css.tabela} ${compacto ? css.tabelaCompacta : ""}`}>
+      <thead>
+        <tr>
+          {dados.colunas.map((c) => (
+            <th key={c} scope="col" className={numerica(c, dados.linhas) ? css.num : undefined}>
+              {rotular(c)}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {linhas.map((l, i) => (
+          <tr key={i}>
+            {dados.colunas.map((c) => {
+              const valor = formatar(c, l[c]);
+              return (
+                <td key={c} className={numerica(c, dados.linhas) ? css.num : undefined} title={compacto && valor.length > 22 ? valor : undefined}>
+                  {valor}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** A tabela inteira numa janela grande, com cabeçalho fixo. */
+function Ampliada({ dados, fechar }: { dados: DadosCentralDTO; fechar: () => void }) {
+  const caixa = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = caixa.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  return (
+    <dialog ref={caixa} className={css.janela} onClose={fechar} aria-label={dados.titulo}>
+      <div className={css.janelaTopo}>
+        <div>
+          <strong>{dados.titulo}</strong>
+          <span>
+            {dados.linhas.length} {dados.linhas.length === 1 ? "linha" : "linhas"}
+            {dados.cortado ? " (há mais no banco)" : ""}
+          </span>
+        </div>
+        <button type="button" className={css.fecharJanela} onClick={fechar} aria-label="Fechar">
+          <X size={18} aria-hidden="true" />
+        </button>
+      </div>
+      {dados.destaques.length > 0 && (
+        <dl className={css.destaques}>
+          {dados.destaques.map((d) => (
+            <div key={d.rotulo} className={css.destaque}>
+              <dt>{d.rotulo}</dt>
+              <dd>{d.valor}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <div className={css.rolagemJanela}>
+        <Tabela dados={dados} linhas={dados.linhas} />
+      </div>
+    </dialog>
+  );
+}
+
 /** O que o Argos encontrou no banco da Central: números, tabela e como chegou neles. */
-export function DadosCentral({ dados }: { dados: DadosCentralDTO }) {
+export function DadosCentral({ dados, compacto = false }: { dados: DadosCentralDTO; compacto?: boolean }) {
   const [tudo, setTudo] = useState(false);
   const [bastidor, setBastidor] = useState(false);
-  const linhas = tudo ? dados.linhas : dados.linhas.slice(0, LINHAS_VISIVEIS);
+  const [ampliada, setAmpliada] = useState(false);
+  const limite = compacto ? LINHAS_COMPACTO : LINHAS_VISIVEIS;
+  const linhas = tudo && !compacto ? dados.linhas : dados.linhas.slice(0, limite);
 
   return (
     <div className={css.dados}>
@@ -73,37 +145,26 @@ export function DadosCentral({ dados }: { dados: DadosCentralDTO }) {
 
       {dados.linhas.length > 0 ? (
         <div className={css.tabelaCaixa}>
-          <p className={css.tituloTabela}>{dados.titulo}</p>
-          <div className={css.rolagem}>
-            <table className={css.tabela}>
-              <thead>
-                <tr>
-                  {dados.colunas.map((c) => (
-                    <th key={c} scope="col" className={numerica(c, dados.linhas) ? css.num : undefined}>
-                      {rotular(c)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {linhas.map((l, i) => (
-                  <tr key={i}>
-                    {dados.colunas.map((c) => (
-                      <td key={c} className={numerica(c, dados.linhas) ? css.num : undefined}>
-                        {formatar(c, l[c])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {dados.linhas.length > LINHAS_VISIVEIS && (
-            <button type="button" className={css.link} onClick={() => setTudo((v) => !v)}>
-              {tudo ? "Mostrar menos" : `Mostrar as ${dados.linhas.length} linhas`}
-              {dados.cortado && !tudo ? " (há mais no banco)" : ""}
+          <div className={css.cabecaTabela}>
+            <p className={css.tituloTabela}>{dados.titulo}</p>
+            <button type="button" className={css.ampliar} onClick={() => setAmpliada(true)} title="Ver a tabela inteira">
+              <Maximize2 size={13} aria-hidden="true" /> Ampliar
             </button>
-          )}
+          </div>
+          <div className={`${css.rolagem} ${compacto ? css.rolagemCompacta : ""}`}>
+            <Tabela dados={dados} linhas={linhas} compacto={compacto} />
+          </div>
+          {dados.linhas.length > limite &&
+            (compacto ? (
+              <button type="button" className={css.link} onClick={() => setAmpliada(true)}>
+                Ver as {dados.linhas.length} linhas{dados.cortado ? " (há mais no banco)" : ""}
+              </button>
+            ) : (
+              <button type="button" className={css.link} onClick={() => setTudo((v) => !v)}>
+                {tudo ? "Mostrar menos" : `Mostrar as ${dados.linhas.length} linhas`}
+                {dados.cortado && !tudo ? " (há mais no banco)" : ""}
+              </button>
+            ))}
         </div>
       ) : (
         <p className={css.vazio}>Nenhum registro encontrado para isso.</p>
@@ -126,6 +187,7 @@ export function DadosCentral({ dados }: { dados: DadosCentralDTO }) {
           </pre>
         </div>
       )}
+      {ampliada && <Ampliada dados={dados} fechar={() => setAmpliada(false)} />}
     </div>
   );
 }

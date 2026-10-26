@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/cliente";
 import { DadosCentral } from "../componentes/argos/DadosCentral";
+import { conversa, useConversa } from "../componentes/argos/conversa";
 import { useAvisar } from "../componentes/comum";
 import { Conteudo } from "../componentes/Conteudo";
 import { nomeTipo } from "../util/formato";
@@ -16,15 +17,6 @@ import css from "./Perguntar.module.css";
  * o conhecimento do Cérebro (POPs, regras, atas, documentos) e as tarefas.
  */
 
-interface Turno {
-  id: number;
-  pergunta: string;
-  resposta: RespostaAssistenteDTO | null;
-  erro: string | null;
-  em: number;
-}
-
-const CHAVE = "cerebro:perguntar";
 const SUGESTOES = [
   "Como está a disponibilidade agora? Qual loja está mais crítica?",
   "Quantas entregas fizemos ontem e quantas atrasaram?",
@@ -32,24 +24,6 @@ const SUGESTOES = [
   "Quais tarefas estão atrasadas?",
   "Qual o procedimento quando o motoboy não aparece?",
 ];
-
-function carregar(): Turno[] {
-  try {
-    const bruto = sessionStorage.getItem(CHAVE);
-    const lista = bruto ? (JSON.parse(bruto) as Turno[]) : [];
-    return lista.filter((t) => t.resposta || t.erro);
-  } catch {
-    return [];
-  }
-}
-
-function guardar(turnos: Turno[]) {
-  try {
-    sessionStorage.setItem(CHAVE, JSON.stringify(turnos.slice(-20)));
-  } catch {
-    /* sem armazenamento: a conversa fica só na memória */
-  }
-}
 
 /** Troca as citações [1] por links para o registro correspondente. */
 function comCitacoes(texto: string, fontes: FonteDTO[]) {
@@ -118,14 +92,12 @@ function Resposta({ r }: { r: RespostaAssistenteDTO }) {
 
 export default function Perguntar() {
   const [params, setParams] = useSearchParams();
-  const [turnos, setTurnos] = useState<Turno[]>(carregar);
+  // Mesma conversa do painel do Argos: começar na voz e continuar aqui (ou o contrário).
+  const turnos = useConversa();
   const [rascunho, setRascunho] = useState("");
   const [pensando, setPensando] = useState(false);
   const campo = useRef<HTMLTextAreaElement>(null);
   const fim = useRef<HTMLDivElement>(null);
-  const proximoId = useRef(Date.now());
-
-  useEffect(() => guardar(turnos), [turnos]);
   useEffect(() => {
     fim.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turnos, pensando]);
@@ -133,22 +105,17 @@ export default function Perguntar() {
   async function perguntar(textoBruto: string) {
     const texto = textoBruto.trim();
     if (texto.length < 2 || pensando) return;
-    const id = ++proximoId.current;
-    // Contexto das últimas trocas (15 min), para entender "e ontem?", "e na loja X?".
-    const recentes = turnos
-      .filter((t) => t.resposta && Date.now() - t.em < 15 * 60_000)
-      .slice(-4)
-      .map((t) => ({ pergunta: t.pergunta, resposta: (t.resposta!.detalhe ?? t.resposta!.fala).slice(0, 2000) }));
-
-    setTurnos((ts) => [...ts, { id, pergunta: texto, resposta: null, erro: null, em: Date.now() }]);
+    // Contexto das últimas trocas (com o resumo das tabelas), para entender "e ontem?", "e na loja X?".
+    const historico = conversa.historicoParaApi();
+    const id = conversa.adicionar(texto);
     setRascunho("");
     setPensando(true);
     try {
-      const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto, historico: recentes } });
-      setTurnos((ts) => ts.map((t) => (t.id === id ? { ...t, resposta: r } : t)));
+      const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto, historico } });
+      conversa.responder(id, r);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Não deu certo agora. Tente de novo.";
-      setTurnos((ts) => ts.map((t) => (t.id === id ? { ...t, erro: msg } : t)));
+      conversa.falhar(id, msg);
     } finally {
       setPensando(false);
       campo.current?.focus();
@@ -187,7 +154,7 @@ export default function Perguntar() {
             <p className="suave">Dados da operação, regras, POPs, documentos e tarefas — pergunte do seu jeito.</p>
           </div>
           {!vazio && (
-            <button type="button" className="botao botao-pequeno" onClick={() => setTurnos([])} disabled={pensando}>
+            <button type="button" className="botao botao-pequeno" onClick={() => conversa.limpar()} disabled={pensando}>
               <RotateCcw size={14} aria-hidden="true" /> Nova conversa
             </button>
           )}
