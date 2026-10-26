@@ -1,0 +1,97 @@
+.lista {
+  padding: 0;
+}
+.linha {
+  padding: 16px 20px;
+}
+.cabecalhoLinha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+.textoLinha {
+  flex: 1 1 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.nome {
+  font-weight: 600;
+}
+.estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 96px;
+}
+.extra {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+}
+.formLinha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.codigo {
+  flex: 1 1 260px;
+  display: block;
+  padding: 9px 12px;
+  border-radius: var(--raio);
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  font-size: 12px;
+  word-break: break-all;
+}
+.segredo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tokens > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 0;
+}
+.tokens > li > :first-child {
+  flex-grow: 1;
+}
+.mapa {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--borda);
+}
+.gradeMapa {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.importar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.desativado {
+  opacity: 0.55;
+  pointer-events: none;
+}
+label.importar:focus-within,
+.importar label:focus-within {
+  box-shadow: var(--foco);
+}

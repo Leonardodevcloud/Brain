@@ -1,0 +1,411 @@
+/* Sistema visual do Cérebro: neutros quentes, um único acento roxo, bordas antes de sombras. */
+:root {
+  --fundo: #fafaf9;
+  --superficie: #ffffff;
+  --superficie-2: #f5f5f4;
+  --borda: #e7e5e4;
+  --borda-forte: #d6d3d1;
+  --divisoria: #f0eeec;
+  --texto: #1c1917;
+  --texto-2: #44403c;
+  --texto-3: #57534e;
+  --texto-suave: #78716c;
+
+  --acento: #7c3aed;
+  --acento-forte: #6d28d9;
+  --acento-ativo: #5b21b6;
+  --acento-fundo: #f3eeff;
+
+  --ok: #15803d;
+  --ok-fundo: #f0fdf4;
+  --alerta: #b45309;
+  --alerta-texto: #92400e;
+  --alerta-fundo: #fffbeb;
+  --erro: #b91c1c;
+  --erro-fundo: #fef2f2;
+  --info: #1d4ed8;
+  --info-fundo: #eff6ff;
+
+  --raio-p: 6px;
+  --raio: 8px;
+  --raio-g: 10px;
+  --sombra-flutuante: 0 8px 24px rgb(28 25 23 / 0.08), 0 1px 2px rgb(28 25 23 / 0.06);
+  --foco: 0 0 0 3px rgb(124 58 237 / 0.28);
+
+  --fonte: "Geist Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fonte-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
+
+  --rapido: 120ms;
+  --medio: 200ms;
+  --curva: cubic-bezier(0.2, 0, 0, 1);
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01";
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+a {
+  color: var(--acento-forte);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--acento-ativo);
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--foco);
+  border-radius: var(--raio-p);
+}
+
+code,
+kbd,
+.mono {
+  font-family: var(--fonte-mono);
+}
+
+.suave {
+  color: var(--texto-suave);
+}
+.pequeno {
+  font-size: 12px;
+}
+.so-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── Botões ── */
+.botao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: var(--raio);
+  border: 1px solid var(--borda-forte);
+  background: var(--superficie);
+  color: var(--texto);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--rapido) var(--curva),
+    border-color var(--rapido) var(--curva),
+    color var(--rapido) var(--curva);
+}
+.botao:hover {
+  background: var(--superficie-2);
+  text-decoration: none;
+  color: var(--texto);
+}
+.botao:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.botao-primario {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+}
+.botao-primario:hover {
+  background: var(--acento-forte);
+  border-color: var(--acento-forte);
+  color: #fff;
+}
+.botao-fantasma {
+  border-color: transparent;
+  background: transparent;
+  color: var(--texto-2);
+}
+.botao-fantasma:hover {
+  background: var(--superficie-2);
+}
+.botao-perigo {
+  color: var(--erro);
+}
+.botao-perigo:hover {
+  background: var(--erro-fundo);
+  border-color: #fecaca;
+  color: var(--erro);
+}
+.botao-pequeno {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+.botao-icone {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+@media (pointer: coarse) {
+  .botao {
+    min-height: 44px;
+  }
+}
+
+/* ── Campos ── */
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.campo > label,
+.rotulo {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--texto-2);
+}
+.entrada,
+.selecao,
+.area-texto {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--raio);
+  background: var(--superficie);
+  color: var(--texto);
+  font: inherit;
+  transition: border-color var(--rapido) var(--curva);
+}
+.entrada:focus,
+.selecao:focus,
+.area-texto:focus {
+  outline: none;
+  border-color: var(--acento);
+  box-shadow: var(--foco);
+}
+.entrada[aria-invalid="true"],
+.area-texto[aria-invalid="true"] {
+  border-color: var(--erro);
+}
+.area-texto {
+  min-height: 320px;
+  resize: vertical;
+  font-family: var(--fonte-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ajuda {
+  font-size: 12px;
+  color: var(--texto-suave);
+}
+.erro-campo {
+  font-size: 12px;
+  color: var(--erro);
+}
+
+/* ── Superfícies ── */
+.cartao {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio-g);
+  padding: 20px;
+}
+
+.aviso {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--raio);
+  font-size: 13px;
+  background: var(--superficie-2);
+  color: var(--texto-2);
+}
+.aviso-alerta {
+  background: var(--alerta-fundo);
+  color: var(--alerta-texto);
+}
+.aviso-erro {
+  background: var(--erro-fundo);
+  color: var(--erro);
+}
+.aviso-ok {
+  background: var(--ok-fundo);
+  color: var(--ok);
+}
+
+/* ── Etiquetas ── */
+.etiqueta {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--superficie-2);
+  color: var(--texto-2);
+}
+.etiqueta-roxa {
+  background: var(--acento-fundo);
+  color: var(--acento-ativo);
+}
+.etiqueta-azul {
+  background: var(--info-fundo);
+  color: var(--info);
+}
+.etiqueta-verde {
+  background: var(--ok-fundo);
+  color: var(--ok);
+}
+.etiqueta-ambar {
+  background: var(--alerta-fundo);
+  color: var(--alerta-texto);
+}
+.etiqueta-vermelha {
+  background: var(--erro-fundo);
+  color: var(--erro);
+}
+
+.ponto {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--texto-suave);
+}
+
+/* ── Listas ── */
+.lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lista > li + li {
+  border-top: 1px solid var(--divisoria);
+}
+
+/* ── Esqueleto de carregamento ── */
+.esqueleto {
+  background: linear-gradient(90deg, var(--superficie-2) 0%, #eeecea 50%, var(--superficie-2) 100%);
+  background-size: 200% 100%;
+  animation: brilho 1.4s ease-in-out infinite;
+  border-radius: var(--raio-p);
+}
+@keyframes brilho {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ── Conteúdo em Markdown ── */
+.prosa {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--texto);
+  max-width: 72ch;
+}
+.prosa h2 {
+  font-size: 16px;
+  margin: 28px 0 8px;
+}
+.prosa h2:first-child,
+.prosa h3:first-child {
+  margin-top: 0;
+}
+.prosa h3 {
+  margin: 20px 0 6px;
+}
+.prosa p,
+.prosa ul,
+.prosa ol {
+  margin: 0 0 12px;
+}
+.prosa ul,
+.prosa ol {
+  padding-left: 22px;
+}
+.prosa li + li {
+  margin-top: 4px;
+}
+.prosa code {
+  font-size: 13px;
+  background: var(--superficie-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.prosa table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+.prosa th,
+.prosa td {
+  text-align: left;
+  border-bottom: 1px solid var(--borda);
+  padding: 8px;
+}
+.prosa blockquote {
+  margin: 0 0 12px;
+  padding-left: 14px;
+  border-left: 3px solid var(--borda-forte);
+  color: var(--texto-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

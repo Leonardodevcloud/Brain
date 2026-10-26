@@ -1,0 +1,54 @@
+.esqueleto {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 24px 0;
+}
+.vazioTitulo {
+  font-weight: 500;
+}
+
+.avisos {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  padding: 10px 14px;
+  border-radius: var(--raio);
+  background: var(--texto);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: var(--sombra-flutuante);
+  animation: entrar var(--medio) var(--curva);
+  max-width: 360px;
+}
+.toastErro {
+  background: var(--erro);
+}
+@keyframes entrar {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (max-width: 860px) {
+  .avisos {
+    left: 16px;
+    right: 16px;
+    bottom: 84px;
+  }
+}

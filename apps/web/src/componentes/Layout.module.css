@@ -1,0 +1,225 @@
+.casca {
+  min-height: 100vh;
+  display: flex;
+}
+
+.pular {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 10;
+  padding: 8px 12px;
+  background: var(--superficie);
+  border-radius: var(--raio);
+}
+.pular:focus {
+  top: 12px;
+}
+
+.lateral {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 232px;
+  flex-shrink: 0;
+  padding: 20px 12px 12px;
+  background: var(--superficie);
+  border-right: 1px solid var(--borda);
+  display: flex;
+  flex-direction: column;
+}
+
+.marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 20px;
+}
+.logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--acento);
+  display: grid;
+  place-items: center;
+}
+.logo > div {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+.marcaTexto {
+  display: flex;
+  flex-direction: column;
+}
+.marcaNome {
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+.marcaSub {
+  font-size: 12px;
+  color: var(--texto-suave);
+}
+
+.itens {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: var(--raio-p);
+  color: var(--texto-2);
+  transition: background-color var(--rapido) var(--curva);
+}
+.item:hover {
+  background: var(--superficie-2);
+  color: var(--texto);
+  text-decoration: none;
+}
+.ativo,
+.ativo:hover {
+  background: var(--acento-fundo);
+  color: var(--acento-ativo);
+  font-weight: 600;
+}
+.rotulo {
+  flex-grow: 1;
+}
+.contador {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--acento);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+
+.espaco {
+  flex-grow: 1;
+}
+.perfil {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--divisoria);
+}
+.perfilLink {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: var(--raio-p);
+  color: var(--texto);
+}
+.perfilLink:hover {
+  background: var(--superficie-2);
+  text-decoration: none;
+  color: var(--texto);
+}
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--borda);
+  color: var(--texto-2);
+  font-weight: 600;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.perfilTexto {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.perfilNome {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.perfilPapel {
+  font-size: 12px;
+  color: var(--texto-suave);
+}
+.soCelular {
+  display: none;
+}
+
+.principal {
+  flex-grow: 1;
+  min-width: 0;
+  padding: 40px 48px 56px;
+}
+.principal:focus {
+  outline: none;
+}
+
+/* Celular: a lateral vira uma barra inferior com os cinco destinos. */
+@media (max-width: 860px) {
+  .casca {
+    flex-direction: column;
+  }
+  .lateral {
+    position: fixed;
+    inset: auto 0 0 0;
+    top: auto;
+    height: auto;
+    width: 100%;
+    z-index: 5;
+    flex-direction: row;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top: 1px solid var(--borda);
+  }
+  .marca,
+  .espaco,
+  .perfil {
+    display: none;
+  }
+  .itens {
+    flex-direction: row;
+    flex-grow: 1;
+    justify-content: space-around;
+  }
+  .item {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 52px;
+    min-width: 56px;
+    padding: 6px 4px;
+    font-size: 11px;
+    justify-content: center;
+    position: relative;
+  }
+  .rotulo {
+    flex-grow: 0;
+  }
+  .contador {
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 10px;
+    padding: 0 4px;
+  }
+  .principal {
+    padding: 24px 16px 96px;
+  }
+}

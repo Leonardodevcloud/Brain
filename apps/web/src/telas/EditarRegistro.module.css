@@ -1,0 +1,65 @@
+.principal {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.titulo {
+  font-size: 18px;
+  font-weight: 500;
+  min-height: 46px;
+}
+.abas {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.aba {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--texto-suave);
+  padding: 4px 10px;
+  border-radius: var(--raio-p);
+  cursor: pointer;
+}
+.aba:hover {
+  color: var(--texto);
+}
+.abaAtiva {
+  background: var(--superficie-2);
+  color: var(--texto);
+  font-weight: 500;
+}
+.previa {
+  min-height: 320px;
+}
+.lateral {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 24px;
+}
+.opcao {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.opcao input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--acento);
+}
+.salvar {
+  display: flex;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--divisoria);
+}
+.salvar > :first-child {
+  flex-grow: 1;
+}

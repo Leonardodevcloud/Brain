@@ -1,0 +1,23 @@
+{
+  "name": "tutts-cerebro",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Segundo Cérebro Empresarial da Central Tutts",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test --concurrency=1",
+    "db:migrar": "pnpm --filter @cerebro/db migrar",
+    "db:admin": "pnpm --filter @cerebro/api criar-admin"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10",
+    "typescript": "^5.9.3"
+  }
+}

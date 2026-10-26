@@ -1,0 +1,9 @@
+{
+  "extends": "@cerebro/config/tsconfig.node.json",
+  "include": [
+    "src",
+    "test",
+    "scripts",
+    "tsup.config.ts"
+  ]
+}

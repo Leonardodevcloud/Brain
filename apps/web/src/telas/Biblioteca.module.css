@@ -1,0 +1,95 @@
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.filtros > select {
+  width: auto;
+  flex: 0 1 200px;
+}
+.buscaTexto {
+  flex: 1 1 260px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--superficie);
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--raio);
+}
+.buscaTexto:focus-within {
+  border-color: var(--acento);
+  box-shadow: var(--foco);
+}
+.entrada {
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+}
+.entrada:focus-visible {
+  box-shadow: none;
+}
+
+.tabela {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio-g);
+  overflow: hidden;
+}
+.linha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 100px 160px 130px;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 20px;
+  color: var(--texto);
+}
+a.linha {
+  border-top: 1px solid var(--divisoria);
+  transition: background-color var(--rapido) var(--curva);
+}
+a.linha:hover {
+  background: var(--fundo);
+  text-decoration: none;
+  color: var(--texto);
+}
+.cabecalhoTabela {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--texto-suave);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.celulaTitulo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.titulo {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 860px) {
+  .linha {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px 16px;
+  }
+  .linha > :nth-child(3),
+  .opcional,
+  .cabecalhoTabela {
+    display: none;
+  }
+}
+
+.paginacao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}

@@ -1,0 +1,99 @@
+.coluna {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.pergunta {
+  font-size: 24px;
+}
+.resposta {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.resposta :global(.prosa) a {
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: super;
+  line-height: 0;
+}
+.acoes {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--divisoria);
+}
+.continuar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.linhaForm {
+  display: flex;
+  gap: 8px;
+}
+.caixa {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--superficie);
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--raio);
+}
+.caixa:focus-within {
+  border-color: var(--acento);
+  box-shadow: var(--foco);
+}
+.entrada {
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+}
+.entrada:focus-visible {
+  box-shadow: none;
+}
+
+.fontes {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio-g);
+}
+.fonte {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--texto);
+}
+.fonte:hover {
+  background: var(--superficie-2);
+  text-decoration: none;
+  color: var(--texto);
+}
+.indice {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--acento-fundo);
+  color: var(--acento-ativo);
+  font-size: 12px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+.fonteTexto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fonteTitulo {
+  font-weight: 500;
+}

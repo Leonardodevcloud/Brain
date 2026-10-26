@@ -1,0 +1,64 @@
+/* Peças comuns de página: largura, cabeçalho e colunas. */
+.pagina {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.estreita {
+  max-width: 760px;
+}
+.cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.titulos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.secao {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cabecalhoSecao {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.duasColunas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 40px;
+  align-items: start;
+}
+@media (max-width: 1020px) {
+  .duasColunas {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+.voltar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--texto-suave);
+  width: fit-content;
+}
+.voltar:hover {
+  color: var(--texto);
+  text-decoration: none;
+}
