@@ -70,6 +70,13 @@ async function arquivo(req, res) {
   try {
     if (!(await stat(alvo)).isFile()) throw new Error();
   } catch {
+    // Arquivo de build que não existe mais (versão antiga aberta no navegador): 404 de verdade,
+    // para o app perceber e recarregar. Devolver o index.html aqui deixava a tela em branco.
+    if (caminho.startsWith("/assets/") || /\.(js|css|map|png|svg|woff2?)$/.test(caminho)) {
+      res.writeHead(404, { ...SEGURANCA, "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+      res.end("não encontrado");
+      return;
+    }
     alvo = join(RAIZ, "index.html"); // rotas da SPA
   }
   const ehAsset = alvo.includes(`${RAIZ}assets`);

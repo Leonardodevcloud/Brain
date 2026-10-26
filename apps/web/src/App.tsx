@@ -1,10 +1,81 @@
-import { lazy, Suspense } from "react";
+import { Component, lazy as lazyReact, Suspense, type ComponentType, type ReactNode } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Esqueleto } from "./componentes/comum";
 import { Layout } from "./componentes/Layout";
 import { useSessao } from "./sessao/Sessao";
 import { Entrar } from "./telas/Entrar";
 import { Inicio } from "./telas/Inicio";
+
+/**
+ * Carrega a tela sob demanda. Se o arquivo não existir mais (houve deploy com a aba aberta),
+ * recarrega a página uma vez para pegar a versão nova, em vez de ficar em branco.
+ */
+const CHAVE_RECARGA = "cerebro:recarregou-versao";
+function lazy<T extends ComponentType<object>>(importar: () => Promise<{ default: T }>) {
+  return lazyReact(() =>
+    importar().then(
+      (m) => {
+        try {
+          sessionStorage.removeItem(CHAVE_RECARGA);
+        } catch {
+          /* sem armazenamento */
+        }
+        return m;
+      },
+      (erro: unknown) => {
+        let ja = false;
+        try {
+          ja = sessionStorage.getItem(CHAVE_RECARGA) === "1";
+          sessionStorage.setItem(CHAVE_RECARGA, "1");
+        } catch {
+          /* sem armazenamento: tenta recarregar mesmo assim */
+        }
+        if (!ja) {
+          window.location.reload();
+          return new Promise<never>(() => {});
+        }
+        throw erro;
+      },
+    ),
+  );
+}
+
+/** Se uma tela quebrar, mostra um aviso com saída em vez de uma página em branco. */
+class LimiteDeErro extends Component<{ children: ReactNode; chave: string }, { erro: Error | null }> {
+  override state = { erro: null as Error | null };
+  static getDerivedStateFromError(erro: Error) {
+    return { erro };
+  }
+  override componentDidCatch(erro: Error) {
+    console.error("[Second Brain] a tela quebrou", erro);
+  }
+  override componentDidUpdate(anterior: { chave: string }) {
+    if (anterior.chave !== this.props.chave && this.state.erro) this.setState({ erro: null });
+  }
+  override render() {
+    if (!this.state.erro) return this.props.children;
+    return (
+      <div className="cartao" style={{ maxWidth: 520, margin: "48px auto", display: "flex", flexDirection: "column", gap: 12 }} role="alert">
+        <strong>Esta tela não carregou.</strong>
+        <p className="suave">Pode ser uma atualização do sistema. Recarregar costuma resolver.</p>
+        <p className="suave pequeno mono">{this.state.erro.message.slice(0, 200)}</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" className="botao botao-primario" onClick={() => window.location.reload()}>
+            Recarregar
+          </button>
+          <a href="/" className="botao">
+            Ir para o início
+          </a>
+        </div>
+      </div>
+    );
+  }
+}
+
+function ComLimite({ children }: { children: ReactNode }) {
+  const local = useLocation();
+  return <LimiteDeErro chave={local.pathname}>{children}</LimiteDeErro>;
+}
 
 // Telas menos usadas carregam sob demanda.
 const Perguntar = lazy(() => import("./telas/Perguntar"));
@@ -44,9 +115,11 @@ export function App() {
           <Route element={<Layout />}>
             <Route
               element={
-                <Suspense fallback={<Carregando />}>
-                  <Outlet />
-                </Suspense>
+                <ComLimite>
+                  <Suspense fallback={<Carregando />}>
+                    <Outlet />
+                  </Suspense>
+                </ComLimite>
               }
             >
               <Route index element={<Inicio />} />
