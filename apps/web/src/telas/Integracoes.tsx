@@ -7,6 +7,7 @@ import { api } from "../api/cliente";
 import { chaves, useIntegracoes, useTokens, type MapaNotion } from "../api/consultas";
 import { Esqueleto, MensagemErro, textoDoErro, useAvisar } from "../componentes/comum";
 import { useUsuario } from "../sessao/Sessao";
+import { ouvirAmostra, recarregarVoz } from "../componentes/argos/fala";
 import { relativo } from "../util/formato";
 import pg from "./pagina.module.css";
 import css from "./Integracoes.module.css";
@@ -27,7 +28,8 @@ const INFO: Record<StatusIntegracaoDTO["nome"], { nome: string; descricao: strin
   deepseek: { nome: "DeepSeek", descricao: "Respostas, atas e extração de conhecimento." },
   embeddings: { nome: "Gemini", descricao: "Busca por sentido, não só por palavra." },
   central: { nome: "Banco da Central", descricao: "O Argos consulta disponibilidade, entregas, financeiro e o BI, só para leitura." },
-  voz: { nome: "Argos (voz)", descricao: "Whisper pela Groq: transforma a sua fala em comando." },
+  voz: { nome: "Argos (ouvido)", descricao: "Whisper pela Groq: transforma a sua fala em comando." },
+  fala: { nome: "Argos (voz)", descricao: "Voz natural gerada no servidor: a mesma em qualquer aparelho." },
 };
 
 function useCopiar() {
@@ -63,6 +65,91 @@ function Linha({ s, acao, children }: { s: StatusIntegracaoDTO; acao?: ReactNode
       </div>
       {children}
     </li>
+  );
+}
+
+// ── Voz do Argos: uma escolha para a empresa toda ──
+
+const DESCRICAO_VOZ: Record<string, string> = {
+  marin: "Feminina, calorosa e natural (recomendada)",
+  cedar: "Masculina, calma e natural (recomendada)",
+  coral: "Feminina, animada",
+  nova: "Feminina, jovem e clara",
+  shimmer: "Feminina, suave",
+  sage: "Feminina, serena",
+  ballad: "Masculina, expressiva",
+  ash: "Masculina, firme",
+  verse: "Masculina, versátil",
+  alloy: "Neutra",
+  echo: "Masculina, grave",
+  fable: "Masculina, narrador",
+  onyx: "Masculina, bem grave",
+};
+
+function EscolherVoz() {
+  const qc = useQueryClient();
+  const avisar = useAvisar();
+  const usuario = useUsuario();
+  const [cfg, setCfg] = useState<{ voz: string; velocidade: number; vozes: string[] } | null>(null);
+  const [ouvindo, setOuvindo] = useState(false);
+  useEffect(() => {
+    void api<{ voz: string; velocidade: number; vozes: string[] }>("/argos/voz").then(setCfg, () => setCfg(null));
+  }, []);
+  const salvar = useMutation({
+    mutationFn: () => api("/argos/voz", { metodo: "PUT", corpo: { voz: cfg!.voz, velocidade: cfg!.velocidade } }),
+    onSuccess: () => {
+      recarregarVoz();
+      void qc.invalidateQueries({ queryKey: chaves.integracoes });
+      avisar("Voz salva. Vale para todos, em qualquer aparelho.");
+    },
+    onError: (e) => avisar(textoDoErro(e), "erro"),
+  });
+  if (!cfg) return <Esqueleto linhas={2} />;
+  const primeiroNome = usuario.nome.split(" ")[0] ?? "";
+
+  return (
+    <div className={css.voz}>
+      <div className={css.campoVoz}>
+        <label htmlFor="voz-argos">Voz</label>
+        <select id="voz-argos" value={cfg.voz} onChange={(e) => setCfg({ ...cfg, voz: e.target.value })}>
+          {cfg.vozes.map((v) => (
+            <option key={v} value={v}>
+              {v.charAt(0).toUpperCase() + v.slice(1)} · {DESCRICAO_VOZ[v] ?? ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className={css.campoVoz}>
+        <label htmlFor="velocidade-argos">Ritmo · {cfg.velocidade.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}×</label>
+        <input
+          id="velocidade-argos"
+          type="range"
+          min={0.9}
+          max={1.35}
+          step={0.01}
+          value={cfg.velocidade}
+          onChange={(e) => setCfg({ ...cfg, velocidade: Number(e.target.value) })}
+        />
+      </div>
+      <div className={css.acoesVoz}>
+        <button
+          type="button"
+          className="botao"
+          disabled={ouvindo}
+          onClick={() => {
+            setOuvindo(true);
+            ouvirAmostra(cfg.voz, cfg.velocidade, primeiroNome)
+              .catch((e) => avisar(textoDoErro(e), "erro"))
+              .finally(() => setOuvindo(false));
+          }}
+        >
+          {ouvindo ? "Gerando…" : "Ouvir"}
+        </button>
+        <button type="button" className="botao botao-primario" disabled={salvar.isPending} onClick={() => salvar.mutate()}>
+          Usar esta voz
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -368,7 +455,7 @@ export default function Integracoes() {
   const urlWebhook = `${location.origin}/api/webhooks/fathom`;
 
   const fontes = (["central", "claude", "fathom", "google", "notion", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
-  const ia = (["deepseek", "embeddings", "voz"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
+  const ia = (["deepseek", "embeddings", "voz", "fala"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
 
   return (
     <div className={`${pg.pagina} ${pg.estreita}`}>
@@ -482,7 +569,9 @@ export default function Integracoes() {
             <h2 id="t-ia">Inteligência artificial</h2>
             <ul className={`lista cartao ${css.lista}`}>
               {ia.map((s) => (
-                <Linha key={s.nome} s={s} />
+                <Linha key={s.nome} s={s}>
+                  {s.nome === "fala" && s.estado === "ativo" && admin && <EscolherVoz />}
+                </Linha>
               ))}
             </ul>
             <p className="ajuda">Dados pessoais (CPF, telefone, PIX, placas, e-mails) são mascarados antes de qualquer envio à IA.</p>

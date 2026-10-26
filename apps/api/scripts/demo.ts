@@ -170,13 +170,13 @@ const ACERVO: Semente[] = [
   ["pop", "financeiro", "Faturamento quinzenal de clientes", null, "Gerar o relatório de entregas por cliente, conferir SLA e espera cobrada, emitir nota e enviar o faturamento."],
   ["indicador", "financeiro", "Custo por entrega", null, "Custo total da operação dividido pelo número de entregas no mês. Meta: abaixo da tabela de preço por km."],
   ["indicador", "operacoes", "SLA de coleta por cliente", null, "Percentual de coletas feitas dentro da janela combinada com cada cliente. Meta: 95% no mês."],
-  ["indicador", "operacoes", "Taxa de falta de motoboy", null, "Faltas não avisadas dividido pelo total de escalas do mês. Usado na política de multa por atraso."],
+  ["indicador", "operacoes", "Taxa de falta de motoboy", null, "Faltas não avisadas dividido pelo total de escalas do mês. Usado na regra de multa por atraso."],
   ["sistema", "tecnologia", "Central Tutts — módulo de solicitações", null, "Onde a loja pede ajuste de entrega. Erro comum: solicitação sem endereço completo trava a roteirização."],
   ["sistema", "tecnologia", "Roteirizador", null, "Agrupa entregas por região com o OpenRouteService. Se o geocoding falhar, corrigir o endereço na Central."],
   ["sistema", "tecnologia", "Agente de correção de endereços", null, "Automação que corrige endereços no sistema legado. Verificar a fila do agente quando a roteirização falhar."],
   ["pop", "tecnologia", "Endereço que não geocodifica", null, "Conferir CEP e número, corrigir na Central, acionar o agente de correção de endereços e roteirizar de novo."],
   ["pop", "pessoas", "Recrutamento de motoboy", null, "Divulgar a vaga, aplicar o teste DISC, conferir documentos da moto e agendar integração com o supervisor."],
-  ["pop", "pessoas", "Integração de novo motoboy", null, "Apresentar os POPs de coleta e entrega, uniforme e colete, uso do aplicativo e a política de multa por atraso."],
+  ["pop", "pessoas", "Integração de novo motoboy", null, "Apresentar os POPs de coleta e entrega, uniforme e colete, uso do aplicativo e a regra de multa por atraso."],
   ["politica", "pessoas", "Uniforme e identificação", null, "Colete e crachá obrigatórios em toda coleta e entrega. Sem uniforme, o motoboy não inicia o turno."],
   ["decisao", "pessoas", "Bônus mensal de supervisores", null, "Bônus por SLA de coleta acima de 95% e taxa de falta abaixo de 3% na praça do supervisor."],
   ["pop", "marketing", "Post de recrutamento nas redes", null, "Publicar a vaga de motoboy com a arte padrão, regiões com vaga aberta e link da página de recrutamento."],
@@ -185,7 +185,7 @@ const ACERVO: Semente[] = [
   ["pop", "atendimento", "Retorno ao cliente após ocorrência", null, "Retornar à loja com a causa da ocorrência, o que foi feito e como evitar, em até 24 horas."],
   ["decisao", "gestao", "Reunião semanal de supervisores", null, "Toda segunda às 14h, pauta: faltas, ocorrências da semana, SLA por cliente e lacunas do Cérebro."],
   ["nota", "gestao", "Prioridades do trimestre", null, "Reduzir a taxa de falta de motoboy, subir o SLA de coleta e documentar os POPs que mais geram dúvida."],
-  ["politica", "gestao", "Aprovação de exceções pelo CEO", null, "Substituto em alocação fixa, desconto de tabela e multa fora da política precisam de aprovação do CEO."],
+  ["politica", "gestao", "Aprovação de exceções pelo CEO", null, "Substituto em alocação fixa, desconto de tabela e multa fora da regra precisam de aprovação do CEO."],
 ];
 
 const criados = new Map<string, string>();

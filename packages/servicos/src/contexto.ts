@@ -5,9 +5,11 @@ import { auditoria, type Canal, type Executor, type Pool } from "@cerebro/db";
 import {
   EmbeddingsGemini,
   ProvedorCompativelOpenAI,
+  FalaCompativelOpenAI,
   TranscricaoCompativelOpenAI,
   type ProvedorEmbeddings,
   type ProvedorTexto,
+  type ProvedorFala,
   type ProvedorTranscricao,
 } from "@cerebro/ia";
 import { ClienteGoogleAgenda, ClienteNotion, type ConfigImap } from "@cerebro/integracoes";
@@ -43,6 +45,8 @@ export interface Contexto {
   central: PoolLeitura | null;
   /** Whisper para o Argos. `null` = sem voz (o Argos ainda aceita texto digitado). */
   voz: ProvedorTranscricao | null;
+  /** Voz do Argos gerada no servidor (texto → áudio). */
+  fala: ProvedorFala | null;
   cofre: Cofre | null;
   google: ClienteGoogleAgenda | null;
   notion: ClienteNotion | null;
@@ -79,6 +83,9 @@ export function criarContexto(pool: Pool, ambiente: Ambiente, log: Log): Context
     central: ambiente.ARGOS_DB_SENHA ? criarPoolLeitura(ambiente.DATABASE_URL, ambiente.ARGOS_DB_SENHA, ambiente.DATABASE_SSL) : null,
     voz: ambiente.GROQ_CHAVE
       ? new TranscricaoCompativelOpenAI({ baseUrl: ambiente.VOZ_BASE_URL, chave: ambiente.GROQ_CHAVE, modelo: ambiente.VOZ_MODELO })
+      : null,
+    fala: ambiente.OPENAI_CHAVE
+      ? new FalaCompativelOpenAI({ baseUrl: ambiente.FALA_BASE_URL, chave: ambiente.OPENAI_CHAVE, modelo: ambiente.FALA_MODELO })
       : null,
     cofre: ambiente.CEREBRO_CHAVE_CIFRA ? new Cofre(ambiente.CEREBRO_CHAVE_CIFRA) : null,
     google:

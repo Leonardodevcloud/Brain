@@ -1,14 +1,35 @@
-import { NOME_AREA, type Area, type MapaDTO, type TipoRegistro } from "@cerebro/core/publico";
+import {
+  NOME_AREA,
+  type Area,
+  type MapaDTO,
+  type TipoRegistro,
+} from "@cerebro/core/publico";
 import { useQuery } from "@tanstack/react-query";
 import { forceCollide, forceX, forceY } from "d3-force";
-import { ArrowRight, Maximize2, Minus, Plus, Search, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  ArrowRight,
+  Maximize2,
+  MessageCircle,
+  Minus,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api/cliente";
 import { MensagemErro, useAtalho } from "../../componentes/comum";
 import { NOME_STATUS, nomeTipo, relativo } from "../../util/formato";
-import { COR_AREA, COR_CLIENTE, COR_REVISAR } from "./cores";
+import { COR_CLIENTE, COR_HUB, COR_HUD, COR_REVISAR, COR_TIPO } from "./cores";
 import {
   areaDeClique,
   corDaLigacao,
@@ -36,18 +57,18 @@ const NOME_LIGACAO: Record<string, string> = {
 // Folga ao enquadrar, para nada ficar sob o topo, a legenda ou o zoom (menor no celular).
 const ehCelular = () => window.innerWidth <= 860;
 const margemEnquadrar = () => (ehCelular() ? 36 : 120);
-const LARGURA_PAINEL = 360;
+const LARGURA_PAINEL = 380;
 
 const normalizarBusca = (t: string) =>
-  t
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+  t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-const escaparHtml = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const escaparHtml = (t: string) =>
+  t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function useMovimentoReduzido() {
-  const [reduzido, setReduzido] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const [reduzido, setReduzido] = useState(
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   useEffect(() => {
     const m = window.matchMedia("(prefers-reduced-motion: reduce)");
     const ouvir = () => setReduzido(m.matches);
@@ -63,7 +84,11 @@ function useTamanho<T extends HTMLElement>() {
   useLayoutEffect(() => {
     if (!ref.current) return;
     const obs = new ResizeObserver(([e]) => {
-      if (e) setTamanho({ largura: Math.round(e.contentRect.width), altura: Math.round(e.contentRect.height) });
+      if (e)
+        setTamanho({
+          largura: Math.round(e.contentRect.width),
+          altura: Math.round(e.contentRect.height),
+        });
     });
     obs.observe(ref.current);
     return () => obs.disconnect();
@@ -72,7 +97,11 @@ function useTamanho<T extends HTMLElement>() {
 }
 
 export default function Mapa() {
-  const consulta = useQuery({ queryKey: ["mapa"], queryFn: () => api<MapaDTO>("/mapa"), staleTime: 15_000 });
+  const consulta = useQuery({
+    queryKey: ["mapa"],
+    queryFn: () => api<MapaDTO>("/mapa"),
+    staleTime: 15_000,
+  });
   const movimentoReduzido = useMovimentoReduzido();
   const movimento = !movimentoReduzido;
   const grafo = useRef<ForceGraphMethods<No, Ligacao> | undefined>(undefined);
@@ -86,6 +115,25 @@ export default function Mapa() {
   const [areasOcultas, setAreasOcultas] = useState<Set<Area>>(new Set());
   const [verParecidos, setVerParecidos] = useState(true);
   const [verRascunhos, setVerRascunhos] = useState(true);
+  // Legenda aberta ou recolhida: lembrada neste navegador.
+  const [legendaAberta, setLegendaAberta] = useState(() => {
+    try {
+      return (
+        localStorage.getItem("cerebro.mapa.legenda") !== "0" && !ehCelular()
+      );
+    } catch {
+      return !ehCelular();
+    }
+  });
+  const alternarLegenda = () =>
+    setLegendaAberta((v) => {
+      try {
+        localStorage.setItem("cerebro.mapa.legenda", v ? "0" : "1");
+      } catch {
+        /* sem armazenamento: vale só agora */
+      }
+      return !v;
+    });
 
   // Objetos estáveis entre recargas e filtros: a simulação mantém as posições.
   const cacheNos = useRef(new Map<string, No>());
@@ -98,7 +146,11 @@ export default function Mapa() {
       cacheNos.current.set(n.id, novo);
       return novo;
     });
-    return { nos, ligacoes: d.ligacoes.map((l) => ({ ...l }) as Ligacao), dados: d };
+    return {
+      nos,
+      ligacoes: d.ligacoes.map((l) => ({ ...l }) as Ligacao),
+      dados: d,
+    };
   }, [consulta.data]);
 
   const visiveis = useMemo(() => {
@@ -113,11 +165,19 @@ export default function Mapa() {
       ok.add(n.id);
     }
     const links = todos.ligacoes.filter(
-      (l) => ok.has(idDe(l.origem)) && ok.has(idDe(l.destino)) && (verParecidos || l.tipo !== "semelhante"),
+      (l) =>
+        ok.has(idDe(l.origem)) &&
+        ok.has(idDe(l.destino)) &&
+        (verParecidos || l.tipo !== "semelhante"),
     );
     // Clientes sem nenhum registro visível somem.
-    const comLigacao = new Set(links.flatMap((l) => [idDe(l.origem), idDe(l.destino)]));
-    const nodes = todos.nos.filter((n) => ok.has(n.id) && (n.categoria !== "cliente" || comLigacao.has(n.id)));
+    const comLigacao = new Set(
+      links.flatMap((l) => [idDe(l.origem), idDe(l.destino)]),
+    );
+    const nodes = todos.nos.filter(
+      (n) =>
+        ok.has(n.id) && (n.categoria !== "cliente" || comLigacao.has(n.id)),
+    );
     return { nodes, links };
   }, [todos, tipos, areasOcultas, verParecidos, verRascunhos]);
 
@@ -141,13 +201,19 @@ export default function Mapa() {
   }, [foco, vizinhos]);
 
   // O desenho lê um ref: muda a cada quadro sem recriar as funções do grafo.
-  const estado = useRef<EstadoDesenho>({ destaque, selecionado, pulso: 0, movimento });
+  const estado = useRef<EstadoDesenho>({
+    destaque,
+    selecionado,
+    tempo: 0,
+    movimento,
+  });
   estado.current.destaque = destaque;
   estado.current.selecionado = selecionado;
   estado.current.movimento = movimento;
 
   const ligacaoEmFoco = useCallback(
-    (l: Ligacao) => foco !== null && (idDe(l.origem) === foco || idDe(l.destino) === foco),
+    (l: Ligacao) =>
+      foco !== null && (idDe(l.origem) === foco || idDe(l.destino) === foco),
     [foco],
   );
 
@@ -156,11 +222,21 @@ export default function Mapa() {
     const g = grafo.current;
     if (!g || !visiveis.nodes.length) return;
     g.d3Force("charge")
-      ?.strength((n: No) => (n.categoria === "area" ? -200 : n.categoria === "cliente" ? -70 : -34))
+      ?.strength((n: No) =>
+        n.categoria === "area" ? -200 : n.categoria === "cliente" ? -70 : -34,
+      )
       .distanceMax(420);
     g.d3Force("link")
-      ?.distance((l: Ligacao) => (l.tipo === "area" ? 34 + Math.random() * 18 : l.tipo === "semelhante" ? 70 : 52))
-      .strength((l: Ligacao) => (l.tipo === "area" ? 0.55 : l.tipo === "semelhante" ? 0.12 : 0.35));
+      ?.distance((l: Ligacao) =>
+        l.tipo === "area"
+          ? 34 + Math.random() * 18
+          : l.tipo === "semelhante"
+            ? 70
+            : 52,
+      )
+      .strength((l: Ligacao) =>
+        l.tipo === "area" ? 0.55 : l.tipo === "semelhante" ? 0.12 : 0.35,
+      );
     g.d3Force("collide", forceCollide<No>((n) => raio(n) + 2.5).iterations(2));
     // Gravidade leve: mantém ilhas soltas perto do conjunto.
     g.d3Force("x", forceX<No>(0).strength(0.045));
@@ -173,10 +249,13 @@ export default function Mapa() {
   const assentou = useRef(false);
   useEffect(() => {
     if (!visiveis.nodes.length || enquadrado.current) return;
-    const t = setTimeout(() => {
-      grafo.current?.zoomToFit(movimento ? 900 : 0, margemEnquadrar());
-      enquadrado.current = true;
-    }, movimento ? 1400 : 50);
+    const t = setTimeout(
+      () => {
+        grafo.current?.zoomToFit(movimento ? 900 : 0, margemEnquadrar());
+        enquadrado.current = true;
+      },
+      movimento ? 1400 : 50,
+    );
     return () => clearTimeout(t);
   }, [visiveis, movimento]);
 
@@ -202,51 +281,92 @@ export default function Mapa() {
   const focoUrl = params.get("foco");
   useEffect(() => {
     if (!focoUrl || !visiveis.nodes.length) return;
-    const t = setTimeout(() => {
-      irPara(focoUrl);
-      setParams({}, { replace: true });
-    }, movimento ? 1900 : 100);
+    const t = setTimeout(
+      () => {
+        irPara(focoUrl);
+        setParams({}, { replace: true });
+      },
+      movimento ? 1900 : 100,
+    );
     return () => clearTimeout(t);
   }, [focoUrl, visiveis, irPara, setParams, movimento]);
 
-  const enquadrar = useCallback(() => grafo.current?.zoomToFit(movimento ? 600 : 0, margemEnquadrar()), [movimento]);
-  useAtalho("/", useCallback(() => campoBusca.current?.focus(), []));
+  const enquadrar = useCallback(
+    () => grafo.current?.zoomToFit(movimento ? 600 : 0, margemEnquadrar()),
+    [movimento],
+  );
+  useAtalho(
+    "/",
+    useCallback(() => campoBusca.current?.focus(), []),
+  );
   useAtalho("f", enquadrar);
-  useAtalho("Escape", useCallback(() => setSelecionado(null), []));
+  useAtalho(
+    "Escape",
+    useCallback(() => setSelecionado(null), []),
+  );
 
   const resultados = useMemo(() => {
     const q = normalizarBusca(busca.trim());
     if (q.length < 2 || !todos) return [];
     return todos.nos
-      .filter((n) => normalizarBusca(`${n.codigo ?? ""} ${n.rotulo}`).includes(q))
+      .filter((n) =>
+        normalizarBusca(`${n.codigo ?? ""} ${n.rotulo}`).includes(q),
+      )
       .sort((a, b) => b.grau - a.grau)
       .slice(0, 8);
   }, [busca, todos]);
 
-  const desenhar = useCallback((no: No, ctx: CanvasRenderingContext2D, escala: number) => desenharNo(no, ctx, escala, estado.current), []);
+  const desenhar = useCallback(
+    (no: No, ctx: CanvasRenderingContext2D, escala: number) =>
+      desenharNo(no, ctx, escala, estado.current),
+    [],
+  );
   const antesDoQuadro = useCallback(() => {
-    if (estado.current.movimento) estado.current.pulso = (Math.sin(performance.now() / 1300) + 1) / 2;
+    if (estado.current.movimento)
+      estado.current.tempo = performance.now() / 1000;
   }, []);
 
   if (consulta.isError) {
     return (
       <div className={css.tela}>
         <div className={css.centro}>
-          <MensagemErro erro={consulta.error} aoTentar={() => void consulta.refetch()} />
+          <MensagemErro
+            erro={consulta.error}
+            aoTentar={() => void consulta.refetch()}
+          />
         </div>
       </div>
     );
   }
 
   const d = todos?.dados;
-  const totalRegistros = d?.nos.filter((n) => n.categoria === "registro").length ?? 0;
-  const areasPresentes = [...new Set(d?.nos.filter((n) => n.categoria === "area").map((n) => n.area!) ?? [])];
-  const tiposPresentes = [...new Set(d?.nos.filter((n) => n.tipo).map((n) => n.tipo!) ?? [])];
-  const noSelecionado = selecionado ? cacheNos.current.get(selecionado) : undefined;
+  const totalRegistros =
+    d?.nos.filter((n) => n.categoria === "registro").length ?? 0;
+  const areasPresentes = [
+    ...new Set(
+      d?.nos.filter((n) => n.categoria === "area").map((n) => n.area!) ?? [],
+    ),
+  ];
+  const tiposPresentes = [
+    ...new Set(d?.nos.filter((n) => n.tipo).map((n) => n.tipo!) ?? []),
+  ];
+  const noSelecionado = selecionado
+    ? cacheNos.current.get(selecionado)
+    : undefined;
+  const totalConexoes =
+    d?.ligacoes.filter((l) => l.tipo !== "area").length ?? 0;
+  const contagemTipo = new Map<TipoRegistro, number>();
+  for (const n of d?.nos ?? [])
+    if (n.tipo) contagemTipo.set(n.tipo, (contagemTipo.get(n.tipo) ?? 0) + 1);
 
   return (
     <div className={css.tela}>
-      <div ref={moldura} className={css.canvas} aria-label="Mapa do conhecimento: registros ligados por área, cliente e assunto" role="img">
+      <div
+        ref={moldura}
+        className={css.canvas}
+        aria-label="Mapa do conhecimento: registros ligados por área, cliente e assunto"
+        role="img"
+      >
         {tamanho.largura > 0 && visiveis.nodes.length > 0 && (
           <ForceGraph2D<No, Ligacao>
             ref={grafo}
@@ -270,42 +390,66 @@ export default function Mapa() {
                 : ""
             }
             linkColor={(l) => corDaLigacao(l, destaque, ligacaoEmFoco(l))}
-            linkWidth={(l) => (ligacaoEmFoco(l) ? 1.6 : ehRelacaoExplicita(l) ? 1.1 : 0.6)}
+            linkWidth={(l) =>
+              ligacaoEmFoco(l) ? 1.6 : ehRelacaoExplicita(l) ? 1.1 : 0.6
+            }
             linkLineDash={(l) => (l.tipo === "semelhante" ? [3, 3] : null)}
             linkCurvature={(l) => (l.tipo === "semelhante" ? 0.18 : 0)}
-            linkDirectionalArrowLength={(l) => (ehRelacaoExplicita(l) ? 3.2 : 0)}
+            linkDirectionalArrowLength={(l) =>
+              ehRelacaoExplicita(l) ? 3.2 : 0
+            }
             linkDirectionalArrowRelPos={0.92}
-            linkDirectionalParticles={(l) => (movimento && ligacaoEmFoco(l) ? 2 : 0)}
-            linkDirectionalParticleWidth={2.2}
-            linkDirectionalParticleSpeed={0.006}
-            linkDirectionalParticleColor={(l) => corDoNo(typeof l.origem === "string" ? ({} as No) : l.origem)}
+            linkDirectionalParticles={(l) =>
+              movimento && ligacaoEmFoco(l) ? 3 : 0
+            }
+            linkDirectionalParticleWidth={2.4}
+            linkDirectionalParticleSpeed={0.007}
+            linkDirectionalParticleColor={() => "#EDE9FE"}
             onRenderFramePre={antesDoQuadro}
             onEngineStop={() => {
               if (assentou.current) return;
               assentou.current = true;
-              if (!selecionado) grafo.current?.zoomToFit(movimento ? 700 : 0, margemEnquadrar());
+              if (!selecionado)
+                grafo.current?.zoomToFit(
+                  movimento ? 700 : 0,
+                  margemEnquadrar(),
+                );
             }}
             onNodeHover={(n) => {
               setApontado(n?.id ?? null);
-              if (moldura.current) moldura.current.style.cursor = n ? "pointer" : "grab";
+              if (moldura.current)
+                moldura.current.style.cursor = n ? "pointer" : "grab";
             }}
-            onNodeClick={(n) => irPara(n.id, n.categoria === "area" ? 1.8 : 2.8)}
+            onNodeClick={(n) =>
+              irPara(n.id, n.categoria === "area" ? 1.8 : 2.8)
+            }
             onBackgroundClick={() => setSelecionado(null)}
           />
         )}
       </div>
 
-      {/* ── Topo: título, busca e filtros ── */}
-      <div className={`${css.topo} ${noSelecionado ? css.topoComPainel : ""}`}>
-        <div className={css.cabecalho}>
-          <h1 className={css.titulo}>Mapa</h1>
-          <p className={css.resumo}>
-            {d
-              ? `${totalRegistros} registros · ${d.ligacoes.filter((l) => l.tipo !== "area").length} conexões · ${
-                  d.semelhanca === "embeddings" ? "parecidos por sentido" : d.semelhanca === "texto" ? "parecidos por palavras" : "sem semelhança"
-                }`
-              : "Montando o mapa…"}
-          </p>
+      {/* Varredura do HUD: uma faixa de luz descendo devagar. */}
+      {movimento && <div className={css.varredura} aria-hidden="true" />}
+
+      {/* ── Barra do HUD: marca, busca, filtros e números ── */}
+      <header className={css.topo}>
+        <div className={css.marca}>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={COR_HUD}
+            strokeWidth="1.6"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <circle cx="12" cy="12" r="9" strokeDasharray="3 3" />
+            <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+          </svg>
+          <h1 className={css.titulo}>
+            CÉREBRO<span className={css.barras}> // </span>MAPA
+          </h1>
         </div>
 
         <div className={css.busca}>
@@ -317,7 +461,7 @@ export default function Mapa() {
             ref={campoBusca}
             id="busca-mapa"
             className={css.entradaBusca}
-            placeholder="Encontrar no mapa"
+            placeholder="Buscar nó, código ou cliente…"
             value={busca}
             autoComplete="off"
             onChange={(e) => setBusca(e.target.value)}
@@ -335,7 +479,11 @@ export default function Mapa() {
           />
           <kbd className={css.tecla}>/</kbd>
           {resultados.length > 0 && (
-            <ul className={css.resultados} role="listbox" aria-label="Resultados">
+            <ul
+              className={css.resultados}
+              role="listbox"
+              aria-label="Resultados"
+            >
               {resultados.map((n) => (
                 <li key={n.id}>
                   <button
@@ -348,9 +496,16 @@ export default function Mapa() {
                       setBusca("");
                     }}
                   >
-                    <span className={css.bolinha} style={{ background: corDoNo(n) }} aria-hidden="true" />
+                    <span
+                      className={css.bolinha}
+                      style={{ background: corDoNo(n) }}
+                      aria-hidden="true"
+                    />
                     <span className={css.resultadoTexto}>{n.rotulo}</span>
-                    <span className={css.resultadoMeta}>{n.codigo ?? (n.categoria === "area" ? "Área" : "Cliente")}</span>
+                    <span className={css.resultadoMeta}>
+                      {n.codigo ??
+                        (n.categoria === "area" ? "Área" : "Cliente")}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -360,7 +515,7 @@ export default function Mapa() {
 
         <div className={css.filtros} role="group" aria-label="Filtrar por tipo">
           <Pilula ativa={tipos.size === 0} onClick={() => setTipos(new Set())}>
-            Todos
+            Tudo
           </Pilula>
           {tiposPresentes.map((t) => (
             <Pilula
@@ -379,71 +534,175 @@ export default function Mapa() {
             </Pilula>
           ))}
           <span className={css.separador} aria-hidden="true" />
-          <Pilula ativa={verParecidos} onClick={() => setVerParecidos((v) => !v)}>
+          <Pilula
+            ativa={verParecidos}
+            onClick={() => setVerParecidos((v) => !v)}
+          >
             Parecidos
           </Pilula>
-          <Pilula ativa={verRascunhos} onClick={() => setVerRascunhos((v) => !v)}>
+          <Pilula
+            ativa={verRascunhos}
+            onClick={() => setVerRascunhos((v) => !v)}
+          >
             Rascunhos
           </Pilula>
         </div>
-      </div>
 
-      {/* ── Legenda: áreas (clicáveis) e símbolos ── */}
+        <p className={css.numeros} aria-live="polite">
+          {d ? (
+            <>
+              <span>
+                <b>{totalRegistros}</b> NÓS
+              </span>
+              <span>
+                <b>{totalConexoes}</b> CONEXÕES
+              </span>
+              <span className={css.sincronia}>
+                <i className={css.pontoVivo} aria-hidden="true" />
+                {d.semelhanca === "embeddings"
+                  ? "POR SENTIDO"
+                  : d.semelhanca === "texto"
+                    ? "POR PALAVRAS"
+                    : "SEM SEMELHANÇA"}{" "}
+                ·{" "}
+                {new Date(d.geradoEm).toLocaleTimeString("pt-BR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </>
+          ) : (
+            "MONTANDO O MAPA…"
+          )}
+        </p>
+      </header>
+
+      {/* ── Legenda: tipos (contagem), áreas (clicáveis) e símbolos ── */}
       {areasPresentes.length > 0 && (
         <div className={css.legenda}>
-          <div className={css.areas} role="group" aria-label="Mostrar ou esconder áreas">
-            {areasPresentes.map((a) => {
-              const oculta = areasOcultas.has(a);
-              return (
-                <button
-                  key={a}
-                  type="button"
-                  className={`${css.area} ${oculta ? css.areaOculta : ""}`}
-                  aria-pressed={!oculta}
-                  onClick={() =>
-                    setAreasOcultas((atual) => {
-                      const n = new Set(atual);
-                      if (n.has(a)) n.delete(a);
-                      else n.add(a);
-                      return n;
-                    })
-                  }
-                >
-                  <span className={css.bolinha} style={{ background: COR_AREA[a] }} aria-hidden="true" />
-                  {NOME_AREA[a]}
-                </button>
-              );
-            })}
+          <div className={css.legendaTopo}>
+            <span className={css.legendaTitulo}>TIPOS</span>
+            <button
+              type="button"
+              className={css.recolher}
+              aria-expanded={legendaAberta}
+              onClick={() => alternarLegenda()}
+            >
+              {legendaAberta ? "RECOLHER" : "LEGENDA"}
+            </button>
           </div>
-          <div className={css.simbolos} aria-hidden="true">
-            <span>
-              <i className={css.simVigente} /> Vigente
-            </span>
-            <span>
-              <i className={css.simRascunho} /> Rascunho
-            </span>
-            <span>
-              <i className={css.simRevisar} style={{ borderColor: COR_REVISAR }} /> Revisar
-            </span>
-            <span>
-              <i className={css.simCliente} style={{ background: COR_CLIENTE }} /> Cliente
-            </span>
-            <span>
-              <i className={css.simParecido} /> Parecido
-            </span>
+          <div className={css.tiposLegenda}>
+            {tiposPresentes.map((t) => (
+              <span key={t} className={css.tipoLegenda}>
+                <span
+                  className={css.bolinha}
+                  style={{ background: COR_TIPO[t] }}
+                  aria-hidden="true"
+                />
+                {nomeTipo(t)} · {contagemTipo.get(t) ?? 0}
+              </span>
+            ))}
           </div>
+          {legendaAberta && (
+            <>
+              <span className={css.legendaTitulo}>ÁREAS</span>
+              <div
+                className={css.areas}
+                role="group"
+                aria-label="Mostrar ou esconder áreas"
+              >
+                {areasPresentes.map((a) => {
+                  const oculta = areasOcultas.has(a);
+                  return (
+                    <button
+                      key={a}
+                      type="button"
+                      className={`${css.area} ${oculta ? css.areaOculta : ""}`}
+                      aria-pressed={!oculta}
+                      onClick={() =>
+                        setAreasOcultas((atual) => {
+                          const n = new Set(atual);
+                          if (n.has(a)) n.delete(a);
+                          else n.add(a);
+                          return n;
+                        })
+                      }
+                    >
+                      <span
+                        className={css.bolinha}
+                        style={{ background: COR_HUB }}
+                        aria-hidden="true"
+                      />
+                      {NOME_AREA[a]}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className={css.simbolos} aria-hidden="true">
+                <span>
+                  <i className={css.simVigente} /> Vigente
+                </span>
+                <span>
+                  <i className={css.simRascunho} /> Rascunho
+                </span>
+                <span>
+                  <i
+                    className={css.simRevisar}
+                    style={{ outlineColor: COR_REVISAR }}
+                  />{" "}
+                  Revisar
+                </span>
+                <span>
+                  <i
+                    className={css.simCliente}
+                    style={{ background: COR_CLIENTE }}
+                  />{" "}
+                  Cliente
+                </span>
+                <span>
+                  <i className={css.simParecido} /> Parecido
+                </span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {/* ── Zoom ── */}
-      <div className={css.zoom} role="group" aria-label="Zoom">
-        <button type="button" className={css.botaoZoom} title="Aproximar" aria-label="Aproximar" onClick={() => grafo.current?.zoom((grafo.current.zoom() ?? 1) * 1.4, 250)}>
+      <div
+        className={`${css.zoom} ${noSelecionado ? css.zoomComPainel : ""}`}
+        role="group"
+        aria-label="Zoom"
+      >
+        <button
+          type="button"
+          className={css.botaoZoom}
+          title="Aproximar"
+          aria-label="Aproximar"
+          onClick={() =>
+            grafo.current?.zoom((grafo.current.zoom() ?? 1) * 1.4, 250)
+          }
+        >
           <Plus size={16} aria-hidden="true" />
         </button>
-        <button type="button" className={css.botaoZoom} title="Afastar" aria-label="Afastar" onClick={() => grafo.current?.zoom((grafo.current.zoom() ?? 1) / 1.4, 250)}>
+        <button
+          type="button"
+          className={css.botaoZoom}
+          title="Afastar"
+          aria-label="Afastar"
+          onClick={() =>
+            grafo.current?.zoom((grafo.current.zoom() ?? 1) / 1.4, 250)
+          }
+        >
           <Minus size={16} aria-hidden="true" />
         </button>
-        <button type="button" className={css.botaoZoom} title="Enquadrar tudo (F)" aria-label="Enquadrar tudo" onClick={enquadrar}>
+        <button
+          type="button"
+          className={css.botaoZoom}
+          title="Enquadrar tudo (F)"
+          aria-label="Enquadrar tudo"
+          onClick={enquadrar}
+        >
           <Maximize2 size={15} aria-hidden="true" />
         </button>
       </div>
@@ -457,7 +716,9 @@ export default function Mapa() {
       )}
       {d && totalRegistros === 0 && (
         <div className={css.centro}>
-          <p className={css.vazioTitulo}>O mapa aparece quando houver registros.</p>
+          <p className={css.vazioTitulo}>
+            O mapa aparece quando houver registros.
+          </p>
           <Link to="/registros/novo" className="botao botao-primario">
             Escrever o primeiro POP
           </Link>
@@ -483,7 +744,9 @@ export default function Mapa() {
       {noSelecionado && (
         <Painel
           no={noSelecionado}
-          vizinhos={[...(vizinhos.get(noSelecionado.id) ?? [])].map((id) => cacheNos.current.get(id)!).filter(Boolean)}
+          vizinhos={[...(vizinhos.get(noSelecionado.id) ?? [])]
+            .map((id) => cacheNos.current.get(id)!)
+            .filter(Boolean)}
           ligacoes={visiveis.links}
           aoFechar={() => setSelecionado(null)}
           aoIr={(id) => irPara(id)}
@@ -493,9 +756,22 @@ export default function Mapa() {
   );
 }
 
-function Pilula({ ativa, onClick, children }: { ativa: boolean; onClick: () => void; children: ReactNode }) {
+function Pilula({
+  ativa,
+  onClick,
+  children,
+}: {
+  ativa: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
   return (
-    <button type="button" className={`${css.pilula} ${ativa ? css.pilulaAtiva : ""}`} aria-pressed={ativa} onClick={onClick}>
+    <button
+      type="button"
+      className={`${css.pilula} ${ativa ? css.pilulaAtiva : ""}`}
+      aria-pressed={ativa}
+      onClick={onClick}
+    >
       {children}
     </button>
   );
@@ -515,7 +791,15 @@ function Painel({
   aoIr: (id: string) => void;
 }) {
   // Como cada vizinho se liga a este nó (a relação mais forte vence).
-  const prioridade = ["substitui", "contradiz", "implementa", "referencia", "cliente", "semelhante", "area"];
+  const prioridade = [
+    "substitui",
+    "contradiz",
+    "implementa",
+    "referencia",
+    "cliente",
+    "semelhante",
+    "area",
+  ];
   const tipoCom = new Map<string, string>();
   for (const l of ligacoes) {
     const a = idDe(l.origem);
@@ -523,44 +807,121 @@ function Painel({
     const outro = a === no.id ? b : b === no.id ? a : null;
     if (!outro) continue;
     const atual = tipoCom.get(outro);
-    if (!atual || prioridade.indexOf(l.tipo) < prioridade.indexOf(atual)) tipoCom.set(outro, l.tipo);
+    if (!atual || prioridade.indexOf(l.tipo) < prioridade.indexOf(atual))
+      tipoCom.set(outro, l.tipo);
   }
   const lista = vizinhos
     .filter((v) => no.categoria !== "registro" || v.categoria !== "area")
-    .sort((a, b) => prioridade.indexOf(tipoCom.get(a.id) ?? "area") - prioridade.indexOf(tipoCom.get(b.id) ?? "area") || b.grau - a.grau);
+    .sort(
+      (a, b) =>
+        prioridade.indexOf(tipoCom.get(a.id) ?? "area") -
+          prioridade.indexOf(tipoCom.get(b.id) ?? "area") || b.grau - a.grau,
+    );
   const cor = corDoNo(no);
+  const meta =
+    no.categoria === "registro"
+      ? `${no.codigo}`
+      : no.categoria === "area"
+        ? "ÁREA"
+        : "CLIENTE";
+  const perguntar = () =>
+    window.dispatchEvent(
+      new CustomEvent("argos:perguntar", {
+        detail:
+          no.categoria === "registro"
+            ? `Me explica o ${no.codigo}, ${no.rotulo}, e o que ele tem a ver com a operação hoje.`
+            : no.categoria === "cliente"
+              ? `Como está o cliente ${no.rotulo}? Entregas, SLA e o que temos registrado sobre ele.`
+              : `Resume o que temos registrado sobre a área ${no.rotulo}.`,
+      }),
+    );
 
   return (
     <aside className={css.painel} aria-label={`Detalhes de ${no.rotulo}`}>
+      <span className={css.canto} aria-hidden="true" />
+      <span className={css.cantoFim} aria-hidden="true" />
       <div className={css.painelTopo}>
-        <span className={css.painelMeta}>
-          <span className={css.bolinha} style={{ background: cor }} aria-hidden="true" />
-          {no.categoria === "registro" ? `${no.codigo} · ${nomeTipo(no.tipo!)}` : no.categoria === "area" ? "Área" : "Cliente"}
+        <span className={css.painelMeta}>NÓ SELECIONADO</span>
+        <span className={css.painelCodigo} style={{ color: cor }}>
+          {meta}
         </span>
-        <button type="button" className={css.fechar} onClick={aoFechar} aria-label="Fechar">
+        <button
+          type="button"
+          className={css.fechar}
+          onClick={aoFechar}
+          aria-label="Fechar"
+        >
           <X size={16} aria-hidden="true" />
         </button>
       </div>
       <h2 className={css.painelTitulo}>{no.rotulo}</h2>
-      {no.categoria === "registro" && (
-        <p className={css.painelInfo}>
-          {NOME_STATUS[no.status!]} · {NOME_AREA[no.area!]}
-          {no.atualizadoEm && ` · atualizado ${relativo(no.atualizadoEm)}`}
-          {no.restrito && " · Restrito"}
-        </p>
-      )}
-      {no.categoria !== "registro" && <p className={css.painelInfo}>{lista.length} registros ligados</p>}
+      <div className={css.etiquetas}>
+        {no.categoria === "registro" && (
+          <>
+            <span
+              className={css.etiqueta}
+              style={{
+                color: cor,
+                borderColor: `${cor}55`,
+                background: `${cor}1f`,
+              }}
+            >
+              {nomeTipo(no.tipo!)}
+            </span>
+            <span className={css.etiqueta}>{NOME_STATUS[no.status!]}</span>
+            <span className={css.etiqueta}>{NOME_AREA[no.area!]}</span>
+            {no.restrito && <span className={css.etiqueta}>Restrito</span>}
+          </>
+        )}
+        {no.categoria !== "registro" && (
+          <span className={css.etiqueta}>{lista.length} registros ligados</span>
+        )}
+      </div>
+
+      <div className={css.metricas}>
+        <div className={css.metrica}>
+          <span>CONEXÕES</span>
+          <b>{lista.length}</b>
+        </div>
+        <div className={css.metrica}>
+          <span>GRAU</span>
+          <b>{no.grau}</b>
+        </div>
+        <div className={css.metrica}>
+          <span>ATUALIZADO</span>
+          <b className={css.metricaTexto}>
+            {no.atualizadoEm ? relativo(no.atualizadoEm) : "—"}
+          </b>
+        </div>
+      </div>
 
       {lista.length > 0 && (
         <>
-          <h3 className={css.painelSecao}>{no.categoria === "registro" ? "Conexões" : "Registros"}</h3>
+          <h3 className={css.painelSecao}>
+            {no.categoria === "registro" ? "LIGADO A" : "REGISTROS"}
+          </h3>
           <ul className={css.conexoes}>
             {lista.slice(0, 40).map((v) => (
               <li key={v.id}>
-                <button type="button" className={css.conexao} onClick={() => aoIr(v.id)}>
-                  <span className={css.bolinha} style={{ background: corDoNo(v) }} aria-hidden="true" />
-                  <span className={css.conexaoTexto}>{v.rotulo}</span>
-                  {no.categoria === "registro" && <span className={css.conexaoTipo}>{NOME_LIGACAO[tipoCom.get(v.id) ?? "area"]}</span>}
+                <button
+                  type="button"
+                  className={css.conexao}
+                  onClick={() => aoIr(v.id)}
+                >
+                  <span
+                    className={css.bolinha}
+                    style={{ background: corDoNo(v) }}
+                    aria-hidden="true"
+                  />
+                  <span className={css.conexaoTexto}>
+                    {v.codigo ? `${v.codigo} · ` : ""}
+                    {v.rotulo}
+                  </span>
+                  {no.categoria === "registro" && (
+                    <span className={css.conexaoTipo}>
+                      {NOME_LIGACAO[tipoCom.get(v.id) ?? "area"]}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
@@ -568,16 +929,27 @@ function Painel({
         </>
       )}
 
-      {no.categoria === "registro" && (
-        <Link to={`/registros/${no.codigo}`} className={`botao botao-primario ${css.abrir}`}>
-          Abrir {no.codigo} <ArrowRight size={15} aria-hidden="true" />
-        </Link>
-      )}
-      {no.categoria === "cliente" && (
-        <Link to={`/biblioteca?texto=${encodeURIComponent(no.rotulo)}`} className={`botao ${css.abrir}`}>
-          Ver na biblioteca
-        </Link>
-      )}
+      <div className={css.acoesPainel}>
+        {no.categoria === "registro" && (
+          <Link
+            to={`/registros/${no.codigo}`}
+            className={`botao botao-primario ${css.abrir}`}
+          >
+            Abrir registro <ArrowRight size={15} aria-hidden="true" />
+          </Link>
+        )}
+        {no.categoria === "cliente" && (
+          <Link
+            to={`/biblioteca?texto=${encodeURIComponent(no.rotulo)}`}
+            className={`botao botao-primario ${css.abrir}`}
+          >
+            Ver na biblioteca
+          </Link>
+        )}
+        <button type="button" className={css.perguntar} onClick={perguntar}>
+          <MessageCircle size={15} aria-hidden="true" /> Perguntar ao Argos
+        </button>
+      </div>
     </aside>
   );
 }

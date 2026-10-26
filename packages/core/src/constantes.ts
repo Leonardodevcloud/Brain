@@ -57,7 +57,7 @@ export const NOME_TIPO: Record<TipoRegistro, string> = {
   pop: "POP",
   decisao: "Decisão",
   ocorrencia: "Ocorrência",
-  politica: "Política",
+  politica: "Regra",
   cliente: "Cliente",
   sistema: "Sistema",
   indicador: "Indicador",

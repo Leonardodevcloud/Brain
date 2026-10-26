@@ -78,7 +78,7 @@ export function montarPedidoAta(titulo: string, data: string | null, transcricao
 
 export const SISTEMA_EXTRACAO = `Você avalia conversas e e-mails da Central Tutts e decide se contêm conhecimento durável para a empresa.
 
-Conhecimento durável: uma decisão tomada, uma regra ou política, um procedimento, um acordo com cliente, uma explicação de como um sistema funciona.
+Conhecimento durável: uma decisão tomada, uma regra interna, um procedimento, um acordo com cliente, uma explicação de como um sistema funciona.
 Não é durável: conversa pessoal, dúvida pontual já resolvida sem regra nova, código descartável, rascunhos sem conclusão.
 
 Se houver conhecimento durável, escreva um registro:
@@ -110,9 +110,9 @@ Você recebe a transcrição do que a pessoa falou e decide o que ela quer. Não
 
 Intenções:
 - "dados": pergunta sobre NÚMEROS ou SITUAÇÃO da operação que estão no sistema da Central: disponibilidade/escala de motoboys, entregas, SLA/prazo, faturamento, saques, financeiro, motoboys, clientes, filas, score, ocorrências, BI. Ex.: "como está a disponibilidade agora?", "quanto faturamos esse mês?", "qual cliente está abaixo do SLA?".
-- "perguntar": dúvida sobre COMO a empresa funciona: processos, regras, políticas, decisões, procedimentos (o que está documentado no Cérebro).
+- "perguntar": dúvida sobre COMO a empresa funciona: processos, regras, decisões, procedimentos (o que está documentado no Cérebro).
 - "pendencias": quer saber o que há para revisar, aprovar ou o que está vencido.
-- "abrir": quer abrir ou ver um registro específico (POP, decisão, política, cliente…). "alvo" = o assunto ou código citado.
+- "abrir": quer abrir ou ver um registro específico (POP, decisão, regra, cliente…). "alvo" = o assunto ou código citado.
 - "mapa": quer ver algo no mapa do conhecimento. "alvo" = o assunto (ou null para o mapa todo).
 - "navegar": quer ir para uma tela. "alvo" = uma de: inicio, perguntar, biblioteca, mapa, revisar, integracoes, conta.
 - "rascunho": quer registrar/salvar/anotar algo novo. Preencha "tipo" (pop, decisao, ocorrencia, politica, cliente, sistema, indicador, nota), "titulo" (curto) e "conteudo" (o que foi dito, organizado em frases completas).
@@ -191,13 +191,13 @@ export interface AnaliseDados {
 
 export const SISTEMA_AGENTE = `Você é o Argos, o assistente de voz da Central Tutts — empresa de entregas rápidas de autopeças com motoboys, em várias cidades do Brasil. Quem fala com você é um gestor da empresa. Você conversa como uma pessoa: natural, direto, simpático, em português do Brasil.
 
-Você tem acesso, SÓ PARA LEITURA, a todo o banco de dados da Central (disponibilidade, BI de entregas, financeiro, saques, CS, clientes, score…) e à base de conhecimento do Cérebro (POPs, políticas, decisões, atas). Para responder perguntas sobre a operação você CONSULTA os dados de verdade; nunca invente números.
+Você tem acesso, SÓ PARA LEITURA, a todo o banco de dados da Central (disponibilidade, BI de entregas, financeiro, saques, CS, clientes, score…) e à base de conhecimento do Cérebro (POPs, regras, decisões, atas). Para responder perguntas sobre a operação você CONSULTA os dados de verdade; nunca invente números.
 
 Trabalhe em etapas. A cada resposta sua, devolva UM objeto JSON com uma ação:
 - {"acao":"colunas","tabelas":["t1","t2"],"pensamento":"..."} → mostra as colunas dessas tabelas. Faça isso antes de escrever SQL em tabelas que você ainda não viu.
 - {"acao":"sql","sql":"SELECT ...","titulo":"o que essa consulta mostra","pensamento":"..."} → executa no banco e devolve as linhas (no máximo 200). Só SELECT/WITH, PostgreSQL, sem ponto e vírgula, sem prefixo de schema.
 - {"acao":"pronta","nome":"disponibilidade|entregas|faturamento|saques","parametros":{...},"pensamento":"..."} → consultas prontas e testadas; prefira quando servirem.
-- {"acao":"conhecimento","busca":"termos","pensamento":"..."} → procura nos POPs, políticas, decisões e atas do Cérebro (como a empresa FAZ as coisas).
+- {"acao":"conhecimento","busca":"termos","pensamento":"..."} → procura nos POPs, regras, decisões e atas do Cérebro (como a empresa FAZ as coisas).
 - {"acao":"pendencias"} → o que está esperando aprovação ou revisão no Cérebro.
 - {"acao":"rascunho","tipo":"nota|pop|politica|decisao|cliente","titulo":"...","conteudo":"markdown"} → só quando a pessoa PEDIR para anotar/salvar algo. Vira rascunho para aprovação.
 - {"acao":"responder","fala":"...","analise":"markdown ou null","destaques":[{"rotulo":"...","valor":"..."}],"mostrar":"r2 ou null","abrir":"tela ou código ou null"} → resposta final.

@@ -36,7 +36,7 @@ export function paraResumo(r: RegistroLinha): RegistroResumoDTO {
 
 // ───────────────────────────── Permissões ─────────────────────────────
 
-/** Política e decisão vigentes mudam só com o administrador (o CEO). */
+/** Regra e decisão vigentes mudam só com o administrador (o CEO). */
 const TIPOS_SO_ADMIN: TipoRegistro[] = ["politica", "decisao"];
 
 function exigirPessoa(ator: Ator) {
@@ -76,7 +76,7 @@ export async function criarRegistroEm(
 ): Promise<string> {
   const publicar = entrada.publicar && !opcoes.sempreRascunho;
   if (publicar && !podeAprovar(ator, { tipo: entrada.tipo, donoId: entrada.donoId ?? null, criadoPor: ator.usuarioId })) {
-    throw AppError.semPermissao("Só o administrador publica políticas e decisões. Salve como rascunho para revisão.");
+    throw AppError.semPermissao("Só o administrador publica regras e decisões. Salve como rascunho para revisão.");
   }
 
   const numero = await registros.proximoNumero(db, entrada.tipo);
@@ -203,7 +203,7 @@ export async function aprovarRegistro(ctx: Contexto, ator: Ator, id: string, opc
     const r = await registros.buscarPorId(db, id, { travar: true });
     if (!r) throw AppError.naoEncontrado("O registro");
     if (r.status !== "rascunho") throw AppError.conflito("Só rascunhos podem ser aprovados.");
-    if (!podeAprovar(ator, r)) throw AppError.semPermissao("Só o administrador aprova políticas e decisões.");
+    if (!podeAprovar(ator, r)) throw AppError.semPermissao("Só o administrador aprova regras e decisões.");
 
     await registros.atualizar(db, id, {
       status: "vigente",

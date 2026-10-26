@@ -51,7 +51,7 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
     { name: "cerebro-tutts", version: "0.1.0" },
     {
       instructions:
-        "Base de conhecimento oficial da Central Tutts (POPs, decisões, políticas, clientes, atas). " +
+        "Base de conhecimento oficial da Central Tutts (POPs, decisões, regras, clientes, atas). " +
         "Antes de responder sobre como a operação funciona, use buscar_conhecimento e cite os códigos (ex.: POP-014). " +
         "Quando a conversa produzir uma decisão, regra ou procedimento novo, ofereça salvar com salvar_rascunho — " +
         "o rascunho só vale depois que alguém aprova no Cérebro.",
@@ -63,7 +63,7 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
     {
       title: "Buscar no Cérebro",
       description:
-        "Busca POPs, decisões, políticas, fichas de clientes e atas vigentes da Central Tutts. " +
+        "Busca POPs, decisões, regras, fichas de clientes e atas vigentes da Central Tutts. " +
         "Use para qualquer pergunta sobre processos, regras, clientes ou decisões passadas. Devolve trechos numerados com o código do registro.",
       inputSchema: {
         pergunta: z.string().min(3).max(1000).describe("A pergunta ou o assunto, em linguagem natural."),
@@ -140,7 +140,7 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
     {
       title: "Salvar rascunho no Cérebro",
       description:
-        "Salva uma decisão, procedimento, política, ocorrência ou nota que surgiu nesta conversa como RASCUNHO. " +
+        "Salva uma decisão, procedimento, regra, ocorrência ou nota que surgiu nesta conversa como RASCUNHO. " +
         "Alguém revisa e aprova no Cérebro antes de valer. Confirme com a pessoa o título e o texto antes de salvar.",
       inputSchema: {
         tipo: z.enum(TIPOS_REGISTRO).describe("pop, decisao, ocorrencia, politica, cliente, sistema, indicador, reuniao ou nota."),

@@ -116,5 +116,9 @@ saques) usam consultas prontas e funcionam até sem IA; as demais o DeepSeek esc
 e analisa o resultado com nomes de pessoas mascarados. Toda consulta fica na auditoria (`argos.consulta_central`).
 Requer que o usuário do `DATABASE_URL` possa criar papéis (o `postgres` padrão do Railway pode).
 
+**Voz natural do Argos.** Crie uma chave em platform.openai.com e coloque `OPENAI_CHAVE` na `api`. A voz passa a ser
+gerada no servidor (gpt-4o-mini-tts), igual em qualquer aparelho; o administrador escolhe a voz e o ritmo em
+Integrações › Argos (voz). Sem a chave, o Argos usa a voz do navegador.
+
 **E-mail.** Caixa dedicada (ex.: `cerebro@tutts.com.br`) com IMAP 993/SSL. Variáveis `IMAP_*`.
 O worker lê a cada 10 minutos; cada e-mail relevante vira rascunho.

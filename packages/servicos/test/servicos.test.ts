@@ -16,6 +16,9 @@ import {
   atenderFala,
   interpretarRapido,
   transcreverFala,
+  configVoz,
+  salvarVoz,
+  gerarFala,
   montarMapa,
   painel,
   responder,
@@ -424,6 +427,20 @@ describe("Argos", () => {
     });
     const r = await atenderFala({ ...ctx, ia: quebrada }, atorAdmin, "valeu");
     expect(r.fala).toMatch(/^Por nada/);
+  });
+
+  it("voz do servidor: a escolha vale para todos e frases repetidas saem do cache", async () => {
+    let chamadas = 0;
+    const fala = { nome: "falsa", falar: async (_t: string, o: { voz: string }) => (chamadas++, new TextEncoder().encode(o.voz)) };
+    const c = { ...ctx, fala };
+    expect(await configVoz({ ...ctx, fala: null })).toMatchObject({ disponivel: false, voz: "marin" });
+    await salvarVoz(c, atorAdmin, { voz: "cedar", velocidade: 1.2 });
+    expect(await configVoz(c)).toMatchObject({ disponivel: true, voz: "cedar", velocidade: 1.2 });
+    expect(new TextDecoder().decode(await gerarFala(c, "Bom dia"))).toBe("cedar");
+    await gerarFala(c, "Bom dia");
+    expect(chamadas).toBe(1);
+    await expect(salvarVoz(c, atorAdmin, { voz: "robo", velocidade: 1 })).rejects.toMatchObject({ status: 400 });
+    await expect(gerarFala({ ...ctx, fala: null }, "oi")).rejects.toMatchObject({ status: 503 });
   });
 
   it("transcreve com o provedor de voz e recusa áudio vazio", async () => {

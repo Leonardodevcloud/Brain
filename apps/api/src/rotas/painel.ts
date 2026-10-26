@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { AppError } from "@cerebro/core";
-import { LIMITE_AUDIO_BYTES, acesso, atenderFala, fontes, montarMapa, painel, transcreverFala } from "@cerebro/servicos";
+import { LIMITE_AUDIO_BYTES, acesso, atenderFala, configVoz, fontes, gerarFala, montarMapa, painel, salvarVoz, transcreverFala } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, exigirAdmin, validar, type Deps } from "../http/base.js";
 
@@ -55,6 +55,26 @@ export function rotasPainel({ ctx }: Deps) {
       req.body,
     );
     res.json(await atenderFala(ctx, ator(req), texto, historico));
+  });
+
+  // Voz do Argos: gerada no servidor, a mesma em qualquer aparelho.
+  r.get("/argos/voz", async (_req, res) => {
+    res.json(await configVoz(ctx));
+  });
+  r.put("/argos/voz", exigirAdmin, async (req, res) => {
+    const entrada = validar(z.object({ voz: z.string().min(2).max(30), velocidade: z.number().min(0.8).max(1.5) }), req.body);
+    res.json(await salvarVoz(ctx, ator(req), entrada));
+  });
+  r.post("/argos/falar", async (req, res) => {
+    const { texto, voz, velocidade } = validar(
+      z.object({ texto: z.string().trim().min(1).max(1200), voz: z.string().max(30).optional(), velocidade: z.number().min(0.8).max(1.5).optional() }),
+      req.body,
+    );
+    // Testar outra voz é coisa de quem escolhe a voz (o administrador).
+    const teste = voz || velocidade ? (req.ator?.papel === "admin" ? { voz, velocidade } : undefined) : undefined;
+    const audio = await gerarFala(ctx, texto, teste);
+    res.set({ "content-type": "audio/mpeg", "cache-control": "private, max-age=3600" });
+    res.send(Buffer.from(audio));
   });
 
   r.get("/mapa", async (_req, res) => {

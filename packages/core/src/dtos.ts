@@ -93,7 +93,7 @@ export interface AtaDados {
 }
 
 export interface StatusIntegracaoDTO {
-  nome: "claude" | "fathom" | "google" | "notion" | "email" | "deepseek" | "embeddings" | "voz" | "central";
+  nome: "claude" | "fathom" | "google" | "notion" | "email" | "deepseek" | "embeddings" | "voz" | "fala" | "central";
   estado: "ativo" | "incompleto" | "desligado" | "erro";
   detalhe: string;
 }

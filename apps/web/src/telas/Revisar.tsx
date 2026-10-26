@@ -184,7 +184,7 @@ function Acoes({ r, decisoes, pendencias }: { r: RegistroDTO; decisoes?: number[
             type="button"
             className="botao botao-primario"
             disabled={acao.isPending || soAdmin}
-            title={soAdmin ? "Políticas e decisões são aprovadas pelo administrador." : undefined}
+            title={soAdmin ? "Regras e decisões são aprovadas pelo administrador." : undefined}
             onClick={() => executar("aprovar", ehAta ? { decisoes, pendencias } : {}, `${r.codigo} aprovado.`)}
           >
             {acao.isPending ? "Aprovando…" : rotulo}

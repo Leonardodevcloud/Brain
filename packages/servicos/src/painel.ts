@@ -162,6 +162,13 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
       detalhe: ctx.voz ? `${ctx.voz.nome}. Segure espaço em qualquer tela para falar com o Argos.` : "Defina GROQ_CHAVE para falar com o Argos. Sem ela, dá para digitar.",
     },
     {
+      nome: "fala",
+      estado: ctx.fala ? "ativo" : "desligado",
+      detalhe: ctx.fala
+        ? `${ctx.fala.nome}. A mesma voz em qualquer aparelho; escolha abaixo.`
+        : "Defina OPENAI_CHAVE para o Argos falar com voz natural. Sem ela, usa a voz do navegador.",
+    },
+    {
       nome: "embeddings",
       estado: ctx.embeddings ? "ativo" : "desligado",
       detalhe: ctx.embeddings

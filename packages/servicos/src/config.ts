@@ -36,6 +36,10 @@ const esquemaAmbiente = z.object({
   GROQ_CHAVE: opcional(z.string()),
   VOZ_BASE_URL: z.preprocess(vazioParaUndefined, z.url().default("https://api.groq.com/openai/v1")),
   VOZ_MODELO: z.preprocess(vazioParaUndefined, z.string().default("whisper-large-v3-turbo")),
+  // Voz do Argos gerada no servidor (OpenAI): a mesma em qualquer aparelho.
+  OPENAI_CHAVE: opcional(z.string()),
+  FALA_BASE_URL: z.preprocess(vazioParaUndefined, z.url().default("https://api.openai.com/v1")),
+  FALA_MODELO: z.preprocess(vazioParaUndefined, z.string().default("gpt-4o-mini-tts")),
 
   FATHOM_WEBHOOK_SEGREDO: opcional(z.string()),
 
