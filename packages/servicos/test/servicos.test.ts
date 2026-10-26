@@ -12,6 +12,9 @@ import {
   indexarRegistro,
   invalidarCacheBusca,
   invalidarCacheMapa,
+  atenderFala,
+  interpretarRapido,
+  transcreverFala,
   montarMapa,
   painel,
   responder,
@@ -329,5 +332,50 @@ describe("mapa", () => {
     // Registros descartados ficam de fora.
     const { rows } = await pool.query(`SELECT id FROM cerebro.registros WHERE status = 'descartado'`);
     for (const r of rows) expect(ids.has(r.id)).toBe(false);
+  });
+});
+
+describe("Argos", () => {
+  const intencao = (dados: object) =>
+    new IaFalsa((p) => (p.sistema.includes("assistente de voz") ? { alvo: null, tipo: null, titulo: null, conteudo: null, fala: null, ...dados } : { resposta: "Realoque o motoboy [1].", suficiente: true }));
+
+  it("entende comandos óbvios sem precisar da IA", async () => {
+    const semIa = { ...ctx, ia: null };
+    const r = await atenderFala(semIa, atorMembro, "Argos, abre o mapa");
+    expect(r).toMatchObject({ intencao: "navegar", acao: { destino: "/mapa", automatica: true } });
+    expect(interpretarRapido("o que tem para revisar hoje?")?.intencao).toBe("pendencias");
+    const p = await atenderFala(semIa, atorMembro, "o que eu tenho pra aprovar?");
+    expect(p.intencao).toBe("pendencias");
+    expect(p.fala).toMatch(/aprovar|em dia/);
+  });
+
+  it("responde perguntas com uma fala curta, sem as citações", async () => {
+    const r = await atenderFala({ ...ctx, ia: intencao({ intencao: "perguntar" }) }, atorMembro, "como tratamos falta de motoboy pela manhã?");
+    expect(r.intencao).toBe("perguntar");
+    expect(r.fala).toBe("Realoque o motoboy.");
+    expect(r.fontes.length).toBeGreaterThan(0);
+    expect(r.acao?.destino).toMatch(/^\/registros\//);
+  });
+
+  it("salva o que foi ditado sempre como rascunho", async () => {
+    const ia = intencao({ intencao: "rascunho", tipo: "decisao", titulo: "Coleta só até 17h", conteudo: "A partir de novembro, coletas só até 17h." });
+    const r = await atenderFala({ ...ctx, ia }, atorAdmin, "salva como decisão: a partir de novembro coleta só até 17h");
+    expect(r.intencao).toBe("rascunho");
+    const id = r.acao!.destino.split("/").pop()!;
+    const reg = await conhecimento.obterRegistro(ctx, id);
+    expect(reg).toMatchObject({ tipo: "decisao", status: "rascunho", titulo: "Coleta só até 17h" });
+    expect(reg.dados).toMatchObject({ via: "voz" });
+  });
+
+  it("abre um registro pelo código falado", async () => {
+    const r = await atenderFala({ ...ctx, ia: intencao({ intencao: "abrir", alvo: "pop 1" }) }, atorMembro, "abre o pop 1");
+    expect(r.acao?.destino).toBe("/registros/POP-001");
+  });
+
+  it("transcreve com o provedor de voz e recusa áudio vazio", async () => {
+    const voz = { nome: "falsa", transcrever: async () => " abre o mapa " };
+    expect(await transcreverFala({ ...ctx, voz }, new Uint8Array(5000), "audio/webm")).toBe("abre o mapa");
+    await expect(transcreverFala({ ...ctx, voz }, new Uint8Array(10), "audio/webm")).rejects.toMatchObject({ status: 400 });
+    await expect(transcreverFala({ ...ctx, voz: null }, new Uint8Array(5000), "audio/webm")).rejects.toMatchObject({ status: 503 });
   });
 });

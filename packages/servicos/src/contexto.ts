@@ -4,8 +4,10 @@ import { auditoria, type Canal, type Executor, type Pool } from "@cerebro/db";
 import {
   EmbeddingsGemini,
   ProvedorCompativelOpenAI,
+  TranscricaoCompativelOpenAI,
   type ProvedorEmbeddings,
   type ProvedorTexto,
+  type ProvedorTranscricao,
 } from "@cerebro/ia";
 import { ClienteGoogleAgenda, ClienteNotion, type ConfigImap } from "@cerebro/integracoes";
 import type { Ambiente } from "./config.js";
@@ -36,6 +38,8 @@ export interface Contexto {
   /** IA para conteúdo restrito. Sem ela, conteúdo restrito nunca vai para IA externa. */
   iaRestrita: ProvedorTexto | null;
   embeddings: ProvedorEmbeddings | null;
+  /** Whisper para o Argos. `null` = sem voz (o Argos ainda aceita texto digitado). */
+  voz: ProvedorTranscricao | null;
   cofre: Cofre | null;
   google: ClienteGoogleAgenda | null;
   notion: ClienteNotion | null;
@@ -68,6 +72,9 @@ export function criarContexto(pool: Pool, ambiente: Ambiente, log: Log): Context
     iaRestrita,
     embeddings: ambiente.GEMINI_CHAVE
       ? new EmbeddingsGemini({ chave: ambiente.GEMINI_CHAVE, dimensoes: ambiente.EMBEDDINGS_DIMENSOES })
+      : null,
+    voz: ambiente.GROQ_CHAVE
+      ? new TranscricaoCompativelOpenAI({ baseUrl: ambiente.VOZ_BASE_URL, chave: ambiente.GROQ_CHAVE, modelo: ambiente.VOZ_MODELO })
       : null,
     cofre: ambiente.CEREBRO_CHAVE_CIFRA ? new Cofre(ambiente.CEREBRO_CHAVE_CIFRA) : null,
     google:

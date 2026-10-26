@@ -19,7 +19,7 @@
 .avisos {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: 96px; /* acima do botão do Argos */
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -49,6 +49,6 @@
   .avisos {
     left: 16px;
     right: 16px;
-    bottom: 84px;
+    bottom: 140px;
   }
 }

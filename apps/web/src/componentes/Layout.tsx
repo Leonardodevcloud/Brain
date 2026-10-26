@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useInicio, useRegistros } from "../api/consultas";
 import { useSessao, useUsuario } from "../sessao/Sessao";
 import { iniciais } from "../util/formato";
+import { Argos } from "./argos/Argos";
 import css from "./Layout.module.css";
 
 function ContadorRevisar() {
@@ -78,6 +79,7 @@ export function Layout() {
       <main id="conteudo" className={css.principal} tabIndex={-1}>
         <Outlet />
       </main>
+      <Argos />
     </div>
   );
 }

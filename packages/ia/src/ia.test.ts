@@ -81,3 +81,15 @@ describe("semelhança por texto", () => {
     expect(pares.some((p) => p.b === 2 && p.a === 0)).toBe(false);
   });
 });
+
+import { textoParaFala } from "./voz.js";
+
+describe("texto para fala", () => {
+  it("tira Markdown e citações e corta no fim de uma frase", () => {
+    expect(textoParaFala("## Passos\n\n1. Realoque o **motoboy** [1].\n2. Avise a [loja](https://x) [2].")).toBe("Passos Realoque o motoboy. Avise a loja.");
+    const longo = "Primeira frase curta. ".repeat(30);
+    const falado = textoParaFala(longo, 60);
+    expect(falado.length).toBeLessThanOrEqual(60);
+    expect(falado.endsWith(".")).toBe(true);
+  });
+});

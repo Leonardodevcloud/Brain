@@ -29,6 +29,11 @@ const esquemaAmbiente = z.object({
   GEMINI_CHAVE: opcional(z.string()),
   EMBEDDINGS_DIMENSOES: z.preprocess(vazioParaUndefined, z.coerce.number().int().min(128).max(3072).default(768)),
 
+  // Voz (Whisper). Padrão: Groq, compatível com a API da OpenAI.
+  GROQ_CHAVE: opcional(z.string()),
+  VOZ_BASE_URL: z.preprocess(vazioParaUndefined, z.url().default("https://api.groq.com/openai/v1")),
+  VOZ_MODELO: z.preprocess(vazioParaUndefined, z.string().default("whisper-large-v3-turbo")),
+
   FATHOM_WEBHOOK_SEGREDO: opcional(z.string()),
 
   GOOGLE_CLIENT_ID: opcional(z.string()),

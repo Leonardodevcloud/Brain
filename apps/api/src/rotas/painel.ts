@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { AppError } from "@cerebro/core";
-import { acesso, fontes, montarMapa, painel } from "@cerebro/servicos";
+import { LIMITE_AUDIO_BYTES, acesso, atenderFala, fontes, montarMapa, painel, transcreverFala } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, exigirAdmin, validar, type Deps } from "../http/base.js";
 
@@ -29,6 +29,22 @@ export function rotasPainel({ ctx }: Deps) {
 
   r.get("/inicio", async (_req, res) => {
     res.json(await painel.resumoInicio(ctx));
+  });
+
+  // ── Argos (assistente de voz) ──
+  r.post(
+    "/argos/transcrever",
+    express.raw({ type: ["audio/*", "application/octet-stream"], limit: LIMITE_AUDIO_BYTES }),
+    async (req, res) => {
+      if (!Buffer.isBuffer(req.body)) throw AppError.requisicaoInvalida("Envie o áudio gravado.");
+      const texto = await transcreverFala(ctx, new Uint8Array(req.body), req.get("content-type") ?? "audio/webm");
+      res.json({ texto });
+    },
+  );
+
+  r.post("/argos", async (req, res) => {
+    const { texto } = validar(z.object({ texto: z.string().trim().min(2).max(1000) }), req.body);
+    res.json(await atenderFala(ctx, ator(req), texto));
   });
 
   r.get("/mapa", async (_req, res) => {

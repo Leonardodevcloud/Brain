@@ -1,0 +1,392 @@
+/* ── Botão flutuante (presente em todas as telas) ── */
+.lancador {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 40;
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #1c1726, #0e0d12 70%);
+  box-shadow:
+    0 10px 30px rgba(76, 29, 149, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition:
+    transform var(--medio) var(--curva),
+    box-shadow var(--medio) var(--curva);
+}
+.lancador:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow:
+    0 14px 36px rgba(124, 58, 237, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.lancador:focus-visible {
+  box-shadow: var(--foco);
+}
+.dicaLancador {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translate(4px, -50%);
+  white-space: nowrap;
+  padding: 7px 10px;
+  border-radius: var(--raio);
+  background: var(--texto);
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--rapido) var(--curva),
+    transform var(--rapido) var(--curva);
+}
+.lancador:hover .dicaLancador,
+.lancador:focus-visible .dicaLancador {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+.dicaLancador kbd,
+.dica kbd {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-family: var(--fonte-mono);
+  font-size: 11px;
+}
+
+/* ── Painel ── */
+.camada {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(to top, rgba(14, 13, 18, 0.45), rgba(14, 13, 18, 0.08) 60%, transparent);
+  animation: escurecer var(--medio) var(--curva);
+}
+@keyframes escurecer {
+  from {
+    opacity: 0;
+  }
+}
+.painel {
+  --a-texto: #e7e5e4;
+  --a-suave: #a8a29e;
+  --a-borda: rgba(255, 255, 255, 0.09);
+
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  color: var(--a-texto);
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 0%, rgba(124, 58, 237, 0.22), transparent 70%),
+    rgba(16, 14, 22, 0.94);
+  border: 1px solid var(--a-borda);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(124, 58, 237, 0.08);
+  backdrop-filter: blur(18px);
+  animation: subir 320ms var(--curva);
+  overflow: hidden;
+}
+@keyframes subir {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+}
+
+.topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 0 18px;
+}
+.marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+.ponto {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #a78bfa;
+}
+.pontoAoVivo {
+  background: #fb7185;
+  box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.6);
+  animation: aoVivo 1.4s ease-out infinite;
+}
+@keyframes aoVivo {
+  70% {
+    box-shadow: 0 0 0 7px rgba(251, 113, 133, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(251, 113, 133, 0);
+  }
+}
+.fase {
+  font-size: 12px;
+  color: var(--a-suave);
+  font-variant-numeric: tabular-nums;
+}
+.reticencias::after {
+  content: "";
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: reticencias 1.2s steps(4) infinite;
+}
+@keyframes reticencias {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+}
+.acoesTopo {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+.icone {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--a-suave);
+  cursor: pointer;
+}
+.icone:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+.icone[aria-pressed="true"] {
+  color: #fbbf24;
+}
+
+.palco {
+  align-self: center;
+  margin: 6px 0 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.palco:focus-visible {
+  box-shadow: var(--foco);
+}
+
+.conversa {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 24px 16px;
+  min-height: 56px;
+  overflow-y: auto;
+  text-align: center;
+}
+.convite {
+  color: var(--a-suave);
+  font-size: 15px;
+}
+.voce {
+  color: var(--a-suave);
+  font-size: 14px;
+  font-style: italic;
+}
+.erro {
+  color: #fda4af;
+  font-size: 14px;
+}
+.resposta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: aparecer 360ms var(--curva);
+}
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.fala {
+  font-size: 18px;
+  line-height: 1.5;
+  color: #fff;
+  letter-spacing: -0.005em;
+  text-wrap: pretty;
+}
+.fontes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.fonte {
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--a-borda);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--a-texto);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fonte:hover {
+  border-color: rgba(167, 139, 250, 0.5);
+  color: #fff;
+  text-decoration: none;
+}
+.fonteCodigo {
+  font-family: var(--fonte-mono);
+  color: #c4b5fd;
+}
+.verMais {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: #c4b5fd;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.completo {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--a-borda);
+}
+.completo :global(.prosa) {
+  color: var(--a-texto);
+  font-size: 14px;
+}
+.completo :global(.prosa) a {
+  color: #c4b5fd;
+}
+.acao {
+  min-width: 200px;
+}
+
+.rodape {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--a-borda);
+}
+.dica {
+  text-align: center;
+  font-size: 12px;
+  color: var(--a-suave);
+}
+.digitar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 12px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--a-borda);
+}
+.digitar:focus-within {
+  border-color: rgba(167, 139, 250, 0.55);
+}
+.iconeDigitar {
+  color: var(--a-suave);
+  flex-shrink: 0;
+}
+.entrada {
+  flex-grow: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+}
+.entrada::placeholder {
+  color: #78716c;
+}
+.entrada:focus-visible {
+  box-shadow: none;
+}
+.microfone {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(124, 58, 237, 0.85);
+  color: #fff;
+  cursor: pointer;
+}
+.microfone:hover {
+  background: #7c3aed;
+}
+
+@media (max-width: 860px) {
+  .lancador {
+    right: 14px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    width: 54px;
+    height: 54px;
+  }
+  .dicaLancador {
+    display: none;
+  }
+  .camada {
+    padding: 0;
+  }
+  .painel {
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    max-height: 88dvh;
+  }
+  .fala {
+    font-size: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .camada,
+  .painel,
+  .resposta,
+  .pontoAoVivo {
+    animation: none;
+  }
+}

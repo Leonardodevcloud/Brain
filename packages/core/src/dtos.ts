@@ -93,7 +93,7 @@ export interface AtaDados {
 }
 
 export interface StatusIntegracaoDTO {
-  nome: "claude" | "fathom" | "google" | "notion" | "email" | "deepseek" | "embeddings";
+  nome: "claude" | "fathom" | "google" | "notion" | "email" | "deepseek" | "embeddings" | "voz";
   estado: "ativo" | "incompleto" | "desligado" | "erro";
   detalhe: string;
 }
@@ -135,4 +135,18 @@ export interface MapaDTO {
   /** Como a semelhança foi medida: por sentido (embeddings) ou por palavras. */
   semelhanca: "embeddings" | "texto" | "desligada";
   geradoEm: string;
+}
+
+/** O que o Argos entendeu e o que fez. */
+export interface RespostaAssistenteDTO {
+  /** O que a pessoa falou (ou digitou). */
+  texto: string;
+  intencao: "perguntar" | "pendencias" | "abrir" | "mapa" | "navegar" | "rascunho" | "conversa";
+  /** Versão curta para ser falada em voz alta. */
+  fala: string;
+  /** Resposta completa em Markdown, quando houver. */
+  detalhe: string | null;
+  fontes: FonteDTO[];
+  /** Tela para onde a interface deve ir, se o comando pedir. */
+  acao: { destino: string; rotulo: string; automatica: boolean } | null;
 }

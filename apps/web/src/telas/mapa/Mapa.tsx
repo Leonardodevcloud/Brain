@@ -4,7 +4,7 @@ import { forceCollide, forceX, forceY } from "d3-force";
 import { ArrowRight, Maximize2, Minus, Plus, Search, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api/cliente";
 import { MensagemErro, useAtalho } from "../../componentes/comum";
 import { NOME_STATUS, nomeTipo, relativo } from "../../util/formato";
@@ -196,6 +196,18 @@ export default function Mapa() {
     },
     [movimento],
   );
+
+  // Chegando com ?foco=<id> (ex.: "Argos, mostra no mapa a Rede Exemplo Norte").
+  const [params, setParams] = useSearchParams();
+  const focoUrl = params.get("foco");
+  useEffect(() => {
+    if (!focoUrl || !visiveis.nodes.length) return;
+    const t = setTimeout(() => {
+      irPara(focoUrl);
+      setParams({}, { replace: true });
+    }, movimento ? 1900 : 100);
+    return () => clearTimeout(t);
+  }, [focoUrl, visiveis, irPara, setParams, movimento]);
 
   const enquadrar = useCallback(() => grafo.current?.zoomToFit(movimento ? 600 : 0, margemEnquadrar()), [movimento]);
   useAtalho("/", useCallback(() => campoBusca.current?.focus(), []));

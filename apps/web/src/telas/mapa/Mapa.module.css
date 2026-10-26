@@ -297,7 +297,7 @@
 .zoom {
   position: absolute;
   right: 20px;
-  bottom: 20px;
+  bottom: 96px; /* o botão do Argos fica embaixo */
   display: flex;
   flex-direction: column;
   border-radius: var(--raio);
@@ -329,7 +329,7 @@
   position: absolute;
   top: 20px;
   right: 20px;
-  bottom: 76px;
+  bottom: 96px;
   width: 340px;
   display: flex;
   flex-direction: column;
@@ -514,7 +514,7 @@
   }
   .legenda {
     left: 14px;
-    right: 64px;
+    right: 80px;
     bottom: 14px;
     max-width: none;
     padding: 8px 10px;
@@ -532,7 +532,7 @@
   }
   .zoom {
     right: 14px;
-    bottom: 14px;
+    bottom: 80px;
   }
   /* Painel vira uma folha que sobe de baixo. */
   .painel {

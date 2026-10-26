@@ -7,7 +7,7 @@ consultável pela interface e pelo Claude, alimentado por reuniões (Fathom), co
 
 ```
 apps/
-  web/      React + Vite. Em produção, servidor.mjs entrega o build e faz proxy de /api e /mcp
+  web/      React + Vite (telas, Mapa do conhecimento e o assistente de voz Argos). Em produção, servidor.mjs entrega o build e faz proxy de /api e /mcp
   api/      Express 5 — login próprio, registros, perguntas, integrações, webhook da Fathom
   mcp/      Servidor MCP (Streamable HTTP) para o conector do Claude
   worker/   Fila no Postgres (atas, indexação, Notion, extração) + rotinas agendadas
@@ -99,6 +99,11 @@ O formato do payload deve ser conferido com a primeira reunião real (o leitor �
 
 **Notion.** Crie uma integração interna, copie o token para `NOTION_TOKEN`, conecte-a ao banco de tarefas
 (••• › Conexões) e, em Integrações › Notion, cole o link do banco e escolha as colunas.
+
+**Argos (voz).** Crie uma chave em console.groq.com e coloque `GROQ_CHAVE` na `api`. Em qualquer tela:
+segure **Espaço** e fale (solte para enviar), toque rápido no Espaço para ele ouvir até você parar, ou clique na
+esfera no canto. Ele responde perguntas com as fontes, abre registros e telas, mostra itens no mapa e salva
+ditados como rascunho. A transcrição usa Whisper (`whisper-large-v3-turbo`) e a voz é a do navegador.
 
 **E-mail.** Caixa dedicada (ex.: `cerebro@tutts.com.br`) com IMAP 993/SSL. Variáveis `IMAP_*`.
 O worker lê a cada 10 minutos; cada e-mail relevante vira rascunho.

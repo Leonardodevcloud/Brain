@@ -147,6 +147,11 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
         : "Defina IA_ANALISE_CHAVE para respostas, atas e importações.",
     },
     {
+      nome: "voz",
+      estado: ctx.voz ? "ativo" : "desligado",
+      detalhe: ctx.voz ? `${ctx.voz.nome}. Segure espaço em qualquer tela para falar com o Argos.` : "Defina GROQ_CHAVE para falar com o Argos. Sem ela, dá para digitar.",
+    },
+    {
       nome: "embeddings",
       estado: ctx.embeddings ? "ativo" : "desligado",
       detalhe: ctx.embeddings
