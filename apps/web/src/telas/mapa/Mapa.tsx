@@ -662,6 +662,9 @@ export default function Mapa() {
                 <span>
                   <i className={css.simParecido} /> Parecido
                 </span>
+                <span>
+                  <i className={css.simTarefa} /> Tem tarefa aberta
+                </span>
               </div>
             </>
           )}
@@ -884,8 +887,8 @@ function Painel({
           <b>{lista.length}</b>
         </div>
         <div className={css.metrica}>
-          <span>GRAU</span>
-          <b>{no.grau}</b>
+          <span>TAREFAS</span>
+          <b style={{ color: no.tarefasAbertas ? "#FCD34D" : undefined }}>{no.tarefasAbertas}</b>
         </div>
         <div className={css.metrica}>
           <span>ATUALIZADO</span>

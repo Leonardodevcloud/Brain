@@ -16,6 +16,7 @@ export const NOME_ORIGEM: Record<Origem, string> = {
   reuniao: "Fathom",
   importacao: "Histórico do Claude",
   email: "E-mail",
+  upload: "Documento enviado",
 };
 
 /** Cor da etiqueta de cada tipo — poucas cores, só para escanear a lista. */
@@ -29,6 +30,7 @@ export const COR_TIPO: Record<TipoRegistro, string> = {
   sistema: "",
   indicador: "",
   nota: "",
+  documento: "etiqueta-azul",
 };
 
 export const COR_STATUS: Record<StatusRegistro, string> = {

@@ -68,10 +68,21 @@ describe("MCP", () => {
     await expect(conectar(`${base}/mcp/cbr_invalido`)).rejects.toThrow();
   });
 
-  it("lista as quatro ferramentas", async () => {
+  it("lista as ferramentas", async () => {
     const cliente = await conectar(`${base}/mcp/${token}`);
     const { tools } = await cliente.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["buscar_conhecimento", "ler_registro", "listar_pendencias", "salvar_rascunho"]);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "atualizar_tarefa",
+      "buscar_conhecimento",
+      "catalogo_central",
+      "colunas_central",
+      "consultar_central",
+      "criar_tarefa",
+      "ler_registro",
+      "listar_pendencias",
+      "listar_tarefas",
+      "salvar_rascunho",
+    ]);
     await cliente.close();
   });
 
@@ -104,12 +115,27 @@ describe("MCP", () => {
     await cliente.close();
   });
 
+  it("cria e lista tarefas; sem a Central ligada, explica o que falta", async () => {
+    const cliente = await conectar(`${base}/mcp/${token}`);
+    const t = (await cliente.callTool({
+      name: "criar_tarefa",
+      arguments: { titulo: "Ligar para a Rede Beta", prazo: "2026-11-02", registro: "POP-001" },
+    })) as Resultado;
+    expect(t.content[0]!.text).toMatch(/Tarefa TAR-\d+ criada/);
+    const lista = (await cliente.callTool({ name: "listar_tarefas", arguments: { filtro: "todas" } })) as Resultado;
+    expect(lista.content[0]!.text).toMatch(/Ligar para a Rede Beta .*de POP-001/);
+    const central = (await cliente.callTool({ name: "consultar_central", arguments: { sql: "SELECT 1" } })) as Resultado & { isError?: boolean };
+    expect(central.isError).toBe(true);
+    expect(central.content[0]!.text).toMatch(/ARGOS_DB_SENHA/);
+    await cliente.close();
+  });
+
   it("aceita também o token no cabeçalho Authorization", async () => {
     const cliente = new Client({ name: "teste", version: "1.0.0" });
     await cliente.connect(
       new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }),
     );
-    expect((await cliente.listTools()).tools).toHaveLength(4);
+    expect((await cliente.listTools()).tools).toHaveLength(10);
     await cliente.close();
   });
 });

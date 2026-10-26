@@ -1,0 +1,95 @@
+.caixa {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: abrir 200ms var(--curva);
+}
+@keyframes abrir {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.topo h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  border: 1.5px dashed var(--borda-forte);
+  border-radius: var(--raio-g);
+  background: var(--fundo);
+  color: var(--texto-2);
+  text-align: center;
+  transition:
+    border-color var(--rapido) var(--curva),
+    background-color var(--rapido) var(--curva);
+}
+.areaSobre {
+  border-color: var(--acento);
+  background: var(--acento-fundo);
+}
+.lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 8px;
+  border-radius: var(--raio);
+  background: var(--fundo);
+  font-size: 13px;
+}
+.nome {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ok {
+  color: var(--ok);
+}
+.erro {
+  color: var(--erro);
+}
+.enviando {
+  color: var(--acento);
+  animation: pulsar 1s ease-in-out infinite;
+}
+@keyframes pulsar {
+  50% {
+    opacity: 0.35;
+  }
+}
+.opcoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.opcoes .campo {
+  flex: 1 1 200px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caixa,
+  .enviando {
+    animation: none;
+  }
+}

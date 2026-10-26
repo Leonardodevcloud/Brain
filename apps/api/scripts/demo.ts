@@ -239,7 +239,6 @@ await pool.query(`INSERT INTO cerebro.lacunas (pergunta, canal) VALUES ($1, 'web
   "Quanto tempo antes a loja precisa ser avisada nos fins de semana?",
   "Qual o valor do km rodado para entregas acima de 30 km?",
 ]);
-await integracoes.salvar(pool, "notion", { config: { databaseId: "demo", propTitulo: "Nome" } });
 
 // Indexa tudo (sem embeddings no demo: só busca por texto).
 for (let job = await jobs.reservar(pool); job; job = await jobs.reservar(pool)) {

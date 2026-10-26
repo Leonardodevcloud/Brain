@@ -66,3 +66,37 @@
   border-radius: var(--raio-g);
   background: var(--superficie);
 }
+
+/* Documento enviado: arquivo original */
+.arquivo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--texto-2);
+}
+.arquivoNome {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--texto);
+}
+.tarefas > li {
+  padding: 8px 0;
+  font-size: 14px;
+}
+.novaTarefa {
+  display: flex;
+  gap: 6px;
+}
+.novaTarefa .entrada {
+  flex-grow: 1;
+  min-width: 0;
+}

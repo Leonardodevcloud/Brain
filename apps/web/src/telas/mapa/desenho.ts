@@ -125,6 +125,17 @@ export function desenharNo(no: No, ctx: CanvasRenderingContext2D, escala: number
     ctx.stroke();
   }
 
+  // Tarefas abertas ligadas: um pontinho âmbar no canto do nó.
+  if (no.tarefasAbertas > 0 && !apagado) {
+    ctx.fillStyle = "#FCD34D";
+    ctx.strokeStyle = FUNDO_MAPA;
+    ctx.lineWidth = px(1.2);
+    ctx.beginPath();
+    ctx.arc(x + r * 0.8, y - r * 0.8, Math.max(px(2.6), r * 0.32), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
   if (selecionado) mira(ctx, x, y, r, escala, t);
 
   // Rótulos: com zoom, ou para o que está em destaque.

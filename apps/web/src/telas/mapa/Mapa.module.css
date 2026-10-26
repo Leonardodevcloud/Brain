@@ -811,3 +811,9 @@
     animation: none;
   }
 }
+.simTarefa {
+  width: 7px !important;
+  height: 7px !important;
+  border-radius: 50%;
+  background: #fcd34d;
+}

@@ -14,12 +14,13 @@ export const COR_TIPO: Record<TipoRegistro, string> = {
   ocorrencia: "#FB7185",
   sistema: "#60A5FA",
   indicador: "#A3E635",
+  documento: "#FB923C",
 };
 
 /** Hubs de área: claros e neutros, para os registros coloridos se destacarem em volta. */
 export const COR_HUB = "#E2E8F0";
 export const COR_CLIENTE = "#34D399";
-export const COR_REVISAR = "#FB923C";
+export const COR_REVISAR = "#F97316";
 /** Destaque do HUD (anéis do selecionado, partículas). */
 export const COR_HUD = "#A78BFA";
 export const COR_HUD_2 = "#22D3EE";

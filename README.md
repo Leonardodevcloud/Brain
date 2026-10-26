@@ -10,13 +10,13 @@ apps/
   web/      React + Vite (telas, Mapa do conhecimento e o assistente de voz Argos). Em produção, servidor.mjs entrega o build e faz proxy de /api e /mcp
   api/      Express 5 — login próprio, registros, perguntas, integrações, webhook da Fathom
   mcp/      Servidor MCP (Streamable HTTP) para o conector do Claude
-  worker/   Fila no Postgres (atas, indexação, Notion, extração) + rotinas agendadas
+  worker/   Fila no Postgres (atas, indexação, extração) + rotinas agendadas
 packages/
   core/         Tipos, constantes e validação (zod). `@cerebro/core/publico` é a versão sem zod, para a web
   db/           Conexão, migrations (schema `cerebro`) e repositórios — SQL sempre parametrizado
   auth/         Senhas (bcrypt), JWT de acesso, tokens opacos, cofre AES-256-GCM
   ia/           DeepSeek (API compatível com OpenAI), embeddings Gemini, máscara de dados pessoais, prompts
-  integracoes/  Fathom, Notion, Google Agenda, IMAP, exportação do Claude
+  integracoes/  Fathom, Google Agenda, IMAP, exportação do Claude
   servicos/     Regras de negócio. API, MCP e worker são só "portas" para esta camada
   central/      Acesso só-leitura do Argos ao banco da Central (papel argos_leitura, views sem dados pessoais, consultas prontas)
 ```
@@ -95,11 +95,17 @@ O token vale como senha: revogue na mesma tela.
 Cole o segredo `whsec_…` em `FATHOM_WEBHOOK_SEGREDO`. A assinatura é verificada (Standard Webhooks).
 O formato do payload deve ser conferido com a primeira reunião real (o leitor é tolerante e ignora o que não reconhece).
 
-**Google Agenda.** Google Cloud › OAuth (app em produção, escopo `calendar.events.readonly`), redirect
+**Google Agenda.** Google Cloud › OAuth (app em produção, escopo `calendar.events`), redirect
 `https://<domínio>/api/integracoes/google/retorno`. Preencha `GOOGLE_CLIENT_ID/SECRET` e clique em Conectar.
 
-**Notion.** Crie uma integração interna, copie o token para `NOTION_TOKEN`, conecte-a ao banco de tarefas
-(••• › Conexões) e, em Integrações › Notion, cole o link do banco e escolha as colunas.
+**Tarefas.** Aba própria (lista ou quadro kanban). As pendências marcadas de uma ata aprovada viram tarefas
+sozinhas, com responsável e prazo; o Argos e o Claude também criam tarefas. Cada tarefa se liga a registros e
+clientes (aparece no registro e no mapa) e, com o Google Agenda conectado, entra na pauta de uma reunião
+(escrita na descrição do evento) ou vira lembrete na agenda.
+
+**Documentos.** Em Biblioteca › Enviar documentos: PDF (com texto), Word, Excel, PowerPoint, TXT, MD e CSV, até 25 MB.
+O texto vira um registro do tipo Documento (busca, Argos, Claude e mapa) e o original fica guardado para baixar.
+O administrador exclui de vez qualquer registro (digitando o código para confirmar).
 
 **Argos (voz).** Crie uma chave em console.groq.com e coloque `GROQ_CHAVE` na `api`. Em qualquer tela:
 segure **Espaço** e fale (solte para enviar), toque rápido no Espaço para ele ouvir até você parar, ou clique na

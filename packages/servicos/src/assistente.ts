@@ -23,6 +23,7 @@ const TELAS: Record<string, { destino: string; rotulo: string }> = {
   inicio: { destino: "/", rotulo: "Início" },
   perguntar: { destino: "/perguntar", rotulo: "Perguntar" },
   biblioteca: { destino: "/biblioteca", rotulo: "Biblioteca" },
+  tarefas: { destino: "/tarefas", rotulo: "Tarefas" },
   mapa: { destino: "/mapa", rotulo: "Mapa" },
   revisar: { destino: "/revisar", rotulo: "Revisar" },
   integracoes: { destino: "/integracoes", rotulo: "Integrações" },
@@ -38,6 +39,7 @@ const sem = (t: string) =>
 const NOMES_TELA: [RegExp, string][] = [
   [/\bmapas?\b/, "mapa"],
   [/\bbiblioteca\b/, "biblioteca"],
+  [/\b(tarefas?|afazeres|to ?do)\b/, "tarefas"],
   [/\b(revisar|revisao|revisoes|aprovacao|aprovacoes)\b/, "revisar"],
   [/\bintegrac(ao|oes)\b/, "integracoes"],
   [/\b(minha conta|conta|perfil|senha)\b/, "conta"],
@@ -265,8 +267,9 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
   let acao: RespostaAssistenteDTO["acao"] = null;
   if (r.abrir) {
     const [tipo, alvo] = r.abrir.includes(":") ? (r.abrir.split(":", 2) as [string, string]) : [null, r.abrir];
-    const tela = !tipo ? TELAS[sem(alvo).replace("integracoes", "integracoes").replace("revisao", "revisar")] : undefined;
+    const tela = !tipo ? TELAS[sem(alvo).replace("revisao", "revisar")] : undefined;
     if (tela) acao = { ...tela, automatica: true };
+    else if (/^TAR-\d+$/i.test(alvo)) acao = { destino: `/tarefas?abrir=${alvo.toUpperCase()}`, rotulo: `Abrir ${alvo.toUpperCase()}`, automatica: true };
     else {
       const reg = await acharRegistro(ctx, alvo);
       if (reg) {
@@ -277,6 +280,7 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
       }
     }
   }
+  if (!acao && r.tarefa) acao = { destino: `/tarefas?abrir=${r.tarefa.codigo}`, rotulo: `Abrir ${r.tarefa.codigo}`, automatica: false };
   if (!acao && r.rascunho) acao = { destino: `/revisar/${r.rascunho.id}`, rotulo: `Revisar ${r.rascunho.codigo}`, automatica: false };
   if (!acao && r.fontes[0] && !r.dados) acao = { destino: `/registros/${r.fontes[0].codigo}`, rotulo: `Abrir ${r.fontes[0].codigo}`, automatica: false };
 

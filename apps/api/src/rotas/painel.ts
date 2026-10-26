@@ -11,17 +11,6 @@ const esquemaNovoUsuario = z.object({
   papel: z.enum(["admin", "membro"]).default("membro"),
 });
 
-const esquemaMapaNotion = z.object({
-  databaseId: z.string().trim().min(10).max(100),
-  propTitulo: z.string().trim().min(1).max(100),
-  propPrazo: z.string().trim().max(100).nullish(),
-  propResponsavel: z.string().trim().max(100).nullish(),
-  tipoResponsavel: z.enum(["rich_text", "select"]).optional(),
-  propStatus: z.string().trim().max(100).nullish(),
-  tipoStatus: z.enum(["status", "select"]).optional(),
-  valorStatusInicial: z.string().trim().max(100).nullish(),
-  propOrigem: z.string().trim().max(100).nullish(),
-});
 
 /** Rotas de tela: início, lacunas, usuários, integrações, conector e importação. Todas exigem login. */
 export function rotasPainel({ ctx }: Deps) {
@@ -108,16 +97,6 @@ export function rotasPainel({ ctx }: Deps) {
 
   r.post("/integracoes/google/conectar", exigirAdmin, async (req, res) => {
     res.json({ url: await painel.iniciarConexaoGoogle(ctx, ator(req)) });
-  });
-
-  r.get("/integracoes/notion/colunas", exigirAdmin, async (req, res) => {
-    const { databaseId } = validar(z.object({ databaseId: z.string().trim().min(10).max(100) }), req.query);
-    res.json(await painel.colunasNotion(ctx, databaseId));
-  });
-
-  r.put("/integracoes/notion/mapa", exigirAdmin, async (req, res) => {
-    await painel.salvarMapaNotion(ctx, ator(req), validar(esquemaMapaNotion, req.body));
-    res.status(204).end();
   });
 
   r.get("/integracoes/fila", exigirAdmin, async (_req, res) => {

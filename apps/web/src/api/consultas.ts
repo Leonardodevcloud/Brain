@@ -33,17 +33,6 @@ export interface TokenConector {
 export interface UsuarioEquipe extends UsuarioDTO {
   ativo: boolean;
 }
-export interface MapaNotion {
-  databaseId: string;
-  propTitulo: string;
-  propPrazo?: string | null;
-  propResponsavel?: string | null;
-  tipoResponsavel?: "rich_text" | "select";
-  propStatus?: string | null;
-  tipoStatus?: "status" | "select";
-  valorStatusInicial?: string | null;
-  propOrigem?: string | null;
-}
 
 const consulta = (filtro: Partial<FiltroRegistros>) =>
   new URLSearchParams(Object.entries(filtro).filter(([, v]) => v !== undefined && v !== "") as [string, string][]).toString();

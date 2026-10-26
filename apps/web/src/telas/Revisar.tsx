@@ -29,11 +29,11 @@ function ItemFila({ r, ativo }: { r: RegistroResumoDTO; ativo: boolean }) {
   );
 }
 
-/** Ata: escolhe quais decisões viram registro e quais pendências viram tarefa no Notion. */
+/** Ata: escolhe quais decisões viram registro e quais pendências viram tarefas do Cérebro. */
 function DetalheAta({ r }: { r: RegistroDTO }) {
   const ata = r.dados as unknown as AtaDados;
   const [decisoes, setDecisoes] = useState(() => new Set(ata.decisoes.map((d, i) => (d.aprovar ? i : -1)).filter((i) => i >= 0)));
-  const [pendencias, setPendencias] = useState(() => new Set(ata.pendencias.map((p, i) => (p.criarNoNotion ? i : -1)).filter((i) => i >= 0)));
+  const [pendencias, setPendencias] = useState(() => new Set(ata.pendencias.map((p, i) => ((p.criarTarefa ?? p.criarNoNotion ?? true) ? i : -1)).filter((i) => i >= 0)));
   const alternar = (conjunto: Set<number>, definir: (s: Set<number>) => void, i: number) => {
     const n = new Set(conjunto);
     if (n.has(i)) n.delete(i);
@@ -71,7 +71,7 @@ function DetalheAta({ r }: { r: RegistroDTO }) {
 
       <section className={css.bloco}>
         <div className={pg.cabecalhoSecao}>
-          <h3>Tarefas para o Notion</h3>
+          <h3>Viram tarefas</h3>
         </div>
         {ata.pendencias.length ? (
           <div className={css.rolagem}>

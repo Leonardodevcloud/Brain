@@ -12,7 +12,7 @@ import {
   type ProvedorFala,
   type ProvedorTranscricao,
 } from "@cerebro/ia";
-import { ClienteGoogleAgenda, ClienteNotion, type ConfigImap } from "@cerebro/integracoes";
+import { ClienteGoogleAgenda, type ConfigImap } from "@cerebro/integracoes";
 import type { Ambiente } from "./config.js";
 
 export interface Log {
@@ -49,7 +49,6 @@ export interface Contexto {
   fala: ProvedorFala | null;
   cofre: Cofre | null;
   google: ClienteGoogleAgenda | null;
-  notion: ClienteNotion | null;
   imap: ConfigImap | null;
   agora: () => Date;
 }
@@ -96,7 +95,6 @@ export function criarContexto(pool: Pool, ambiente: Ambiente, log: Log): Context
             redirectUri: `${ambiente.URL_API.replace(/\/$/, "")}/integracoes/google/retorno`,
           })
         : null,
-    notion: ambiente.NOTION_TOKEN ? new ClienteNotion(ambiente.NOTION_TOKEN) : null,
     imap:
       ambiente.IMAP_HOST && ambiente.IMAP_USUARIO && ambiente.IMAP_SENHA
         ? {

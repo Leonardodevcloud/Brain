@@ -8,8 +8,18 @@ import {
   type FonteDTO,
   type RegistroResumoDTO,
 } from "@cerebro/core";
+import {
+  CONSULTAS_PRONTAS,
+  REGRAS_NEGOCIO,
+  carregarCatalogo,
+  consultaPronta,
+  consultar,
+  detalharTabelas,
+  resumoDoCatalogo,
+  validarSql,
+} from "@cerebro/central";
 import { lacunas, registros as repoRegistros } from "@cerebro/db";
-import { buscar, conhecimento, painel, type Ator, type Contexto } from "@cerebro/servicos";
+import { auditar, buscar, conhecimento, painel, tarefas, type Ator, type Contexto } from "@cerebro/servicos";
 import { z } from "zod";
 
 const texto = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
@@ -54,7 +64,10 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
         "Base de conhecimento oficial da Central Tutts (POPs, decisões, regras, clientes, atas). " +
         "Antes de responder sobre como a operação funciona, use buscar_conhecimento e cite os códigos (ex.: POP-014). " +
         "Quando a conversa produzir uma decisão, regra ou procedimento novo, ofereça salvar com salvar_rascunho — " +
-        "o rascunho só vale depois que alguém aprova no Cérebro.",
+        "o rascunho só vale depois que alguém aprova no Cérebro. " +
+        "Para números da operação (disponibilidade, entregas e SLA do BI, faturamento, saques, clientes do CS…) use os dados da Central: " +
+        "catalogo_central para achar as tabelas, colunas_central para ver as colunas e consultar_central para rodar um SELECT (só leitura). " +
+        "Combinados e próximos passos viram tarefas com criar_tarefa; listar_tarefas mostra o que está aberto.",
     },
   );
 
@@ -165,6 +178,168 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
           `Rascunho ${r.codigo} salvo. Ele aparece em "Revisar" no Cérebro e só passa a valer depois de aprovado: ` +
             `${urlWeb.replace(/\/$/, "")}/registros/${r.codigo}`,
         );
+      }),
+  );
+
+  // ── Dados da Central (só leitura, sem dados pessoais) ──
+
+  const exigirCentral = () => {
+    if (!ctx.central) throw AppError.indisponivel("O banco da Central não está ligado ao Cérebro (falta ARGOS_DB_SENHA).");
+    return ctx.central;
+  };
+  const tabelaMarkdown = (colunas: string[], linhas: Record<string, unknown>[]) => {
+    if (!linhas.length) return "(nenhuma linha)";
+    const celula = (v: unknown) => (v === null || v === undefined ? "" : v instanceof Date ? v.toISOString() : typeof v === "object" ? JSON.stringify(v) : String(v)).replace(/\|/g, "/").replace(/\n/g, " ");
+    return [`| ${colunas.join(" | ")} |`, `| ${colunas.map(() => "---").join(" | ")} |`, ...linhas.map((l) => `| ${colunas.map((c) => celula(l[c])).join(" | ")} |`)].join("\n");
+  };
+
+  servidor.registerTool(
+    "catalogo_central",
+    {
+      title: "Tabelas da Central",
+      description:
+        "Lista as tabelas do banco da Central Tutts por módulo (BI, financeiro, disponibilidade, CS, score…), com descrição e tamanho. " +
+        "Use antes de consultar_central. Inclui as regras de negócio para não contar errado.",
+      inputSchema: { busca: z.string().max(60).optional().describe("Filtra pelo nome da tabela ou do módulo (ex.: 'bi', 'saque').") },
+      annotations: { readOnlyHint: true },
+    },
+    ({ busca }) =>
+      seguro(ctx, async () => {
+        const catalogo = await carregarCatalogo(exigirCentral());
+        const q = busca?.toLowerCase().trim();
+        const filtrado = q ? catalogo.filter((t) => t.nome.includes(q) || t.modulo.toLowerCase().includes(q) || (t.descricao ?? "").toLowerCase().includes(q)) : catalogo;
+        const prontas = CONSULTAS_PRONTAS.map((c) => `- ${c.nome}: ${c.descricao} Parâmetros: ${JSON.stringify(c.parametros)}`).join("\n");
+        return texto(`${resumoDoCatalogo(filtrado)}\n\n## Regras de negócio\n${REGRAS_NEGOCIO}\n\n## Consultas prontas (use consultar_central com "pronta")\n${prontas}`);
+      }),
+  );
+
+  servidor.registerTool(
+    "colunas_central",
+    {
+      title: "Colunas de tabelas da Central",
+      description: "Mostra as colunas e os tipos das tabelas escolhidas, para escrever o SQL.",
+      inputSchema: { tabelas: z.array(z.string().max(80)).min(1).max(8) },
+      annotations: { readOnlyHint: true },
+    },
+    ({ tabelas: nomes }) =>
+      seguro(ctx, async () => {
+        const catalogo = await carregarCatalogo(exigirCentral());
+        const existe = new Set(catalogo.map((t) => t.nome));
+        const faltam = nomes.filter((n) => !existe.has(n));
+        return texto(`${detalharTabelas(catalogo, nomes) || "Nenhuma dessas tabelas existe."}${faltam.length ? `\n\nNão existem: ${faltam.join(", ")}.` : ""}`);
+      }),
+  );
+
+  servidor.registerTool(
+    "consultar_central",
+    {
+      title: "Consultar dados da Central",
+      description:
+        "Roda uma consulta SÓ DE LEITURA no banco da Central e devolve até 200 linhas. Mande `sql` (um SELECT/WITH em PostgreSQL, " +
+        "sem ponto e vírgula e sem prefixo de schema) ou `pronta` com `parametros`. CPF, PIX, dados bancários, senhas e tokens não existem nesse acesso. " +
+        "Datas de 'hoje' usam o fuso America/Bahia.",
+      inputSchema: {
+        sql: z.string().max(8000).optional(),
+        pronta: z.enum(CONSULTAS_PRONTAS.map((c) => c.nome) as [string, ...string[]]).optional(),
+        parametros: z.record(z.string(), z.unknown()).optional(),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    ({ sql, pronta, parametros }) =>
+      seguro(ctx, async () => {
+        const central = exigirCentral();
+        if (!sql && !pronta) return falha("Mande `sql` ou `pronta`.");
+        if (pronta) {
+          const p = consultaPronta(pronta);
+          if (!p) return falha("Consulta pronta desconhecida.");
+          const r = await p.executar(central, parametros ?? {});
+          await auditar(ctx.pool, ator, "argos.consulta_central", undefined, { origem: `mcp:pronta:${pronta}`, linhas: r.linhas.length, ms: r.ms });
+          return texto(`## ${r.titulo}\nTotais: ${JSON.stringify(r.totais)}\n\n${tabelaMarkdown(r.colunas, r.linhas.slice(0, 200))}`);
+        }
+        let validado: string;
+        try {
+          validado = validarSql(sql!);
+        } catch (erro) {
+          return falha((erro as Error).message);
+        }
+        try {
+          const r = await consultar(central, validado, [], { limite: 200 });
+          await auditar(ctx.pool, ator, "argos.consulta_central", undefined, { origem: "mcp:livre", linhas: r.linhas.length, ms: r.ms });
+          return texto(`${r.linhas.length}${r.cortado ? "+ (cortado em 200)" : ""} linhas · ${r.ms} ms\n\n${tabelaMarkdown(r.colunas, r.linhas)}`);
+        } catch (erro) {
+          return falha(`O banco recusou a consulta: ${(erro as Error).message.slice(0, 400)}. Confira as colunas com colunas_central.`);
+        }
+      }),
+  );
+
+  // ── Tarefas ──
+
+  servidor.registerTool(
+    "listar_tarefas",
+    {
+      title: "Tarefas do Cérebro",
+      description: "Lista as tarefas abertas (o que foi combinado em reuniões, registros e conversas).",
+      inputSchema: { filtro: z.enum(["minhas", "todas", "atrasadas", "feitas"]).default("todas"), texto: z.string().max(120).optional() },
+      annotations: { readOnlyHint: true },
+    },
+    ({ filtro, texto: busca }) =>
+      seguro(ctx, async () => {
+        const lista = await tarefas.listarTarefas(ctx, ator, { filtro, texto: busca });
+        if (!lista.length) return texto("Nenhuma tarefa com esse filtro.");
+        const nome = { a_fazer: "a fazer", fazendo: "fazendo", feita: "feita" } as const;
+        return texto(
+          lista
+            .slice(0, 80)
+            .map((t) => `- ${t.codigo} — ${t.titulo} (${nome[t.status]}${t.prazo ? `, prazo ${t.prazo}${t.atrasada ? " ATRASADA" : ""}` : ""}${t.responsavel ? `, ${t.responsavel.nome}` : ""}${t.registros[0] ? `, de ${t.registros[0].codigo}` : ""})`)
+            .join("\n"),
+        );
+      }),
+  );
+
+  servidor.registerTool(
+    "criar_tarefa",
+    {
+      title: "Criar tarefa no Cérebro",
+      description: "Cria uma tarefa (vale na hora, não precisa de aprovação). Confirme título, responsável e prazo com a pessoa.",
+      inputSchema: {
+        titulo: z.string().min(3).max(300),
+        descricao: z.string().max(5000).optional(),
+        responsavel: z.string().max(120).optional().describe("Nome da pessoa ou do time (ex.: 'Leonardo', 'Supervisão SSA')."),
+        prazo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("AAAA-MM-DD"),
+        cliente: z.string().max(200).optional(),
+        registro: z.string().max(20).optional().describe("Código de um registro ligado (ex.: POP-014)."),
+      },
+    },
+    ({ titulo, descricao, responsavel, prazo, cliente, registro }) =>
+      seguro(ctx, async () => {
+        const ligado = registro ? await repoRegistros.buscarPorCodigo(ctx.pool, registro.trim().toUpperCase()) : null;
+        if (registro && !ligado) return falha(`Não encontrei ${registro}.`);
+        const t = await tarefas.criarTarefa(
+          ctx,
+          ator,
+          { titulo, descricao: descricao ?? "", responsavelTexto: responsavel, prazo, clienteRef: cliente, registros: ligado ? [ligado.id] : [] },
+          { origem: "claude" },
+        );
+        return texto(`Tarefa ${t.codigo} criada${t.responsavel ? ` para ${t.responsavel.nome}` : ""}${t.prazo ? `, prazo ${t.prazo}` : ""}: ${urlWeb.replace(/\/$/, "")}/tarefas?abrir=${t.codigo}`);
+      }),
+  );
+
+  servidor.registerTool(
+    "atualizar_tarefa",
+    {
+      title: "Atualizar tarefa",
+      description: "Muda a situação (a_fazer, fazendo, feita), o prazo ou o responsável de uma tarefa pelo código (TAR-018).",
+      inputSchema: {
+        codigo: z.string().max(20),
+        status: z.enum(["a_fazer", "fazendo", "feita"]).optional(),
+        prazo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+        responsavel: z.string().max(120).optional(),
+      },
+    },
+    ({ codigo, status, prazo, responsavel }) =>
+      seguro(ctx, async () => {
+        const t = await tarefas.atualizarTarefa(ctx, ator, codigo.trim().toUpperCase(), { status, prazo, responsavelTexto: responsavel });
+        return texto(`${t.codigo} atualizada: ${t.status}${t.prazo ? `, prazo ${t.prazo}` : ""}${t.responsavel ? `, ${t.responsavel.nome}` : ""}.`);
       }),
   );
 

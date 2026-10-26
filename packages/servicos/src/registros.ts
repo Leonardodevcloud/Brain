@@ -14,6 +14,9 @@ import {
 import { emTransacao, registros, type CamposEditaveis, type Cliente, type RegistroLinha } from "@cerebro/db";
 import { auditar, hojeLocal, type Ator, type Contexto } from "./contexto.js";
 import { fila } from "./fila.js";
+import { criarTarefaDaAta } from "./tarefas.js";
+import { invalidarCacheBusca } from "./busca.js";
+import { invalidarCacheMapa } from "./mapa.js";
 
 // ───────────────────────────── Conversão para DTO ─────────────────────────────
 
@@ -192,7 +195,7 @@ export async function atualizarRegistro(ctx: Contexto, ator: Ator, id: string, e
 export interface OpcoesAprovacao {
   /** Para atas: índices das decisões que viram registros (padrão: as marcadas na ata). */
   decisoes?: number[];
-  /** Para atas: índices das pendências que viram tarefas no Notion. */
+  /** Para atas: índices das pendências que viram tarefas do Cérebro. */
   pendencias?: number[];
 }
 
@@ -231,7 +234,7 @@ async function aprovarAta(db: Cliente, ctx: Contexto, ator: Ator, ata: RegistroL
   }));
   const pendencias = (dados.pendencias ?? []).map((p, i) => ({
     ...p,
-    criarNoNotion: opcoes.pendencias ? opcoes.pendencias.includes(i) : p.criarNoNotion,
+    criarTarefa: opcoes.pendencias ? opcoes.pendencias.includes(i) : (p.criarTarefa ?? p.criarNoNotion ?? true),
   }));
 
   // Decisões aprovadas junto com a ata viram registros próprios, ligados a ela.
@@ -257,7 +260,28 @@ async function aprovarAta(db: Cliente, ctx: Contexto, ator: Ator, ata: RegistroL
   }
 
   await registros.atualizar(db, ata.id, { dados: { ...dados, decisoes, pendencias } });
-  if (pendencias.some((p) => p.criarNoNotion) && ctx.notion) await fila.criarTarefasNotion(db, ata.id);
+  // Pendências marcadas viram tarefas do Cérebro, ligadas à ata (aprovar de novo não duplica).
+  for (const p of pendencias.filter((x) => x.criarTarefa)) {
+    await criarTarefaDaAta(db, ator, ata, p);
+  }
+}
+
+/**
+ * Apaga de vez (só o administrador): o registro, as versões, os trechos da busca e o arquivo enviado.
+ * Exige repetir o código, para ninguém apagar o registro errado. Fica na auditoria.
+ */
+export async function excluirRegistro(ctx: Contexto, ator: Ator, idOuCodigo: string, confirmacao: string) {
+  exigirPessoa(ator);
+  if (ator.papel !== "admin") throw AppError.semPermissao("Só o administrador exclui registros.");
+  const r = /^[0-9a-f-]{36}$/i.test(idOuCodigo) ? await registros.buscarPorId(ctx.pool, idOuCodigo) : await registros.buscarPorCodigo(ctx.pool, idOuCodigo.toUpperCase());
+  if (!r) throw AppError.naoEncontrado("O registro");
+  if (confirmacao.trim().toUpperCase() !== r.codigo) throw AppError.requisicaoInvalida(`Para excluir, digite o código ${r.codigo}.`);
+  await emTransacao(ctx.pool, async (db) => {
+    await db.query(`DELETE FROM cerebro.registros WHERE id = $1`, [r.id]);
+    await auditar(db, ator, "registro.excluido", { entidade: "registro", id: r.id }, { codigo: r.codigo, titulo: r.titulo, tipo: r.tipo });
+  });
+  invalidarCacheBusca();
+  invalidarCacheMapa();
 }
 
 export async function descartarRegistro(ctx: Contexto, ator: Ator, id: string) {

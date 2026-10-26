@@ -46,7 +46,6 @@ const esquemaAmbiente = z.object({
   GOOGLE_CLIENT_ID: opcional(z.string()),
   GOOGLE_CLIENT_SECRET: opcional(z.string()),
 
-  NOTION_TOKEN: opcional(z.string()),
 
   IMAP_HOST: opcional(z.string()),
   IMAP_PORTA: z.preprocess(vazioParaUndefined, z.coerce.number().int().default(993)),

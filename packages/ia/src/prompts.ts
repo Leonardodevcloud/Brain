@@ -199,6 +199,8 @@ Trabalhe em etapas. A cada resposta sua, devolva UM objeto JSON com uma ação:
 - {"acao":"pronta","nome":"disponibilidade|entregas|faturamento|saques","parametros":{...},"pensamento":"..."} → consultas prontas e testadas; prefira quando servirem.
 - {"acao":"conhecimento","busca":"termos","pensamento":"..."} → procura nos POPs, regras, decisões e atas do Cérebro (como a empresa FAZ as coisas).
 - {"acao":"pendencias"} → o que está esperando aprovação ou revisão no Cérebro.
+- {"acao":"tarefas","filtro":"minhas|todas|atrasadas"} → as tarefas abertas (combinados de reuniões, registros e conversas).
+- {"acao":"criar_tarefa","titulo":"...","responsavel":"nome ou time ou null","prazo":"AAAA-MM-DD ou null","descricao":"...","registro":"código ou null"} → só quando a pessoa PEDIR para criar/anotar uma tarefa ou lembrete. Vale na hora.
 - {"acao":"rascunho","tipo":"nota|pop|politica|decisao|cliente","titulo":"...","conteudo":"markdown"} → só quando a pessoa PEDIR para anotar/salvar algo. Vira rascunho para aprovação.
 - {"acao":"responder","fala":"...","analise":"markdown ou null","destaques":[{"rotulo":"...","valor":"..."}],"mostrar":"r2 ou null","abrir":"tela ou código ou null"} → resposta final.
 
@@ -207,7 +209,7 @@ Na resposta final:
 - "analise": markdown curto (até 6 linhas) com o que importa e o porquê, só quando acrescentar algo à fala. Para conversa simples, null.
 - "destaques": até 4 números-chave para a tela (rótulos curtos). Vazio se não houver números.
 - "mostrar": o id do resultado (r1, r2…) cuja tabela deve aparecer na tela, ou null.
-- "abrir": quando a pessoa pedir para abrir/ir para algo: "inicio", "perguntar", "biblioteca", "mapa", "revisar", "integracoes", "conta", um código de registro ("POP-001") ou "mapa:POP-001" para mostrar o registro no mapa. Senão null.
+- "abrir": quando a pessoa pedir para abrir/ir para algo: "inicio", "perguntar", "biblioteca", "tarefas", "mapa", "revisar", "integracoes", "conta", um código de tarefa ("TAR-018"), um código de registro ("POP-001") ou "mapa:POP-001" para mostrar o registro no mapa. Senão null.
 
 Regras:
 - Cumprimentos e conversa ("oi, tudo bem?") → responda direto, com simpatia, pelo primeiro nome, sem consultar nada.
@@ -221,7 +223,12 @@ Regras:
 - Devolva só o JSON, sem texto fora dele.`;
 
 export interface PassoAgente {
-  acao: "colunas" | "sql" | "pronta" | "conhecimento" | "pendencias" | "rascunho" | "responder";
+  acao: "colunas" | "sql" | "pronta" | "conhecimento" | "pendencias" | "tarefas" | "criar_tarefa" | "rascunho" | "responder";
+  filtro?: "minhas" | "todas" | "atrasadas";
+  responsavel?: string | null;
+  prazo?: string | null;
+  descricao?: string;
+  registro?: string | null;
   pensamento?: string;
   tabelas?: string[];
   sql?: string;
