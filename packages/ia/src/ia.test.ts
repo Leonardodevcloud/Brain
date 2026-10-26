@@ -93,3 +93,20 @@ describe("texto para fala", () => {
     expect(falado.endsWith(".")).toBe(true);
   });
 });
+
+describe("transcrição", () => {
+  it("tira o que o Whisper ouviu no silêncio e marca quando a confiança é baixa", async () => {
+    const { lerTranscricao, MARCA_INCERTA } = await import("./voz.js");
+    expect(lerTranscricao({ text: "oi" })).toBe("oi");
+    expect(
+      lerTranscricao({
+        segments: [
+          { text: " Como está a disponibilidade?", no_speech_prob: 0.05, avg_logprob: -0.2 },
+          { text: " Obrigado por assistir.", no_speech_prob: 0.9, avg_logprob: -0.4 },
+        ],
+      }),
+    ).toBe("Como está a disponibilidade?");
+    expect(lerTranscricao({ segments: [{ text: "loja do faro", no_speech_prob: 0.1, avg_logprob: -1.2 }] })).toBe(`loja do faro ${MARCA_INCERTA}`);
+    expect(lerTranscricao({ segments: [{ text: "legendas", no_speech_prob: 0.95, avg_logprob: -0.3 }] })).toBe("");
+  });
+});

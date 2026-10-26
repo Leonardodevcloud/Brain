@@ -17,6 +17,8 @@ export {
   TranscricaoCompativelOpenAI,
   VOZES_FALA,
   textoParaFala,
+  lerTranscricao,
+  MARCA_INCERTA,
   type ProvedorFala,
   type ProvedorTranscricao,
   type VozFala,

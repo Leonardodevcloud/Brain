@@ -30,7 +30,7 @@ export class TranscricaoCompativelOpenAI implements ProvedorTranscricao {
     formulario.append("file", new Blob([new Uint8Array(audio)], { type: tipo }), `fala.${EXTENSAO[tipo] ?? "webm"}`);
     formulario.append("model", this.cfg.modelo);
     formulario.append("language", "pt");
-    formulario.append("response_format", "json");
+    formulario.append("response_format", "verbose_json");
     formulario.append("temperature", "0");
     // Vocabulário da casa ajuda o Whisper com nomes próprios.
     formulario.append(
@@ -48,9 +48,33 @@ export class TranscricaoCompativelOpenAI implements ProvedorTranscricao {
       const corpo = await resposta.text().catch(() => "");
       throw new Error(`Transcrição falhou (${resposta.status}): ${corpo.slice(0, 300)}`);
     }
-    const dados = (await resposta.json()) as { text?: string };
-    return (dados.text ?? "").trim();
+    const dados = (await resposta.json()) as {
+      text?: string;
+      segments?: { text?: string; no_speech_prob?: number; avg_logprob?: number }[];
+    };
+    return lerTranscricao(dados);
   }
+}
+
+/** Marca colocada no fim quando o Whisper teve pouca confiança: o Argos confirma antes de agir. */
+export const MARCA_INCERTA = "[áudio pouco claro]";
+
+/**
+ * Tira os trechos que o Whisper "ouviu" no silêncio (alta chance de não ser fala) e
+ * marca a transcrição quando a confiança média é baixa.
+ */
+export function lerTranscricao(dados: { text?: string; segments?: { text?: string; no_speech_prob?: number; avg_logprob?: number }[] }): string {
+  const segmentos = dados.segments ?? [];
+  if (!segmentos.length) return (dados.text ?? "").trim();
+  const bons = segmentos.filter((s) => (s.no_speech_prob ?? 0) < 0.6 && (s.avg_logprob ?? 0) > -1.6);
+  const texto = bons
+    .map((s) => (s.text ?? "").trim())
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!texto) return "";
+  const media = bons.reduce((t, s) => t + (s.avg_logprob ?? 0), 0) / bons.length;
+  return media < -0.9 ? `${texto} ${MARCA_INCERTA}` : texto;
 }
 
 /** Versão para ser falada: sem Markdown, sem citações [1], curta. */

@@ -20,6 +20,51 @@ let tocador: HTMLAudioElement | null = null;
 let urls: string[] = [];
 let cancelarPedidos: AbortController | null = null;
 
+// Volume real da voz do Argos (para a esfera "falar" junto). Só onde o navegador deixa
+// ler o áudio que está tocando (Chrome/Edge); nos outros a esfera usa um ritmo de fala.
+let ouvinte: { contexto: AudioContext; analisador: AnalyserNode; amostras: Uint8Array<ArrayBuffer> } | null = null;
+
+function medirTocador(t: HTMLAudioElement) {
+  soltarOuvinte();
+  const capturar = (t as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream;
+  if (typeof capturar !== "function") return;
+  try {
+    const stream = capturar.call(t);
+    if (!stream.getAudioTracks().length) return;
+    let contexto: AudioContext;
+    try {
+      contexto = new AudioContext({ sinkId: { type: "none" } } as AudioContextOptions);
+    } catch {
+      contexto = new AudioContext();
+    }
+    const analisador = contexto.createAnalyser();
+    analisador.fftSize = 512;
+    analisador.smoothingTimeConstant = 0.55;
+    contexto.createMediaStreamSource(stream).connect(analisador);
+    ouvinte = { contexto, analisador, amostras: new Uint8Array(new ArrayBuffer(analisador.fftSize)) };
+  } catch {
+    ouvinte = null;
+  }
+}
+
+function soltarOuvinte() {
+  if (!ouvinte) return;
+  void ouvinte.contexto.close().catch(() => undefined);
+  ouvinte = null;
+}
+
+/** 0–1 enquanto a voz do servidor toca; `null` quando não dá para medir. */
+export function nivelFala(): number | null {
+  if (!ouvinte) return null;
+  ouvinte.analisador.getByteTimeDomainData(ouvinte.amostras);
+  let soma = 0;
+  for (const v of ouvinte.amostras) {
+    const x = (v - 128) / 128;
+    soma += x * x;
+  }
+  return Math.min(1, Math.sqrt(soma / ouvinte.amostras.length) * 5);
+}
+
 /** Lê (uma vez) qual voz a empresa escolheu. */
 export function lerConfigVoz(): Promise<ConfigVoz | null> {
   config ??= api<ConfigVoz>("/argos/voz").catch(() => null);
@@ -155,6 +200,7 @@ async function falarServidor(texto: string, eventos: Eventos, minha: number) {
         t.src = url;
         t.play().then(() => {
           comecou = true;
+          medirTocador(t);
           // A esfera acompanha a fala (o áudio não expõe as palavras; um ritmo de fala serve).
           window.clearInterval(pulso);
           pulso = window.setInterval(() => eventos.aoPalavra?.(), 190);
@@ -165,6 +211,7 @@ async function falarServidor(texto: string, eventos: Eventos, minha: number) {
     throw Object.assign(erro instanceof Error ? erro : new Error(String(erro)), { comecou });
   } finally {
     window.clearInterval(pulso);
+    soltarOuvinte();
     t.onended = null;
     t.onerror = null;
   }
@@ -236,6 +283,7 @@ function falarNavegador(texto: string, eventos: Eventos, minha: number) {
 
 export function pararFala() {
   sessao++;
+  soltarOuvinte();
   cancelarPedidos?.abort();
   cancelarPedidos = null;
   if (tocador) {

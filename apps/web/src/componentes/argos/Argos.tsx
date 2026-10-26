@@ -1,10 +1,11 @@
 import type { RespostaAssistenteDTO } from "@cerebro/core/publico";
 import { ArrowRight, ChevronDown, Keyboard, Mic, Volume2, VolumeX, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { ErroApi, api } from "../../api/cliente";
-import { desbloquearFala, falar, pararFala } from "./fala";
-import { Gravador } from "./gravador";
+import { desbloquearFala, falar, nivelFala, pararFala } from "./fala";
+import { Escuta, Gravador } from "./gravador";
 import { DadosCentral } from "./DadosCentral";
 import { Orbe, type EstadoOrbe } from "./Orbe";
 import css from "./Argos.module.css";
@@ -19,6 +20,11 @@ const LIMIAR_SEGURAR_MS = 320;
 const SILENCIO_FIM_MS = 1600;
 const MAX_GRAVACAO_MS = 45_000;
 const SEM_FALA_MS = 7000;
+// No modo conversa, se a pessoa não disser nada depois da resposta, o Argos para de ouvir sem alarde.
+const SEM_FALA_CONVERSA_MS = 6500;
+// "Obrigado", "valeu", "tchau"... encerram a conversa.
+const DESPEDIDA = /^(obrigad[oa]|valeu|tchau|at[eé] (mais|logo)|(era|é) s[oó] isso|pode parar|encerrar|chega|beleza,? obrigad[oa])\b/i;
+const limparTranscricao = (t: string) => t.replace(/\s*\[áudio pouco claro\]\s*$/i, "").trim();
 
 const CHAVE_MUDO = "cerebro:argos-mudo";
 const lerMudo = () => {
@@ -59,6 +65,7 @@ const ALUCINACAO = /^(obrigad[oa]( por assistir)?|tchau|legendas?\b.*|inscreva-s
 
 export function Argos() {
   const navegar = useNavigate();
+  const qc = useQueryClient();
   const [fase, setFase] = useState<Fase>("fechado");
   const [modo, setModo] = useState<Modo>("segurando");
   const [texto, setTexto] = useState("");
@@ -84,12 +91,28 @@ export function Argos() {
   const geracao = useRef(0); // invalida respostas de pedidos cancelados
   // Conversa recente (some ao recarregar a página): deixa o Argos entender "e em Salvador?".
   const historico = useRef<{ pergunta: string; resposta: string; em: number }[]>([]);
+  // Modo conversa (como a voz do ChatGPT): depois de responder, o Argos volta a ouvir sozinho,
+  // e dá para interromper falando por cima. Liga quando a pessoa fala; desliga ao digitar, fechar ou se despedir.
+  const [conversa, setConversa] = useState(false);
+  const conversaRef = useRef(false);
+  const mudarConversa = useCallback((v: boolean) => {
+    conversaRef.current = v;
+    setConversa(v);
+  }, []);
+  const automatico = useRef(false); // a escuta atual começou sozinha (depois de uma resposta)
+  const escuta = useRef(new Escuta());
+  const ouvirRef = useRef<(m: Modo, auto?: boolean) => Promise<void>>(async () => undefined);
 
   const nivel = useCallback(() => {
     if (faseRef.current === "ouvindo") return gravador.current.nivel();
     if (faseRef.current === "falando") {
+      const real = nivelFala();
+      if (real !== null) return real;
+      // Sem acesso ao áudio: um ritmo de sílabas (envelope que sobe e desce) em vez de um pulso fixo.
       energia.current *= 0.9;
-      return Math.min(1, energia.current + 0.12 + Math.sin(performance.now() / 140) * 0.06);
+      const t = performance.now() / 1000;
+      const silabas = Math.abs(Math.sin(t * 7.3)) * 0.55 + Math.abs(Math.sin(t * 3.1 + 1)) * 0.3;
+      return Math.min(1, 0.15 + silabas * 0.6 + energia.current * 0.25);
     }
     return 0;
   }, []);
@@ -103,7 +126,7 @@ export function Argos() {
   const processar = useCallback(
     async (fala: string) => {
       const minha = ++geracao.current;
-      setTexto(fala);
+      setTexto(limparTranscricao(fala));
       setResposta(null);
       setCompleto(false);
       setFase("pensando");
@@ -115,11 +138,25 @@ export function Argos() {
           corpo: { texto: fala, historico: recentes.map(({ pergunta, resposta }) => ({ pergunta, resposta })) },
         });
         if (minha !== geracao.current) return;
-        historico.current = [...recentes, { pergunta: fala, resposta: r.fala.slice(0, 2000), em: Date.now() }].slice(-4);
+        historico.current = [...recentes, { pergunta: limparTranscricao(fala), resposta: r.fala.slice(0, 2000), em: Date.now() }].slice(-4);
         setResposta(r);
-        if (r.acao?.automatica) navegar(r.acao.destino);
+        // O Argos pode ter criado tarefa, reunião ou rascunho: as telas abertas se atualizam.
+        void qc.invalidateQueries({ queryKey: ["tarefas"] });
+        void qc.invalidateQueries({ queryKey: ["agenda"] });
+        if (r.acao?.automatica) {
+          navegar(r.acao.destino);
+          // Abriu uma tela: a pessoa vai olhar para ela; a conversa só continua se o Argos tiver perguntado algo.
+          if (!r.aguardaResposta) mudarConversa(false);
+        }
+        // Depois da resposta: em conversa, volta a ouvir sozinho.
+        const continuar = () => {
+          if (geracao.current !== minha) return;
+          if (conversaRef.current) void ouvirRef.current("continuo", true);
+          else setFase("pronto");
+        };
         if (mudoRef.current) {
           setFase("pronto");
+          if (conversaRef.current) window.setTimeout(continuar, 500);
           return;
         }
         setFase("falando");
@@ -129,7 +166,7 @@ export function Argos() {
             energia.current = 1;
           },
           aoFim: () => {
-            if (geracao.current === minha && faseRef.current === "falando") setFase("pronto");
+            if (geracao.current === minha && faseRef.current === "falando") continuar();
           },
         });
       } catch (e) {
@@ -137,7 +174,7 @@ export function Argos() {
         falhar(e instanceof ErroApi ? e.message : "Não consegui responder agora. Tente de novo.");
       }
     },
-    [falhar, navegar],
+    [falhar, navegar, qc, mudarConversa],
   );
 
   const enviar = useCallback(async () => {
@@ -150,6 +187,10 @@ export function Argos() {
     const audio = await gravador.current.parar();
     if (minha !== geracao.current) return;
     if (duracao < 450 || audio.size < 1000) {
+      if (automatico.current) {
+        setFase("pronto");
+        return;
+      }
       falhar("Foi rápido demais. Segure o espaço enquanto fala, ou digite abaixo.", true);
       return;
     }
@@ -159,8 +200,24 @@ export function Argos() {
     try {
       const { texto: transcrito } = await api<{ texto: string }>("/argos/transcrever", { metodo: "POST", arquivo: audio });
       if (minha !== geracao.current) return;
+      const limpo = limparTranscricao(transcrito);
+      // "Obrigado, era só isso": encerra a conversa com educação.
+      if (falou && limpo.length < 40 && DESPEDIDA.test(limpo)) {
+        mudarConversa(false);
+        setTexto(limpo);
+        setResposta(null);
+        setFase("pronto");
+        if (!mudoRef.current) falar("De nada! Qualquer coisa, é só chamar.");
+        return;
+      }
       // Sem fala, o Whisper às vezes "inventa" frases curtas de legenda.
-      if (!transcrito.trim() || ALUCINACAO.test(transcrito.trim())) {
+      if (!limpo || ALUCINACAO.test(limpo)) {
+        if (automatico.current) {
+          // Na escuta automática, silêncio/ruído só encerra a escuta, sem erro.
+          mudarConversa(false);
+          setFase("pronto");
+          return;
+        }
         falhar("Não entendi o que foi dito. Tente de novo, um pouco mais perto do microfone.");
         return;
       }
@@ -170,15 +227,19 @@ export function Argos() {
       const desligada = e instanceof ErroApi && e.status === 503;
       falhar(e instanceof ErroApi ? e.message : "Não consegui enviar o áudio. Confira sua internet.", desligada);
     }
-  }, [falhar, processar]);
+  }, [falhar, processar, mudarConversa]);
 
   const ouvir = useCallback(
-    async (m: Modo) => {
+    async (m: Modo, auto = false) => {
       geracao.current++;
+      escuta.current.parar();
       pararFala();
-      if (!mudoRef.current) desbloquearFala(); // ainda dentro do gesto (tecla/clique)
+      // Ainda dentro do gesto (tecla/clique). Na escuta automática não há gesto, e o áudio já foi liberado.
+      if (!mudoRef.current && !auto) desbloquearFala();
+      automatico.current = auto;
+      if (!auto) mudarConversa(true); // falou com o Argos = modo conversa
       setErro(null);
-      setResposta(null);
+      if (!auto) setResposta(null);
       setTexto("");
       setModo(m);
       setSegundos(0);
@@ -199,16 +260,29 @@ export function Argos() {
         );
       }
     },
-    [falhar],
+    [falhar, mudarConversa],
   );
+  ouvirRef.current = ouvir;
 
   const fechar = useCallback(() => {
     geracao.current++;
     gravador.current.cancelar();
+    escuta.current.parar();
     pararFala();
+    mudarConversa(false);
     setFase("fechado");
     setErro(null);
-  }, []);
+  }, [mudarConversa]);
+
+  // Enquanto o Argos fala em modo conversa: se a pessoa falar por cima, ele para e escuta.
+  useEffect(() => {
+    if (fase !== "falando" || !conversa) return;
+    const e = escuta.current;
+    void e.iniciar(() => {
+      if (faseRef.current === "falando") void ouvirRef.current("continuo", true);
+    });
+    return () => e.parar();
+  }, [fase, conversa]);
 
   // Enquanto ouve: cronômetro, fim por silêncio (modo toque) e limites de segurança.
   useEffect(() => {
@@ -222,7 +296,12 @@ export function Argos() {
       else if (modoRef.current === "continuo") {
         if (g.falou && performance.now() - g.ultimaVoz > SILENCIO_FIM_MS) void enviar();
         // Sem medidor confiável (pico zerado), não dá para saber se a pessoa parou: envia no tempo limite.
-        else if (!g.falou && d > SEM_FALA_MS) {
+        else if (!g.falou && automatico.current && g.pico >= 0.004 && d > SEM_FALA_CONVERSA_MS) {
+          // Ninguém falou depois da resposta: encerra a conversa em silêncio.
+          g.cancelar();
+          mudarConversa(false);
+          setFase("pronto");
+        } else if (!g.falou && d > SEM_FALA_MS) {
           if (g.pico < 0.004) void enviar();
           else {
             g.cancelar();
@@ -232,7 +311,7 @@ export function Argos() {
       }
     }, 120);
     return () => window.clearInterval(id);
-  }, [fase, enviar, falhar]);
+  }, [fase, enviar, falhar, mudarConversa]);
 
   // Atalhos globais: Espaço (segurar = falar; tocar = ouvir até o silêncio) e Esc.
   useEffect(() => {
@@ -266,7 +345,13 @@ export function Argos() {
     };
   }, [enviar, fechar, ouvir]);
 
-  useEffect(() => () => gravador.current.cancelar(), []);
+  useEffect(
+    () => () => {
+      gravador.current.cancelar();
+      escuta.current.parar();
+    },
+    [],
+  );
 
   // Outras telas podem mandar uma pergunta pronta (ex.: "Perguntar ao Argos" no mapa).
   useEffect(() => {
@@ -276,12 +361,13 @@ export function Argos() {
       gravador.current.cancelar();
       pararFala();
       if (!mudoRef.current) desbloquearFala();
+      mudarConversa(false);
       setErro(null);
       void processar(texto.trim());
     };
     window.addEventListener("argos:perguntar", perguntar);
     return () => window.removeEventListener("argos:perguntar", perguntar);
-  }, [processar]);
+  }, [processar, mudarConversa]);
 
   // Botão do Argos na barra de baixo (celular) abre a escuta.
   useEffect(() => {
@@ -312,6 +398,7 @@ export function Argos() {
     if (t.length < 2) return;
     setDigitado("");
     setErro(null);
+    mudarConversa(false);
     void processar(t);
   }
 
@@ -334,8 +421,8 @@ export function Argos() {
           <section className={css.painel} role="dialog" aria-modal="false" aria-label="Argos, assistente de voz">
             <header className={css.topo}>
               <span className={css.marca}>
-                <span className={`${css.ponto} ${fase === "ouvindo" ? css.pontoAoVivo : ""}`} aria-hidden="true" />
-                Argos
+                <span className={`${css.ponto} ${fase === "ouvindo" || conversa ? css.pontoAoVivo : ""}`} aria-hidden="true" />
+                Argos{conversa && <span className={css.modoConversa}>conversa</span>}
               </span>
               <span className={css.fase} aria-live="polite">
                 {ROTULO[fase]}
@@ -362,13 +449,15 @@ export function Argos() {
             </button>
 
             <div className={css.conversa} aria-live="polite">
-              {fase === "ouvindo" && <p className={css.convite}>{segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>}
+              {fase === "ouvindo" && (
+                <p className={css.convite}>{automatico.current && segundos < 2 ? "Pode continuar…" : segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>
+              )}
               {fase === "transcrevendo" && <p className={css.convite}>Entendendo o que você disse…</p>}
               {texto && fase !== "ouvindo" && fase !== "transcrevendo" && <p className={css.voce}>“{texto}”</p>}
               {fase === "pensando" && <p className={css.convite}>Pensando e consultando os dados…</p>}
               {erro && <p className={css.erro}>{erro.mensagem}</p>}
 
-              {resposta && (fase === "falando" || fase === "pronto") && (
+              {resposta && (fase === "falando" || fase === "pronto" || (fase === "ouvindo" && automatico.current)) && (
                 <div className={css.resposta}>
                   <p className={css.fala}>{resposta.fala}</p>
                   {resposta.dados && <DadosCentral dados={resposta.dados} />}
@@ -418,7 +507,12 @@ export function Argos() {
             </div>
 
             <footer className={css.rodape}>
-              {fase === "ouvindo" && toque ? (
+              {conversa && (fase === "falando" || fase === "ouvindo") ? (
+                <p className={css.dica}>
+                  {fase === "falando" ? "Pode me interromper falando" : "Paro quando você terminar de falar"} ·{" "}
+                  {toque ? "toque fora para encerrar" : <><kbd>Esc</kbd> encerra</>}
+                </p>
+              ) : fase === "ouvindo" && toque ? (
                 <p className={css.dica}>Paro quando você terminar de falar · ou toque na esfera</p>
               ) : fase === "ouvindo" ? (
                 <p className={css.dica}>

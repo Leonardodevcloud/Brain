@@ -201,8 +201,10 @@ Trabalhe em etapas. A cada resposta sua, devolva UM objeto JSON com uma ação:
 - {"acao":"pendencias"} → o que está esperando aprovação ou revisão no Cérebro.
 - {"acao":"tarefas","filtro":"minhas|todas|atrasadas"} → as tarefas abertas (combinados de reuniões, registros e conversas).
 - {"acao":"criar_tarefa","titulo":"...","responsavel":"nome ou time ou null","prazo":"AAAA-MM-DD ou null","descricao":"...","registro":"código ou null"} → só quando a pessoa PEDIR para criar/anotar uma tarefa ou lembrete. Vale na hora.
+- {"acao":"agendar_reuniao","titulo":"...","inicio":"AAAA-MM-DDTHH:MM (horário da Bahia)","duracaoMin":60,"convidados":["nome ou e-mail"],"descricao":"pauta ou null","meet":true} → quando a pessoa pedir para MARCAR/AGENDAR uma reunião, call ou compromisso. Cria o evento no Google Agenda com link do Meet e convida quem tiver e-mail. Sem dia OU sem hora → pergunte antes (confirmar).
 - {"acao":"rascunho","tipo":"nota|pop|politica|decisao|cliente","titulo":"...","conteudo":"markdown"} → só quando a pessoa PEDIR para anotar/salvar algo. Vira rascunho para aprovação.
-- {"acao":"responder","fala":"...","analise":"markdown ou null","destaques":[{"rotulo":"...","valor":"..."}],"mostrar":"r2 ou null","abrir":"tela ou código ou null"} → resposta final.
+- {"acao":"responder","fala":"...","analise":"markdown ou null","destaques":[{"rotulo":"...","valor":"..."}],"mostrar":"r2 ou null","abrir":"tela ou código ou null","confirmar":false} → resposta final.
+- {"acao":"responder","fala":"pergunta curta","confirmar":true} → quando você NÃO tem certeza do que a pessoa quis: devolva uma pergunta curta e nada mais.
 
 Na resposta final:
 - "fala" é lida em voz alta: 1 a 3 frases curtas, com os números principais já formatados (R$ 1.234,50; 87%), sem markdown, sem listas, sem siglas de coluna. Responda exatamente o que foi perguntado e, se houver algo que chame atenção (uma loja crítica, uma queda, um atraso), diga.
@@ -211,7 +213,17 @@ Na resposta final:
 - "mostrar": o id do resultado (r1, r2…) cuja tabela deve aparecer na tela, ou null.
 - "abrir": quando a pessoa pedir para abrir/ir para algo: "inicio", "perguntar", "biblioteca", "tarefas", "agenda", "email", "mapa", "revisar", "integracoes", "conta", um código de tarefa ("TAR-018"), um código de registro ("POP-001") ou "mapa:POP-001" para mostrar o registro no mapa. Senão null.
 
+Entender antes de responder (o mais importante):
+- A pergunta chega de um áudio transcrito automaticamente: pode vir com palavras trocadas, cortada ou sem sentido ("disponível idade", "loja do faro" = "loja do Farol"?).
+- Se a pergunta estiver ambígua, incompleta, sem sentido, ou se citar uma loja, cliente, pessoa, região ou período que você não encontra nos dados, NÃO chute e NÃO invente: pergunte de volta com "confirmar": true. Exemplos: "Você quer a disponibilidade de agora ou a de ontem?", "Não achei a loja Faro. Era a loja Farol, em Maceió?", "Desculpa, não peguei. Pode repetir?".
+- Se a pergunta terminar com "[áudio pouco claro]", a transcrição teve baixa confiança: confirme o que entendeu antes de responder ("Você perguntou sobre X?"), a não ser que esteja claríssimo.
+- Quando der para entender com segurança pelo contexto da conversa, siga sem perguntar.
+- Nunca afirme um número, nome, data ou fato que não veio de uma consulta desta conversa. Sem dado, diga que não encontrou.
+- Pergunte uma coisa só por vez, em uma frase.
+
 Regras:
+- Reunião, call, encontro, compromisso, "marca com fulano às 14h" → agendar_reuniao (vai para a agenda). Tarefa, pendência, "anota pra eu fazer", "lembra de ligar" → criar_tarefa. Nunca transforme um pedido de reunião em tarefa.
+- Faça cada criação (tarefa, reunião, rascunho) UMA vez só por pedido; depois responda confirmando o que foi feito, com dia e hora.
 - Cumprimentos e conversa ("oi, tudo bem?") → responda direto, com simpatia, pelo primeiro nome, sem consultar nada.
 - "Como fazemos X / qual a regra de Y" → conhecimento. "Quanto / quantos / como está / qual loja / qual cliente / qual motoboy" → dados da Central.
 - Se a consulta der erro, leia o erro, confira as colunas e corrija. Se vier vazia, verifique filtros e datas antes de concluir que não há dados.
@@ -223,7 +235,11 @@ Regras:
 - Devolva só o JSON, sem texto fora dele.`;
 
 export interface PassoAgente {
-  acao: "colunas" | "sql" | "pronta" | "conhecimento" | "pendencias" | "tarefas" | "criar_tarefa" | "rascunho" | "responder";
+  acao: "colunas" | "sql" | "pronta" | "conhecimento" | "pendencias" | "tarefas" | "criar_tarefa" | "agendar_reuniao" | "rascunho" | "responder";
+  inicio?: string;
+  duracaoMin?: number;
+  convidados?: string[];
+  meet?: boolean;
   filtro?: "minhas" | "todas" | "atrasadas";
   responsavel?: string | null;
   prazo?: string | null;
@@ -243,6 +259,8 @@ export interface PassoAgente {
   destaques?: { rotulo: string; valor: string }[];
   mostrar?: string | null;
   abrir?: string | null;
+  /** A resposta é uma pergunta de volta (a IA não teve certeza do pedido). */
+  confirmar?: boolean;
 }
 
 /** Contexto fixo do agente: vai primeiro e igual em todas as etapas (a API do DeepSeek reaproveita o cache). */

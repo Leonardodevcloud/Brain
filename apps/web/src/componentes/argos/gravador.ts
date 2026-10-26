@@ -138,3 +138,84 @@ export class Gravador {
     this.inicio = 0;
   }
 }
+
+/**
+ * Fica ouvindo enquanto o Argos fala, só medindo o volume (não grava nada).
+ * Quando a pessoa começa a falar por cima, chama `aoVoz` — como interromper alguém numa conversa.
+ * O cancelamento de eco do navegador tira a voz do próprio Argos; mesmo assim o limiar
+ * se ajusta ao "eco" que sobra nos primeiros instantes, para não se interromper sozinho.
+ */
+export class Escuta {
+  private stream: MediaStream | null = null;
+  private contexto: AudioContext | null = null;
+  private analisador: AnalyserNode | null = null;
+  private amostras: Uint8Array<ArrayBuffer> | null = null;
+  private medidor = 0;
+  private ativo = false;
+
+  async iniciar(aoVoz: () => void) {
+    this.parar();
+    this.ativo = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      if (!this.ativo) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      this.stream = stream;
+      this.contexto = criarContextoSemSaida();
+      if (this.contexto.state === "suspended") await this.contexto.resume().catch(() => undefined);
+      const fonte = this.contexto.createMediaStreamSource(stream);
+      this.analisador = this.contexto.createAnalyser();
+      this.analisador.fftSize = 512;
+      this.analisador.smoothingTimeConstant = 0.5;
+      fonte.connect(this.analisador);
+      this.amostras = new Uint8Array(new ArrayBuffer(this.analisador.fftSize));
+    } catch {
+      this.parar();
+      return;
+    }
+    const inicio = performance.now();
+    let base = 0;
+    let medidas = 0;
+    let acima = 0;
+    this.medidor = window.setInterval(() => {
+      if (!this.analisador || !this.amostras) return;
+      this.analisador.getByteTimeDomainData(this.amostras);
+      let soma = 0;
+      for (const v of this.amostras) {
+        const x = (v - 128) / 128;
+        soma += x * x;
+      }
+      const n = Math.min(1, Math.sqrt(soma / this.amostras.length) * 6);
+      const desde = performance.now() - inicio;
+      // Primeiros 700 ms: aprende o nível do ambiente (com o eco que sobrar da voz do Argos).
+      if (desde < 700) {
+        base = (base * medidas + n) / (medidas + 1);
+        medidas++;
+        return;
+      }
+      base = n < base ? base * 0.97 + n * 0.03 : base * 0.998 + n * 0.002;
+      const limiar = Math.max(0.17, base * 2.8);
+      acima = n > limiar ? acima + 1 : Math.max(0, acima - 1);
+      // ~280 ms seguidos de voz forte: é a pessoa falando, não um estalo.
+      if (acima >= 7) {
+        this.parar();
+        aoVoz();
+      }
+    }, 40);
+  }
+
+  parar() {
+    this.ativo = false;
+    window.clearInterval(this.medidor);
+    this.stream?.getTracks().forEach((t) => t.stop());
+    void this.contexto?.close().catch(() => undefined);
+    this.stream = null;
+    this.contexto = null;
+    this.analisador = null;
+    this.amostras = null;
+  }
+}

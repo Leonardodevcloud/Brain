@@ -575,6 +575,46 @@ describe("Argos", () => {
     expect(interpretarRapido("abre as tarefas")).toMatchObject({ intencao: "navegar", alvo: "tarefas" });
   });
 
+  it("agente: não duplica tarefa no mesmo pedido", async () => {
+    const ia = roteiro([
+      () => ({ acao: "criar_tarefa", titulo: "Ligar para a Rede Gama" }),
+      () => ({ acao: "criar_tarefa", titulo: "Ligar para a Rede Gama de novo" }),
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/já foi criada agora/);
+        return { acao: "responder", fala: "Pronto, anotei." };
+      },
+    ]);
+    const antes = (await tarefas.listarTarefas(ctx, atorAdmin)).length;
+    await atenderFala({ ...ctx, ia }, atorAdmin, "anota pra eu ligar pra rede gama");
+    expect((await tarefas.listarTarefas(ctx, atorAdmin)).length).toBe(antes + 1);
+  });
+
+  it("agente: reunião vai para a agenda (e explica quando o Google não está ligado)", async () => {
+    const ia = roteiro([
+      (p) => {
+        expect(p.sistema).toContain("agendar_reuniao");
+        return { acao: "agendar_reuniao", titulo: "Reunião com o Grupo Comollati", inicio: "2026-10-27T14:00", convidados: ["Leonardo"], meet: true };
+      },
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/Não consegui marcar: .*Google Agenda/);
+        return { acao: "responder", fala: "O Google Agenda não está conectado, então não consegui marcar." };
+      },
+    ]);
+    const antes = (await tarefas.listarTarefas(ctx, atorAdmin)).length;
+    const r = await atenderFala({ ...ctx, ia }, atorAdmin, "marca uma reunião amanhã às 14h com o grupo comollati");
+    expect(r.fala).toMatch(/Google Agenda/);
+    expect((await tarefas.listarTarefas(ctx, atorAdmin)).length).toBe(antes);
+    await expect(agenda.criarReuniao(ctx, atorAdmin, { titulo: "Sem hora", inicio: "2026-10-27" })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("agente: na dúvida, pergunta de volta e a tela fica esperando a resposta", async () => {
+    const ia = roteiro([() => ({ acao: "responder", fala: "Não achei a loja Faro. Era a loja Farol?", confirmar: true, analise: "x", mostrar: "r1" })]);
+    const r = await atenderFala({ ...ctx, ia }, atorAdmin, "como está a loja do faro [áudio pouco claro]");
+    expect(r.aguardaResposta).toBe(true);
+    expect(r.dados ?? null).toBeNull();
+    expect(r.detalhe).toBeNull();
+  });
+
   it("agente: abre um registro pelo código", async () => {
     const ia = roteiro([() => ({ acao: "responder", fala: "Abrindo o POP 1.", abrir: "POP-001" })]);
     const r = await atenderFala({ ...ctx, ia }, atorMembro, "abre o pop 1");

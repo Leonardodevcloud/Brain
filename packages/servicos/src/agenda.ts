@@ -112,3 +112,63 @@ export async function criarLembrete(ctx: Contexto, ator: Ator, entrada: { titulo
   await auditar(ctx.pool, ator, "agenda.lembrete", undefined, { titulo, quando });
   return { id: evento.id, titulo, inicio: evento.inicio };
 }
+
+const semAcento = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+/**
+ * Marca uma reunião no Google Agenda (com Meet, se pedido).
+ * Convidados: e-mails, ou nomes de pessoas do Cérebro (o e-mail vem do cadastro).
+ * Quem não é encontrado não recebe convite, mas fica na descrição.
+ */
+export async function criarReuniao(
+  ctx: Contexto,
+  ator: Ator,
+  entrada: { titulo?: unknown; inicio?: unknown; duracaoMin?: unknown; descricao?: unknown; convidados?: unknown; meet?: unknown },
+) {
+  if (!ator.usuarioId) throw AppError.semPermissao("Só pessoas marcam reuniões.");
+  const titulo = typeof entrada.titulo === "string" ? entrada.titulo.trim().slice(0, 200) : "";
+  const quando = typeof entrada.inicio === "string" ? entrada.inicio.trim() : "";
+  if (titulo.length < 2) throw AppError.requisicaoInvalida("Diga o assunto da reunião.");
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(quando)) throw AppError.requisicaoInvalida("Diga o dia e a hora da reunião.");
+  const inicio = new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(quando) ? quando : `${quando.slice(0, 16)}:00${FUSO}`);
+  if (Number.isNaN(inicio.getTime())) throw AppError.requisicaoInvalida("Não entendi a data da reunião.");
+  const duracao = Math.min(Math.max(Number(entrada.duracaoMin) || 60, 15), 480);
+
+  const pedidos = Array.isArray(entrada.convidados) ? entrada.convidados.filter((c): c is string => typeof c === "string" && c.trim().length > 1).slice(0, 20) : [];
+  const pessoas = pedidos.length ? await usuarios.listar(ctx.pool) : [];
+  const emails: string[] = [];
+  const semEmail: string[] = [];
+  for (const c of pedidos) {
+    const t = c.trim();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) {
+      emails.push(t.toLowerCase());
+      continue;
+    }
+    const alvo = semAcento(t);
+    const achado =
+      pessoas.find((u) => u.ativo && semAcento(u.nome) === alvo) ??
+      pessoas.find((u) => u.ativo && semAcento(u.nome).split(/\s+/)[0] === alvo.split(/\s+/)[0] && alvo.split(/\s+/).length === 1);
+    if (achado) emails.push(achado.email);
+    else semEmail.push(t);
+  }
+  const quem = await usuarios.buscarPorId(ctx.pool, ator.usuarioId);
+  const descricao = [
+    typeof entrada.descricao === "string" ? entrada.descricao.trim().slice(0, 3000) : "",
+    semEmail.length ? `Participantes (sem e-mail no Cérebro): ${semEmail.join(", ")}` : "",
+    `Marcada pelo Argos a pedido de ${quem?.nome ?? "alguém da equipe"}.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const { google, acesso } = await acessoAgenda(ctx);
+  const evento = await google.criarEvento(acesso, {
+    titulo,
+    descricao,
+    inicio: inicio.toISOString(),
+    fim: new Date(inicio.getTime() + duracao * 60_000).toISOString(),
+    comMeet: entrada.meet !== false,
+    convidados: [...new Set(emails)],
+  });
+  await auditar(ctx.pool, ator, "agenda.reuniao", undefined, { titulo, inicio: inicio.toISOString(), convidados: emails.length });
+  return { id: evento.id, titulo: evento.titulo, inicio: evento.inicio, meet: evento.link, url: evento.htmlLink ?? null, convidados: emails, semEmail };
+}

@@ -152,6 +152,8 @@ export interface RespostaAssistenteDTO {
   acao: { destino: string; rotulo: string; automatica: boolean } | null;
   /** Quando a pergunta foi respondida consultando o banco da Central. */
   dados?: DadosCentralDTO | null;
+  /** O Argos fez uma pergunta de volta (não teve certeza): a interface já volta a ouvir. */
+  aguardaResposta?: boolean;
 }
 
 /** Resultado de uma consulta do Argos ao banco da Central. */

@@ -310,6 +310,7 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
     fontes: r.dados ? [] : r.fontes,
     acao,
     dados: r.dados,
+    aguardaResposta: r.confirmar,
   };
 }
 

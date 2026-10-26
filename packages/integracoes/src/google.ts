@@ -32,6 +32,10 @@ export interface NovoEvento {
   inicio: string;
   fim?: string;
   fuso?: string;
+  /** Cria o link do Google Meet junto. */
+  comMeet?: boolean;
+  /** E-mails dos convidados (recebem o convite do Google). */
+  convidados?: string[];
 }
 
 type EventoGoogle = {
@@ -156,10 +160,17 @@ export class ClienteGoogleAgenda {
         ? { date: ev.fim ?? diaSeguinte(ev.inicio) }
         : { dateTime: ev.fim ?? new Date(new Date(ev.inicio).getTime() + 30 * 60_000).toISOString(), timeZone: fuso },
       reminders: { useDefault: true },
+      ...(ev.convidados?.length ? { attendees: ev.convidados.map((email) => ({ email })) } : {}),
+      ...(ev.comMeet
+        ? { conferenceData: { createRequest: { requestId: `cerebro-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, conferenceSolutionKey: { type: "hangoutsMeet" } } } }
+        : {}),
     };
+    const params = new URLSearchParams();
+    if (ev.comMeet) params.set("conferenceDataVersion", "1");
+    if (ev.convidados?.length) params.set("sendUpdates", "all");
     const e = await requisitarJson<EventoGoogle>(
       "Google",
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events`,
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events${params.size ? `?${params}` : ""}`,
       {
         method: "POST",
         headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },

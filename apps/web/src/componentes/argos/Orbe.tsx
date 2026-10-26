@@ -13,11 +13,11 @@ const CAMADAS = [
 const ERRO = [251, 113, 133] as const;
 
 const PARAMETROS: Record<EstadoOrbe, { amplitude: number; velocidade: number }> = {
-  parado: { amplitude: 0.035, velocidade: 0.35 },
-  ouvindo: { amplitude: 0.05, velocidade: 1.1 },
-  pensando: { amplitude: 0.07, velocidade: 2.6 },
-  falando: { amplitude: 0.05, velocidade: 1.4 },
-  erro: { amplitude: 0.025, velocidade: 0.3 },
+  parado: { amplitude: 0.07, velocidade: 0.7 },
+  ouvindo: { amplitude: 0.09, velocidade: 1.6 },
+  pensando: { amplitude: 0.11, velocidade: 3.2 },
+  falando: { amplitude: 0.1, velocidade: 2.1 },
+  erro: { amplitude: 0.04, velocidade: 0.4 },
 };
 
 /**
@@ -71,7 +71,9 @@ export function Orbe({
       t += dt * (movimento ? vel : 0.15);
 
       const c = tamanho / 2;
-      const base = tamanho * 0.3 * (1 + suave * 0.16);
+      // Respira devagar mesmo parada, e cresce com a voz.
+      const respiro = movimento ? Math.sin(agora / 1100) * 0.025 : 0;
+      const base = tamanho * 0.3 * (1 + respiro + suave * 0.24);
       ctx.clearRect(0, 0, tamanho, tamanho);
 
       // Halo externo.
@@ -87,10 +89,10 @@ export function Orbe({
         const cor = e === "erro" ? ERRO : camada.cor;
         const r = base * camada.escala;
         // Cada camada gira levemente fora do centro: as cores se separam num redemoinho.
-        const desvio = base * (0.16 + suave * 0.08);
+        const desvio = base * (0.18 + suave * 0.14);
         const cx = c + Math.cos(t * 0.45 * camada.velocidade + camada.fase) * desvio * (k === 0 ? 0.3 : 1);
         const cy = c + Math.sin(t * 0.45 * camada.velocidade + camada.fase) * desvio * (k === 0 ? 0.3 : 1);
-        const deformacao = movimento ? amp + suave * 0.28 : 0.02;
+        const deformacao = movimento ? amp + suave * 0.45 : 0.02;
         ctx.beginPath();
         const pontos = 72;
         for (let i = 0; i <= pontos; i++) {
@@ -123,6 +125,17 @@ export function Orbe({
       ctx.arc(c, c, base * 0.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalCompositeOperation = "source-over";
+
+      // Ouvindo/falando: um anel fino que se expande com o volume.
+      if ((e === "ouvindo" || e === "falando") && movimento) {
+        const ciclo = (agora / 1400) % 1;
+        const raioAnel = base * (1.05 + ciclo * 0.55 + suave * 0.2);
+        ctx.strokeStyle = `rgba(196,181,253,${(0.35 + suave * 0.4) * (1 - ciclo)})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(c, c, raioAnel, 0, Math.PI * 2);
+        ctx.stroke();
+      }
 
       // "Pensando": partículas orbitando.
       if (e === "pensando") {

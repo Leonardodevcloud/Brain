@@ -24,6 +24,7 @@ import {
 import { buscar } from "./busca.js";
 import { auditar, hojeLocal, type Ator, type Contexto } from "./contexto.js";
 import { resumoInicio } from "./painel.js";
+import { criarReuniao } from "./agenda.js";
 import { criarTarefa, listarTarefas } from "./tarefas.js";
 import { criarRegistro } from "./registros.js";
 
@@ -42,6 +43,8 @@ export interface RespostaAgente {
   rascunho: { id: string; codigo: string } | null;
   tarefa: { id: string; codigo: string } | null;
   passos: number;
+  /** A fala é uma pergunta de volta: a interface já fica ouvindo a resposta. */
+  confirmar: boolean;
 }
 
 const MAX_PASSOS = 8;
@@ -118,6 +121,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
   const fontes: FonteDTO[] = [];
   let rascunho: RespostaAgente["rascunho"] = null;
   let tarefaCriada: RespostaAgente["tarefa"] = null;
+  let reuniaoCriada: { titulo: string } | null = null;
 
   const observar = (texto: string, nomes: string[] = []) => mensagens.push({ papel: "user", conteudo: esconder(texto, nomes) });
 
@@ -140,15 +144,17 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
       const final = lerJson<PassoAgente>(restaurar(bruto, mapa));
       const escolhido =
         (final.mostrar && resultados.find((r) => r.id === final.mostrar)) || [...resultados].reverse().find((r) => r.linhas.length) || resultados.at(-1) || null;
+      const confirmar = final.confirmar === true;
       return {
         fala: (final.fala ?? "").trim() || "Pronto.",
-        analise: final.analise?.trim() || null,
-        dados: escolhido ? paraTela(escolhido, resultados, final) : null,
-        fontes,
-        abrir: final.abrir?.trim() || null,
+        analise: confirmar ? null : final.analise?.trim() || null,
+        dados: !confirmar && escolhido ? paraTela(escolhido, resultados, final) : null,
+        fontes: confirmar ? [] : fontes,
+        abrir: confirmar ? null : final.abrir?.trim() || null,
         rascunho,
         tarefa: tarefaCriada,
         passos: passo,
+        confirmar,
       };
     }
 
@@ -255,6 +261,11 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
       }
 
       case "criar_tarefa": {
+        // Uma tarefa por pedido: se o modelo tentar criar de novo na mesma conversa, não duplica.
+        if (tarefaCriada) {
+          observar(`A tarefa ${tarefaCriada.codigo} já foi criada agora. Não crie outra; responda.`);
+          break;
+        }
         const ligado = p.registro ? await registros.buscarPorCodigo(ctx.pool, restaurar(p.registro, mapa).trim().toUpperCase()) : null;
         const t = await criarTarefa(
           ctx,
@@ -273,6 +284,33 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         break;
       }
 
+      case "agendar_reuniao": {
+        if (reuniaoCriada) {
+          observar(`A reunião "${reuniaoCriada.titulo}" já foi marcada agora. Não marque de novo; responda.`);
+          break;
+        }
+        try {
+          const r = await criarReuniao(ctx, ator, {
+            titulo: restaurar(p.titulo ?? "", mapa),
+            inicio: p.inicio,
+            duracaoMin: p.duracaoMin,
+            descricao: restaurar(p.descricao ?? "", mapa),
+            convidados: (p.convidados ?? []).map((c) => restaurar(c, mapa)),
+            meet: p.meet,
+          });
+          reuniaoCriada = { titulo: r.titulo };
+          const quando = new Date(r.inicio).toLocaleString("pt-BR", { timeZone: "America/Bahia", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+          observar(
+            `Reunião "${r.titulo}" marcada no Google Agenda para ${quando}${r.meet ? ", com link do Meet" : ""}.` +
+              (r.convidados.length ? ` Convite enviado para ${r.convidados.length} pessoa(s).` : "") +
+              (r.semEmail.length ? ` Sem e-mail no Cérebro (não receberam convite): ${r.semEmail.join(", ")}.` : ""),
+          );
+        } catch (erro) {
+          observar(`Não consegui marcar: ${(erro as Error).message}`);
+        }
+        break;
+      }
+
       case "rascunho": {
         const tipo: TipoRegistro = p.tipo && (TIPOS_REGISTRO as readonly string[]).includes(p.tipo) && p.tipo !== "reuniao" ? (p.tipo as TipoRegistro) : "nota";
         const titulo = restaurar(p.titulo ?? "", mapa).trim().slice(0, 200) || "Anotação por voz";
@@ -285,10 +323,10 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
       }
 
       default:
-        observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, conhecimento, pendencias, tarefas, criar_tarefa, rascunho ou responder.`);
+        observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, conhecimento, pendencias, tarefas, criar_tarefa, agendar_reuniao, rascunho ou responder.`);
     }
   }
-  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS };
+  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS, confirmar: false };
 }
 
 /** Valores de colunas de pessoa, para a máscara. */
