@@ -1,12 +1,7 @@
 import { requisitarJson } from "./util.js";
 
-/**
- * Ler e criar/editar eventos da agenda (para as tarefas entrarem na pauta e virarem lembretes).
- * Nada de Gmail, Drive ou outras agendas além dos eventos.
- */
-export const ESCOPO_AGENDA = "https://www.googleapis.com/auth/calendar.events";
-/** Escopo antigo, só leitura: quem conectou com ele precisa reconectar para criar eventos. */
-export const ESCOPO_AGENDA_LEITURA = "https://www.googleapis.com/auth/calendar.events.readonly";
+/** Só leitura e criação de eventos; nada de Gmail ou Drive. */
+export const ESCOPO_AGENDA = "https://www.googleapis.com/auth/calendar.events.readonly";
 
 export interface ConfigGoogle {
   clientId: string;
@@ -21,49 +16,7 @@ export interface EventoAgenda {
   fim: string | null;
   link: string | null;
   participantes: string[];
-  descricao?: string;
-  htmlLink?: string | null;
 }
-
-export interface NovoEvento {
-  titulo: string;
-  descricao: string;
-  /** "AAAA-MM-DD" = dia inteiro; ISO com hora = horário marcado. */
-  inicio: string;
-  fim?: string;
-  fuso?: string;
-}
-
-type EventoGoogle = {
-  id: string;
-  summary?: string;
-  description?: string;
-  status?: string;
-  start?: { dateTime?: string; date?: string };
-  end?: { dateTime?: string; date?: string };
-  hangoutLink?: string;
-  htmlLink?: string;
-  attendees?: { email?: string; displayName?: string }[];
-};
-
-function paraEvento(e: EventoGoogle): EventoAgenda {
-  return {
-    id: e.id,
-    titulo: e.summary ?? "(sem título)",
-    inicio: (e.start?.dateTime ?? e.start?.date)!,
-    fim: e.end?.dateTime ?? e.end?.date ?? null,
-    link: e.hangoutLink ?? e.htmlLink ?? null,
-    participantes: (e.attendees ?? []).map((a) => a.displayName ?? a.email ?? "").filter(Boolean),
-    descricao: e.description ?? "",
-    htmlLink: e.htmlLink ?? null,
-  };
-}
-
-const diaSeguinte = (d: string) => {
-  const x = new Date(`${d}T12:00:00Z`);
-  x.setUTCDate(x.getUTCDate() + 1);
-  return x.toISOString().slice(0, 10);
-};
 
 export class ClienteGoogleAgenda {
   constructor(private readonly cfg: ConfigGoogle) {}
@@ -127,58 +80,29 @@ export class ClienteGoogleAgenda {
       orderBy: "startTime",
       maxResults: "50",
     });
-    const dados = await requisitarJson<{ items?: EventoGoogle[] }>(
-      "Google",
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events?${params}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
-    );
-    return (dados.items ?? []).filter((e) => e.status !== "cancelled" && (e.start?.dateTime || e.start?.date)).map(paraEvento);
-  }
-
-  async obterEvento(accessToken: string, id: string, agenda = "primary"): Promise<EventoAgenda> {
-    const e = await requisitarJson<EventoGoogle>(
-      "Google",
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events/${encodeURIComponent(id)}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
-    );
-    return paraEvento(e);
-  }
-
-  /** Cria um evento (lembrete da tarefa). Dia inteiro quando só há a data. */
-  async criarEvento(accessToken: string, ev: NovoEvento, agenda = "primary"): Promise<EventoAgenda> {
-    const diaInteiro = /^\d{4}-\d{2}-\d{2}$/.test(ev.inicio);
-    const fuso = ev.fuso ?? "America/Bahia";
-    const corpo = {
-      summary: ev.titulo,
-      description: ev.descricao,
-      start: diaInteiro ? { date: ev.inicio } : { dateTime: ev.inicio, timeZone: fuso },
-      end: diaInteiro
-        ? { date: ev.fim ?? diaSeguinte(ev.inicio) }
-        : { dateTime: ev.fim ?? new Date(new Date(ev.inicio).getTime() + 30 * 60_000).toISOString(), timeZone: fuso },
-      reminders: { useDefault: true },
-    };
-    const e = await requisitarJson<EventoGoogle>(
-      "Google",
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events`,
-      {
-        method: "POST",
-        headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-        body: JSON.stringify(corpo),
-      },
-    );
-    return paraEvento(e);
-  }
-
-  /** Troca só a descrição (para escrever a pauta do Cérebro na reunião). */
-  async atualizarDescricao(accessToken: string, id: string, descricao: string, agenda = "primary"): Promise<void> {
-    await requisitarJson<EventoGoogle>(
-      "Google",
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events/${encodeURIComponent(id)}`,
-      {
-        method: "PATCH",
-        headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-        body: JSON.stringify({ description: descricao }),
-      },
-    );
+    const dados = await requisitarJson<{
+      items?: {
+        id: string;
+        summary?: string;
+        status?: string;
+        start?: { dateTime?: string; date?: string };
+        end?: { dateTime?: string; date?: string };
+        hangoutLink?: string;
+        htmlLink?: string;
+        attendees?: { email?: string; displayName?: string }[];
+      }[];
+    }>("Google", `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events?${params}`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    return (dados.items ?? [])
+      .filter((e) => e.status !== "cancelled" && (e.start?.dateTime || e.start?.date))
+      .map((e) => ({
+        id: e.id,
+        titulo: e.summary ?? "(sem título)",
+        inicio: (e.start?.dateTime ?? e.start?.date)!,
+        fim: e.end?.dateTime ?? e.end?.date ?? null,
+        link: e.hangoutLink ?? e.htmlLink ?? null,
+        participantes: (e.attendees ?? []).map((a) => a.displayName ?? a.email ?? "").filter(Boolean),
+      }));
   }
 }

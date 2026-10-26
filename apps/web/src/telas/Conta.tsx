@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { ErroApi, api } from "../api/cliente";
 import { chaves, useUsuarios } from "../api/consultas";
 import { Esqueleto, MensagemErro, textoDoErro, useAvisar } from "../componentes/comum";
@@ -167,9 +166,6 @@ export default function Conta() {
         <button type="button" className="botao" onClick={() => void sair()}>
           Sair
         </button>
-        <Link to="/integracoes" className="botao">
-          Integrações
-        </Link>
       </header>
       <section className={pg.secao} aria-labelledby="t-senha">
         <h2 id="t-senha">Senha</h2>

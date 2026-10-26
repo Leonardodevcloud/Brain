@@ -1,12 +1,11 @@
 import { AppError, NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type RespostaAssistenteDTO, type TipoRegistro } from "@cerebro/core";
-import { integracoes, registros, usuarios } from "@cerebro/db";
+import { registros, usuarios } from "@cerebro/db";
 import {
   SISTEMA_ASSISTENTE,
   lerJson,
   mascarar,
   montarPedidoAssistente,
   restaurar,
-  VOZES_FALA,
   textoParaFala,
   type IntencaoAssistente,
 } from "@cerebro/ia";
@@ -23,7 +22,6 @@ const TELAS: Record<string, { destino: string; rotulo: string }> = {
   inicio: { destino: "/", rotulo: "Início" },
   perguntar: { destino: "/perguntar", rotulo: "Perguntar" },
   biblioteca: { destino: "/biblioteca", rotulo: "Biblioteca" },
-  tarefas: { destino: "/tarefas", rotulo: "Tarefas" },
   mapa: { destino: "/mapa", rotulo: "Mapa" },
   revisar: { destino: "/revisar", rotulo: "Revisar" },
   integracoes: { destino: "/integracoes", rotulo: "Integrações" },
@@ -39,7 +37,6 @@ const sem = (t: string) =>
 const NOMES_TELA: [RegExp, string][] = [
   [/\bmapas?\b/, "mapa"],
   [/\bbiblioteca\b/, "biblioteca"],
-  [/\b(tarefas?|afazeres|to ?do)\b/, "tarefas"],
   [/\b(revisar|revisao|revisoes|aprovacao|aprovacoes)\b/, "revisar"],
   [/\bintegrac(ao|oes)\b/, "integracoes"],
   [/\b(minha conta|conta|perfil|senha)\b/, "conta"],
@@ -267,9 +264,8 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
   let acao: RespostaAssistenteDTO["acao"] = null;
   if (r.abrir) {
     const [tipo, alvo] = r.abrir.includes(":") ? (r.abrir.split(":", 2) as [string, string]) : [null, r.abrir];
-    const tela = !tipo ? TELAS[sem(alvo).replace("revisao", "revisar")] : undefined;
+    const tela = !tipo ? TELAS[sem(alvo).replace("integracoes", "integracoes").replace("revisao", "revisar")] : undefined;
     if (tela) acao = { ...tela, automatica: true };
-    else if (/^TAR-\d+$/i.test(alvo)) acao = { destino: `/tarefas?abrir=${alvo.toUpperCase()}`, rotulo: `Abrir ${alvo.toUpperCase()}`, automatica: true };
     else {
       const reg = await acharRegistro(ctx, alvo);
       if (reg) {
@@ -280,7 +276,6 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
       }
     }
   }
-  if (!acao && r.tarefa) acao = { destino: `/tarefas?abrir=${r.tarefa.codigo}`, rotulo: `Abrir ${r.tarefa.codigo}`, automatica: false };
   if (!acao && r.rascunho) acao = { destino: `/revisar/${r.rascunho.id}`, rotulo: `Revisar ${r.rascunho.codigo}`, automatica: false };
   if (!acao && r.fontes[0] && !r.dados) acao = { destino: `/registros/${r.fontes[0].codigo}`, rotulo: `Abrir ${r.fontes[0].codigo}`, automatica: false };
 
@@ -318,56 +313,5 @@ export async function transcreverFala(ctx: Contexto, audio: Uint8Array, mime: st
   } catch (erro) {
     ctx.log.warn({ erro: (erro as Error).message }, "falha na transcrição");
     throw AppError.indisponivel("Não consegui entender o áudio agora. Tente de novo.");
-  }
-}
-
-// ───────────────────────────── Voz do Argos gerada no servidor ─────────────────────────────
-
-export interface ConfigVoz {
-  /** Há voz no servidor (OPENAI_CHAVE)? Sem ela, a interface usa a voz do navegador. */
-  disponivel: boolean;
-  voz: string;
-  velocidade: number;
-  vozes: readonly string[];
-}
-
-const VOZ_PADRAO = { voz: "marin", velocidade: 1.12 };
-const cacheFala = new Map<string, Uint8Array>();
-
-/** A voz escolhida vale para todo mundo, em qualquer aparelho. */
-export async function configVoz(ctx: Contexto): Promise<ConfigVoz> {
-  const salvo = await integracoes.obter(ctx.pool, "argos_voz");
-  const voz = typeof salvo?.config.voz === "string" && (VOZES_FALA as readonly string[]).includes(salvo.config.voz) ? salvo.config.voz : VOZ_PADRAO.voz;
-  const velocidade = typeof salvo?.config.velocidade === "number" ? salvo.config.velocidade : VOZ_PADRAO.velocidade;
-  return { disponivel: Boolean(ctx.fala), voz, velocidade, vozes: VOZES_FALA };
-}
-
-export async function salvarVoz(ctx: Contexto, ator: Ator, entrada: { voz: string; velocidade: number }) {
-  if (!(VOZES_FALA as readonly string[]).includes(entrada.voz)) throw AppError.requisicaoInvalida("Essa voz não existe.");
-  const velocidade = Math.min(1.5, Math.max(0.8, Math.round(entrada.velocidade * 100) / 100));
-  await integracoes.salvar(ctx.pool, "argos_voz", { config: { voz: entrada.voz, velocidade } });
-  await auditar(ctx.pool, ator, "argos.voz", undefined, { voz: entrada.voz, velocidade });
-  return configVoz(ctx);
-}
-
-/** Texto → MP3 com a voz configurada (ou outra, para ouvir antes de escolher). Frases repetidas saem do cache. */
-export async function gerarFala(ctx: Contexto, texto: string, teste?: { voz?: string; velocidade?: number }) {
-  if (!ctx.fala) throw AppError.indisponivel("A voz do servidor não está ligada. Defina OPENAI_CHAVE no Railway.");
-  const limpo = texto.replace(/\s+/g, " ").trim().slice(0, 1200);
-  if (limpo.length < 1) throw AppError.requisicaoInvalida("Nada para falar.");
-  const cfg = await configVoz(ctx);
-  const voz = teste?.voz && (VOZES_FALA as readonly string[]).includes(teste.voz) ? teste.voz : cfg.voz;
-  const velocidade = teste?.velocidade ? Math.min(1.5, Math.max(0.8, teste.velocidade)) : cfg.velocidade;
-  const chave = `${voz}|${velocidade}|${limpo}`;
-  const guardado = cacheFala.get(chave);
-  if (guardado) return guardado;
-  try {
-    const audio = await ctx.fala.falar(limpo, { voz, velocidade });
-    cacheFala.set(chave, audio);
-    if (cacheFala.size > 80) cacheFala.delete(cacheFala.keys().next().value!);
-    return audio;
-  } catch (erro) {
-    ctx.log.warn({ erro: (erro as Error).message }, "falha ao gerar a voz");
-    throw AppError.indisponivel("Não consegui gerar a voz agora.");
   }
 }

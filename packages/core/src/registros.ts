@@ -17,7 +17,7 @@ const textoLimpo = (min: number, max: number) => z.string().trim().min(min).max(
 export const esquemaCriarRegistro = z.object({
   tipo: z.enum(TIPOS_REGISTRO),
   titulo: textoLimpo(3, 200),
-  conteudo: textoLimpo(1, 520_000),
+  conteudo: textoLimpo(1, 100_000),
   area: z.enum(AREAS).default("operacoes"),
   empresa: z.enum(EMPRESAS).default("todas"),
   confidencialidade: z.enum(CONFIDENCIALIDADES).default("interno"),
@@ -37,7 +37,7 @@ export type CriarRegistro = z.infer<typeof esquemaCriarRegistro>;
 export const esquemaAtualizarRegistro = z
   .object({
     titulo: textoLimpo(3, 200).optional(),
-    conteudo: textoLimpo(1, 520_000).optional(),
+    conteudo: textoLimpo(1, 100_000).optional(),
     area: z.enum(AREAS).optional(),
     empresa: z.enum(EMPRESAS).optional(),
     confidencialidade: z.enum(CONFIDENCIALIDADES).optional(),

@@ -15,4 +15,3 @@ export {
   type ReuniaoLinha,
 } from "./repositorios/diversos.js";
 export { mapa, type NoMapaLinha } from "./repositorios/mapa.js";
-export { tarefas, type TarefaLinha, type NovaTarefa, type CamposTarefa, type FiltroTarefas, type StatusTarefa, type OrigemTarefa, type LigacaoTarefa } from "./repositorios/tarefas.js";

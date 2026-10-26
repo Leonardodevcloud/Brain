@@ -1,4 +1,3 @@
-import { ESCOPO_AGENDA } from "@cerebro/integracoes";
 import { randomBytes } from "node:crypto";
 import {
   AppError,
@@ -6,8 +5,10 @@ import {
   type StatusIntegracaoDTO,
 } from "@cerebro/core";
 import { auditoria, integracoes, jobs, lacunas, registros, reunioes, trechos, tokensConector } from "@cerebro/db";
+import type { MapaTarefasNotion } from "@cerebro/integracoes";
 import { auditar, type Ator, type Contexto } from "./contexto.js";
 import { carregarCatalogo } from "@cerebro/central";
+import { lerMapaNotion } from "./fontes.js";
 import { paraResumo } from "./registros.js";
 
 const DESCRICAO_ACAO: Record<string, string> = {
@@ -18,8 +19,7 @@ const DESCRICAO_ACAO: Record<string, string> = {
   "registro.revisado": "confirmou que segue válido",
   "registro.descartado": "descartou",
   "registro.obsoleto": "marcou como obsoleto",
-  "tarefa.criada": "criou a tarefa",
-  "tarefa.concluida": "concluiu a tarefa",
+  "notion.tarefas": "criou tarefas no Notion a partir de",
   "reuniao.recebida": "recebeu uma reunião gravada",
   "importacao.claude": "importou conversas do Claude",
 };
@@ -48,7 +48,7 @@ export async function concluirConexaoGoogle(ctx: Contexto, codigo: string, estad
   const { refreshToken, accessToken } = await ctx.google.trocarCodigo(codigo);
   await ctx.google.listarEventos(accessToken, ctx.agora(), new Date(ctx.agora().getTime() + 86_400_000));
   await integracoes.salvar(ctx.pool, "google", {
-    config: { conectadoEm: ctx.agora().toISOString(), escopo: ESCOPO_AGENDA },
+    config: { conectadoEm: ctx.agora().toISOString() },
     segredo: ctx.cofre.cifrar(refreshToken),
   });
   await integracoes.salvar(ctx.pool, "google_estado", { config: {} });
@@ -70,11 +70,31 @@ export async function proximasReunioes(ctx: Contexto, horas = 36) {
   }
 }
 
+// ───────────────────────────── Notion ─────────────────────────────
+
+export async function colunasNotion(ctx: Contexto, databaseId: string) {
+  if (!ctx.notion) throw AppError.indisponivel("Configure NOTION_TOKEN.");
+  return ctx.notion.lerColunas(databaseId);
+}
+
+export async function salvarMapaNotion(ctx: Contexto, ator: Ator, mapa: MapaTarefasNotion) {
+  if (ator.papel !== "admin") throw AppError.semPermissao();
+  if (!ctx.notion) throw AppError.indisponivel("Configure NOTION_TOKEN.");
+  const { colunas } = await ctx.notion.lerColunas(mapa.databaseId);
+  const existe = new Set(colunas.map((c) => c.nome));
+  for (const prop of [mapa.propTitulo, mapa.propPrazo, mapa.propResponsavel, mapa.propStatus, mapa.propOrigem]) {
+    if (prop && !existe.has(prop)) throw AppError.requisicaoInvalida(`A coluna "${prop}" não existe neste banco do Notion.`);
+  }
+  await integracoes.salvar(ctx.pool, "notion", { config: { ...mapa } });
+  await auditar(ctx.pool, ator, "notion.configurado");
+}
+
 // ───────────────────────────── Status e início ─────────────────────────────
 
 export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<StatusIntegracaoDTO[]> {
-  const [google, email, ultimaReuniao, contagemTrechos, tokens, importacao] = await Promise.all([
+  const [google, mapaNotion, email, ultimaReuniao, contagemTrechos, tokens, importacao] = await Promise.all([
     integracoes.obter(ctx.pool, "google"),
+    lerMapaNotion(ctx),
     integracoes.obter(ctx.pool, "email"),
     reunioes.ultima(ctx.pool),
     trechos.contar(ctx.pool),
@@ -101,14 +121,17 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
     },
     {
       nome: "google",
-      estado: !ctx.google ? "desligado" : google?.segredo ? (google.config.escopo === ESCOPO_AGENDA ? "ativo" : "incompleto") : "incompleto",
+      estado: !ctx.google ? "desligado" : google?.segredo ? "ativo" : "incompleto",
       detalhe: !ctx.google
         ? "Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET."
         : google?.segredo
-          ? google.config.escopo === ESCOPO_AGENDA
-            ? `Conectado em ${quando(google.config.conectadoEm as string)}. Lê as reuniões e escreve a pauta e os lembretes das tarefas.`
-            : "Conectado só para leitura. Reconecte para as tarefas entrarem na pauta e virarem lembretes."
+          ? `Conectado em ${quando(google.config.conectadoEm as string)}.`
           : "Falta autorizar o acesso à agenda.",
+    },
+    {
+      nome: "notion",
+      estado: !ctx.notion ? "desligado" : mapaNotion ? "ativo" : "incompleto",
+      detalhe: !ctx.notion ? "Defina NOTION_TOKEN." : mapaNotion ? "Banco de tarefas configurado." : "Falta escolher o banco de tarefas.",
     },
     {
       nome: "email",
@@ -137,13 +160,6 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
       nome: "voz",
       estado: ctx.voz ? "ativo" : "desligado",
       detalhe: ctx.voz ? `${ctx.voz.nome}. Segure espaço em qualquer tela para falar com o Argos.` : "Defina GROQ_CHAVE para falar com o Argos. Sem ela, dá para digitar.",
-    },
-    {
-      nome: "fala",
-      estado: ctx.fala ? "ativo" : "desligado",
-      detalhe: ctx.fala
-        ? `${ctx.fala.nome}. A mesma voz em qualquer aparelho; escolha abaixo.`
-        : "Defina OPENAI_CHAVE para o Argos falar com voz natural. Sem ela, usa a voz do navegador.",
     },
     {
       nome: "embeddings",

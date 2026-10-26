@@ -326,7 +326,7 @@ function Editor({ existente }: { existente?: RegistroDTO }) {
               <span>
                 <span style={{ fontWeight: 500 }}>Publicar agora</span>
                 <span className="ajuda" style={{ display: "block" }}>
-                  {podePublicar ? "Desmarque para salvar como rascunho e revisar depois." : "Regras e decisões são aprovadas pelo administrador."}
+                  {podePublicar ? "Desmarque para salvar como rascunho e revisar depois." : "Políticas e decisões são aprovadas pelo administrador."}
                 </span>
               </span>
             </label>

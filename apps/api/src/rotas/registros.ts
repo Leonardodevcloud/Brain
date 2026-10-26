@@ -1,12 +1,11 @@
-import express, { Router } from "express";
+import { Router } from "express";
 import {
-  AppError,
   esquemaAtualizarRegistro,
   esquemaCriarRegistro,
   esquemaFiltroRegistros,
   esquemaPergunta,
 } from "@cerebro/core";
-import { conhecimento, documentos, responder } from "@cerebro/servicos";
+import { conhecimento, responder } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, validar, type Deps } from "../http/base.js";
 
@@ -41,45 +40,6 @@ export function rotasRegistros({ ctx }: Deps) {
   r.post("/registros/:id/aprovar", async (req, res) => {
     const { id } = validar(esquemaId, req.params);
     res.json(await conhecimento.aprovarRegistro(ctx, ator(req), id, validar(esquemaAprovar, req.body ?? {})));
-  });
-
-  // Apaga de vez (administrador). O corpo repete o código: { "confirmacao": "POP-014" }.
-  r.delete("/registros/:id", async (req, res) => {
-    const { id } = validar(esquemaId, req.params);
-    const { confirmacao } = validar(z.object({ confirmacao: z.string().trim().min(3).max(20) }), req.body ?? {});
-    await conhecimento.excluirRegistro(ctx, ator(req), id, confirmacao);
-    res.status(204).end();
-  });
-
-  // Documento enviado: o arquivo vai cru no corpo; nome e área na query.
-  r.post(
-    "/documentos",
-    express.raw({ type: () => true, limit: documentos.LIMITE_DOCUMENTO_BYTES }),
-    async (req, res) => {
-      const q = validar(
-        z.object({
-          nome: z.string().trim().min(3).max(200),
-          titulo: z.string().trim().max(200).optional(),
-          area: z.string().max(30).optional(),
-          confidencialidade: z.string().max(20).optional(),
-          clienteRef: z.string().trim().max(120).optional(),
-        }),
-        req.query,
-      );
-      if (!Buffer.isBuffer(req.body) || !req.body.length) throw AppError.requisicaoInvalida("Envie o arquivo.");
-      res.status(201).json(await documentos.enviarDocumento(ctx, ator(req), { ...q, bytes: new Uint8Array(req.body) }));
-    },
-  );
-
-  r.get("/registros/:id/arquivo", async (req, res) => {
-    const a = await documentos.baixarArquivo(ctx, validar(esquemaId, req.params).id);
-    res.set({
-      "content-type": a.mime,
-      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(a.nome)}`,
-      "cache-control": "private, no-store",
-      "x-content-type-options": "nosniff",
-    });
-    res.send(a.conteudo);
   });
 
   r.post("/registros/:id/descartar", async (req, res) => {

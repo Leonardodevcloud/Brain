@@ -7,7 +7,6 @@ import { rotasAuth } from "./rotas/auth.js";
 import { rotasPainel } from "./rotas/painel.js";
 import { rotasPublicas } from "./rotas/publicas.js";
 import { rotasRegistros } from "./rotas/registros.js";
-import { rotasTarefas } from "./rotas/tarefas.js";
 
 /**
  * Monta a API. Tudo fica sob /api: a interface web faz proxy desse prefixo,
@@ -42,7 +41,6 @@ export function criarApp(deps: Deps) {
   protegida.use(exigirLogin(deps));
   protegida.use(rotasRegistros(deps));
   protegida.use(rotasPainel(deps));
-  protegida.use(rotasTarefas(deps));
   api.use(protegida);
 
   api.use((_req, res) => {

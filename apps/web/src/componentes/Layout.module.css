@@ -92,9 +92,6 @@
 .rotulo {
   flex-grow: 1;
 }
-.contadorAlerta {
-  background: var(--erro) !important;
-}
 .contador {
   min-width: 20px;
   height: 20px;
@@ -224,12 +221,5 @@
   }
   .principal {
     padding: 24px 16px 96px;
-  }
-  /* Na barra de baixo cabem seis destinos; Integrações fica na conta. */
-  .soDesktop {
-    display: none !important;
-  }
-  .item {
-    min-width: 48px;
   }
 }

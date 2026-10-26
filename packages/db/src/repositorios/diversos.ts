@@ -22,17 +22,6 @@ export const auditoria = {
     );
   },
 
-  async porEntidade(db: Executor, entidade: string, entidadeId: string, limite = 50) {
-    const { rows } = await db.query<{ criadoEm: Date; acao: string; usuario: string | null; canal: Canal; detalhes: Record<string, unknown> }>(
-      `SELECT a.criado_em AS "criadoEm", a.acao, u.nome AS usuario, a.canal, a.detalhes
-         FROM cerebro.auditoria a LEFT JOIN cerebro.usuarios u ON u.id = a.usuario_id
-        WHERE a.entidade = $1 AND a.entidade_id = $2
-        ORDER BY a.criado_em DESC LIMIT $3`,
-      [entidade, entidadeId, limite],
-    );
-    return rows;
-  },
-
   async recentes(db: Executor, limite = 10) {
     const { rows } = await db.query<{
       criadoEm: Date;

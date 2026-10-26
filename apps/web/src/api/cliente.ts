@@ -64,11 +64,9 @@ interface Opcoes {
   /** Envia um arquivo cru (ex.: .zip) em vez de JSON. */
   arquivo?: Blob;
   sinal?: AbortSignal;
-  /** Devolve o corpo como Blob (ex.: o áudio da voz do Argos). */
-  bruto?: boolean;
 }
 
-export async function api<T>(caminho: string, { metodo = "GET", corpo, arquivo, sinal, bruto }: Opcoes = {}, tentativa = 0): Promise<T> {
+export async function api<T>(caminho: string, { metodo = "GET", corpo, arquivo, sinal }: Opcoes = {}, tentativa = 0): Promise<T> {
   const headers: Record<string, string> = {};
   if (tokenAcesso) headers.authorization = `Bearer ${tokenAcesso}`;
   if (corpo !== undefined) headers["content-type"] = "application/json";
@@ -89,12 +87,11 @@ export async function api<T>(caminho: string, { metodo = "GET", corpo, arquivo, 
   }
 
   if (res.status === 401 && tentativa === 0 && !caminho.startsWith("/auth/")) {
-    if (await renovarSessao()) return api<T>(caminho, { metodo, corpo, arquivo, sinal, bruto }, 1);
+    if (await renovarSessao()) return api<T>(caminho, { metodo, corpo, arquivo, sinal }, 1);
     tokenAcesso = null;
     ouvintesExpirou.forEach((fn) => fn());
   }
   if (!res.ok) throw await lerErro(res);
   if (res.status === 204) return undefined as T;
-  if (bruto) return (await res.blob()) as T;
   return (await res.json()) as T;
 }

@@ -268,21 +268,6 @@ export function Argos() {
 
   useEffect(() => () => gravador.current.cancelar(), []);
 
-  // Outras telas podem mandar uma pergunta pronta (ex.: "Perguntar ao Argos" no mapa).
-  useEffect(() => {
-    const perguntar = (e: Event) => {
-      const texto = (e as CustomEvent<string>).detail;
-      if (typeof texto !== "string" || texto.trim().length < 2) return;
-      gravador.current.cancelar();
-      pararFala();
-      if (!mudoRef.current) desbloquearFala();
-      setErro(null);
-      void processar(texto.trim());
-    };
-    window.addEventListener("argos:perguntar", perguntar);
-    return () => window.removeEventListener("argos:perguntar", perguntar);
-  }, [processar]);
-
   function alternarMudo() {
     const novo = !mudo;
     setMudo(novo);

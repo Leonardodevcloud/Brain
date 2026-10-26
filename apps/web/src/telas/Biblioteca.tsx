@@ -1,9 +1,8 @@
 import { AREAS, STATUS_REGISTRO, TIPOS_REGISTRO, type Area, type StatusRegistro, type TipoRegistro } from "@cerebro/core/publico";
-import { Plus, Search, Upload } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useRegistros } from "../api/consultas";
-import { EnviarDocumentos } from "../componentes/EnviarDocumentos";
 import { EtiquetaStatus, EtiquetaTipo, Esqueleto, MensagemErro, Vazio, useAtraso } from "../componentes/comum";
 import { NOME_STATUS, dataCurta, nomeArea, nomeTipo, prazoRevisao } from "../util/formato";
 import pg from "./pagina.module.css";
@@ -18,7 +17,6 @@ export default function Biblioteca() {
   const area = (params.get("area") ?? undefined) as Area | undefined;
   const pagina = Number(params.get("pagina") ?? 1);
   const [texto, setTexto] = useState(params.get("texto") ?? "");
-  const [enviando, setEnviando] = useState(params.get("enviar") === "1");
 
   // Busca enquanto digita, com uma pequena espera.
   useEffect(() => {
@@ -53,17 +51,10 @@ export default function Biblioteca() {
           <h1>Biblioteca</h1>
           <p className="suave">{d ? `${d.total} ${d.total === 1 ? "registro" : "registros"}` : " "}</p>
         </div>
-        <div className={pg.acoes}>
-          <button type="button" className="botao" aria-expanded={enviando} onClick={() => setEnviando((v) => !v)}>
-            <Upload size={16} aria-hidden="true" /> Enviar documentos
-          </button>
-          <Link to="/registros/novo" className="botao botao-primario">
-            <Plus size={16} aria-hidden="true" /> Novo registro
-          </Link>
-        </div>
+        <Link to="/registros/novo" className="botao botao-primario">
+          <Plus size={16} aria-hidden="true" /> Novo registro
+        </Link>
       </header>
-
-      {enviando && <EnviarDocumentos aoFechar={() => setEnviando(false)} />}
 
       <div className={css.filtros} role="group" aria-label="Filtros">
         <div className={css.buscaTexto}>

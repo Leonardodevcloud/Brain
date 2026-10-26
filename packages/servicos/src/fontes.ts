@@ -15,6 +15,7 @@ import {
   lerEmailsNovos,
   lerExportacaoClaude,
   limparCorpoEmail,
+  type MapaTarefasNotion,
   type ReuniaoRecebida,
 } from "@cerebro/integracoes";
 import { ATOR_SISTEMA, auditar, hojeLocal, type Ator, type Contexto } from "./contexto.js";
@@ -92,7 +93,7 @@ export async function gerarAta(ctx: Contexto, reuniaoId: string) {
       tarefa: p.tarefa,
       responsavel: p.responsavel ?? null,
       prazo: /^\d{4}-\d{2}-\d{2}$/.test(p.prazo ?? "") ? p.prazo : null,
-      criarTarefa: true,
+      criarNoNotion: true,
     })),
     clientes: ata.clientes,
   };
@@ -120,6 +121,44 @@ export async function gerarAta(ctx: Contexto, reuniaoId: string) {
     await reunioes.vincularAta(db, reuniaoId, ataId);
     return ataId;
   });
+}
+
+// ───────────────────────────── Tarefas no Notion ─────────────────────────────
+
+export async function lerMapaNotion(ctx: Contexto): Promise<MapaTarefasNotion | null> {
+  const salvo = await integracoes.obter(ctx.pool, "notion");
+  const mapa = salvo?.config as Partial<MapaTarefasNotion> | undefined;
+  return mapa?.databaseId && mapa.propTitulo ? (mapa as MapaTarefasNotion) : null;
+}
+
+/** Cria no Notion as pendências marcadas de uma ata aprovada. Seguro para repetir. */
+export async function criarTarefasDaAta(ctx: Contexto, ataId: string) {
+  if (!ctx.notion) throw AppError.indisponivel("O Notion não está configurado (NOTION_TOKEN).");
+  const mapa = await lerMapaNotion(ctx);
+  if (!mapa) throw AppError.indisponivel("Escolha o banco de tarefas do Notion na tela de Integrações.");
+
+  const ata = await registros.buscarPorId(ctx.pool, ataId);
+  if (!ata || ata.tipo !== "reuniao") throw AppError.naoEncontrado("A ata");
+  const dados = ata.dados as unknown as AtaDados;
+  const criadas = [...(dados.tarefasCriadas ?? [])];
+  const jaCriadas = new Set(criadas.map((c) => c.tarefa));
+  const origemUrl = `${ctx.ambiente.URL_WEB.replace(/\/$/, "")}/registros/${ata.id}`;
+
+  for (const p of dados.pendencias ?? []) {
+    if (!p.criarNoNotion || jaCriadas.has(p.tarefa)) continue;
+    const pagina = await ctx.notion.criarTarefa(mapa, {
+      titulo: p.tarefa,
+      responsavel: p.responsavel,
+      prazo: p.prazo,
+      origemUrl,
+      descricao: `Criada a partir da ata ${ata.codigo} · ${ata.titulo}.`,
+    });
+    criadas.push({ tarefa: p.tarefa, notionUrl: pagina.url });
+    // Salva a cada tarefa: se falhar no meio, a próxima tentativa não duplica.
+    await registros.atualizar(ctx.pool, ata.id, { dados: { ...dados, tarefasCriadas: criadas } });
+  }
+  await auditar(ctx.pool, ATOR_SISTEMA, "notion.tarefas", { entidade: "registro", id: ataId }, { total: criadas.length });
+  return criadas;
 }
 
 // ───────────────────────────── Conversas do Claude e e-mails ─────────────────────────────

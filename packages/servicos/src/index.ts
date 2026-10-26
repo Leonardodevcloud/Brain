@@ -7,18 +7,7 @@ export { buscar, responder, invalidarCacheBusca } from "./busca.js";
 export { indexarRegistro } from "./indexacao.js";
 export * as fontes from "./fontes.js";
 export * as painel from "./painel.js";
-export * as tarefas from "./tarefas.js";
-export * as documentos from "./documentos.js";
 export { montarMapa, invalidarCacheMapa } from "./mapa.js";
-export {
-  atenderFala,
-  transcreverFala,
-  interpretarRapido,
-  configVoz,
-  salvarVoz,
-  gerarFala,
-  LIMITE_AUDIO_BYTES,
-  type ConfigVoz,
-} from "./assistente.js";
+export { atenderFala, transcreverFala, interpretarRapido, LIMITE_AUDIO_BYTES } from "./assistente.js";
 export { agenteArgos, type TurnoAnterior } from "./agente.js";
 export { consultarCentral, planoRapido } from "./central.js";

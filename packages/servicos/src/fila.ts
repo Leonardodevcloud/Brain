@@ -4,6 +4,7 @@ import { jobs, type Executor } from "@cerebro/db";
 export const JOB = {
   indexarRegistro: "indexar_registro",
   gerarAta: "gerar_ata",
+  criarTarefasNotion: "criar_tarefas_notion",
   extrairConversaClaude: "extrair_conversa_claude",
   extrairEmail: "extrair_email",
 } as const;
@@ -15,6 +16,9 @@ export const fila = {
 
   gerarAta: (db: Executor, reuniaoId: string) =>
     jobs.enfileirar(db, JOB.gerarAta, { reuniaoId }, { chave: `ata:${reuniaoId}`, maxTentativas: 4 }),
+
+  criarTarefasNotion: (db: Executor, ataId: string) =>
+    jobs.enfileirar(db, JOB.criarTarefasNotion, { ataId }, { chave: `notion:${ataId}`, maxTentativas: 6 }),
 
   extrairConversa: (db: Executor, conversa: { id: string; titulo: string; texto: string; criadaEm: string | null }) =>
     jobs.enfileirar(db, JOB.extrairConversaClaude, conversa, { chave: `claude:${conversa.id}`, maxTentativas: 3 }),

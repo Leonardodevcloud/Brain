@@ -87,12 +87,13 @@ export interface AtaDados {
   reuniaoId: string;
   resumo: string;
   decisoes: { texto: string; aprovar: boolean }[];
-  pendencias: { tarefa: string; responsavel: string | null; prazo: string | null; criarTarefa?: boolean; /** nome antigo */ criarNoNotion?: boolean }[];
+  pendencias: { tarefa: string; responsavel: string | null; prazo: string | null; criarNoNotion: boolean }[];
   clientes: string[];
+  tarefasCriadas?: { tarefa: string; notionUrl: string }[];
 }
 
 export interface StatusIntegracaoDTO {
-  nome: "claude" | "fathom" | "google" | "email" | "deepseek" | "embeddings" | "voz" | "fala" | "central";
+  nome: "claude" | "fathom" | "google" | "notion" | "email" | "deepseek" | "embeddings" | "voz" | "central";
   estado: "ativo" | "incompleto" | "desligado" | "erro";
   detalhe: string;
 }
@@ -118,8 +119,6 @@ export interface NoMapaDTO {
   /** Quantas ligações o nó tem (sem contar a da área): define o tamanho no desenho. */
   grau: number;
   atualizadoEm: string | null;
-  /** Tarefas abertas ligadas a este registro. */
-  tarefasAbertas: number;
 }
 
 export interface LigacaoMapaDTO {
@@ -170,35 +169,4 @@ export interface DadosCentralDTO {
   explicacao: string | null;
   tabelas: string[];
   ms: number;
-}
-
-/** Tarefa do Cérebro (o que ficou combinado em reuniões, registros e com o Argos). */
-export interface TarefaDTO {
-  id: string;
-  codigo: string;
-  titulo: string;
-  descricao: string;
-  status: "a_fazer" | "fazendo" | "feita";
-  ordem: number;
-  responsavel: { id: string | null; nome: string } | null;
-  prazo: string | null;
-  atrasada: boolean;
-  origem: "manual" | "ata" | "argos" | "claude";
-  clienteRef: string | null;
-  evento: { id: string; titulo: string; inicio: string | null; url: string | null } | null;
-  /** Registros ligados (o primeiro é a origem, quando houver). */
-  registros: { id: string; codigo: string; titulo: string; tipo: TipoRegistro; origem: boolean }[];
-  criadoEm: string;
-  atualizadoEm: string;
-  concluidaEm: string | null;
-}
-
-export interface DetalheTarefaDTO extends TarefaDTO {
-  historico: { quando: string; quem: string | null; acao: string }[];
-}
-
-export interface ResumoTarefasDTO {
-  minhas: number;
-  atrasadas: number;
-  abertas: number;
 }

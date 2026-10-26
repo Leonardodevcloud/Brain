@@ -3,7 +3,6 @@ import { Search } from "lucide-react";
 import { useCallback, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useInicio } from "../api/consultas";
-import { useAtualizarTarefa, useTarefas } from "../api/tarefas";
 import { EtiquetaTipo, Esqueleto, MensagemErro, useAtalho } from "../componentes/comum";
 import { useUsuario } from "../sessao/Sessao";
 import { NOME_ORIGEM, dataLonga, diasAte, hora, prazoRevisao, relativo, saudacao } from "../util/formato";
@@ -46,57 +45,6 @@ function ItemAtencao({ r }: { r: RegistroResumoDTO }) {
         </span>
       </div>
     </li>
-  );
-}
-
-/** As tarefas da pessoa que vencem primeiro (atrasadas no topo). */
-function SuasTarefas() {
-  const tarefas = useTarefas("minhas");
-  const concluir = useAtualizarTarefa();
-  const abertas = (tarefas.data ?? [])
-    .filter((t) => t.status !== "feita")
-    .sort((a, b) => (a.prazo ?? "9999").localeCompare(b.prazo ?? "9999"))
-    .slice(0, 6);
-  return (
-    <section className={pg.secao} aria-labelledby="t-tarefas">
-      <div className={pg.cabecalhoSecao}>
-        <h2 id="t-tarefas">Suas tarefas</h2>
-        <Link to="/tarefas" className="pequeno">
-          Ver todas
-        </Link>
-      </div>
-      <div className="cartao">
-        {tarefas.isPending ? (
-          <Esqueleto linhas={3} />
-        ) : abertas.length ? (
-          <ul className={`lista ${css.listaCartao}`}>
-            {abertas.map((t) => (
-              <li key={t.id} className={css.linha} style={{ alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  aria-label={`Concluir: ${t.titulo}`}
-                  style={{ width: 18, height: 18, accentColor: "var(--acento)" }}
-                  onChange={() => concluir.mutate({ id: t.id, status: "feita" })}
-                />
-                <div className={css.texto}>
-                  <Link to={`/tarefas?abrir=${t.codigo}`} className={css.tituloLink}>
-                    {t.titulo}
-                  </Link>
-                  <span className="pequeno" style={{ color: t.atrasada ? "var(--erro)" : "var(--texto-suave)" }}>
-                    {t.prazo ? `${t.atrasada ? "Atrasada · " : ""}${rotuloDia(`${t.prazo}T12:00:00Z`)}` : "Sem prazo"}
-                    {t.registros[0] ? ` · ${t.registros[0].codigo}` : ""}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className={`suave ${css.vazio}`}>
-            Nada com você agora. <Link to="/tarefas">Abrir as tarefas</Link>
-          </p>
-        )}
-      </div>
-    </section>
   );
 }
 
@@ -229,8 +177,6 @@ export function Inicio() {
           </article>
         </section>
       )}
-
-      <SuasTarefas />
 
       <section className={pg.secao} aria-labelledby="t-atividade">
         <h2 id="t-atividade">Atividade recente</h2>

@@ -1,11 +1,9 @@
 import type { RegistroDTO, TipoRelacao } from "@cerebro/core/publico";
-import { ArrowLeft, Check, Download, ExternalLink, FileText, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { ArrowLeft, Check, ExternalLink, Pencil } from "lucide-react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ErroApi } from "../api/cliente";
 import { useAcaoRegistro, useRegistro } from "../api/consultas";
-import { baixarOriginal, useCriarTarefa, useExcluirRegistro, useTarefas } from "../api/tarefas";
-import { useUsuario } from "../sessao/Sessao";
 import { EtiquetaStatus, Esqueleto, MensagemErro, Vazio, textoDoErro, useAvisar } from "../componentes/comum";
 import { Conteudo } from "../componentes/Conteudo";
 import { NOME_ORIGEM, dataCurta, nomeArea, nomeTipo, prazoRevisao } from "../util/formato";
@@ -91,147 +89,12 @@ function TornarObsoleto({ r }: { r: RegistroDTO }) {
   );
 }
 
-const LIMITE_LEITURA = 20_000;
-
-function tamanhoArquivo(bytes: number) {
-  return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : `${Math.ceil(bytes / 1024)} KB`;
-}
-
-/** Documento enviado: o arquivo original fica disponível para baixar. */
-function ArquivoOriginal({ r }: { r: RegistroDTO }) {
-  const avisar = useAvisar();
-  const [baixando, setBaixando] = useState(false);
-  const arquivo = (r.dados as { arquivo?: { nome: string; tamanho: number } }).arquivo;
-  if (!arquivo) return null;
-  return (
-    <div className={css.arquivo}>
-      <FileText size={18} aria-hidden="true" />
-      <span className={css.arquivoNome}>
-        {arquivo.nome}
-        <span className="suave pequeno"> · {tamanhoArquivo(arquivo.tamanho)}</span>
-      </span>
-      <button
-        type="button"
-        className="botao botao-pequeno"
-        disabled={baixando}
-        onClick={() => {
-          setBaixando(true);
-          baixarOriginal(r.id, arquivo.nome)
-            .catch((e) => avisar(textoDoErro(e), "erro"))
-            .finally(() => setBaixando(false));
-        }}
-      >
-        <Download size={14} aria-hidden="true" /> {baixando ? "Baixando…" : "Baixar original"}
-      </button>
-    </div>
-  );
-}
-
-/** Tarefas ligadas a este registro, e um jeito rápido de criar mais uma. */
-function TarefasDoRegistro({ r }: { r: RegistroDTO }) {
-  const tarefas = useTarefas("todas", "", r.id);
-  const criar = useCriarTarefa();
-  const avisar = useAvisar();
-  const [titulo, setTitulo] = useState("");
-  const abertas = (tarefas.data ?? []).filter((t) => t.status !== "feita");
-
-  function enviar(e: FormEvent) {
-    e.preventDefault();
-    if (titulo.trim().length < 2) return;
-    criar.mutate(
-      { titulo: titulo.trim(), registros: [r.id] },
-      { onSuccess: (t) => (setTitulo(""), avisar(`${t.codigo} criada e ligada a ${r.codigo}.`)), onError: (erro) => avisar(textoDoErro(erro), "erro") },
-    );
-  }
-
-  return (
-    <section className={pg.secao}>
-      <h2>Tarefas</h2>
-      {abertas.length > 0 && (
-        <ul className={`lista ${css.tarefas}`}>
-          {abertas.map((t) => (
-            <li key={t.id}>
-              <Link to={`/tarefas?abrir=${t.codigo}`}>{t.titulo}</Link>
-              <span className="suave pequeno" style={{ color: t.atrasada ? "var(--erro)" : undefined }}>
-                {" "}
-                · {t.status === "fazendo" ? "fazendo" : "a fazer"}
-                {t.prazo ? ` · ${dataCurta(t.prazo)}` : ""}
-                {t.responsavel ? ` · ${t.responsavel.nome}` : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form onSubmit={enviar} className={css.novaTarefa}>
-        <label htmlFor="tarefa-registro" className="so-leitor">
-          Nova tarefa ligada a {r.codigo}
-        </label>
-        <input id="tarefa-registro" className="entrada" placeholder="Nova tarefa ligada a este registro" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-        <button type="submit" className="botao botao-icone" aria-label="Criar tarefa" disabled={titulo.trim().length < 2 || criar.isPending}>
-          <Plus size={16} aria-hidden="true" />
-        </button>
-      </form>
-    </section>
-  );
-}
-
-/** Excluir de vez (administrador): exige digitar o código. */
-function ExcluirDeVez({ r }: { r: RegistroDTO }) {
-  const [aberto, setAberto] = useState(false);
-  const [codigo, setCodigo] = useState("");
-  const excluir = useExcluirRegistro();
-  const avisar = useAvisar();
-  const navegar = useNavigate();
-  if (!aberto) {
-    return (
-      <button type="button" className="botao botao-fantasma botao-pequeno botao-perigo" onClick={() => setAberto(true)}>
-        <Trash2 size={14} aria-hidden="true" /> Excluir de vez
-      </button>
-    );
-  }
-  return (
-    <form
-      className={css.obsoleto}
-      onSubmit={(e) => {
-        e.preventDefault();
-        excluir.mutate(
-          { id: r.id, confirmacao: codigo },
-          {
-            onSuccess: () => {
-              avisar(`${r.codigo} excluído.`);
-              navegar("/biblioteca");
-            },
-            onError: (erro) => avisar(textoDoErro(erro), "erro"),
-          },
-        );
-      }}
-    >
-      <div className="campo">
-        <label htmlFor="confirmar-exclusao">
-          Isso apaga {r.codigo} da busca, do Argos, do mapa e o arquivo enviado. Não dá para desfazer. Digite <b className="mono">{r.codigo}</b> para confirmar.
-        </label>
-        <input id="confirmar-exclusao" className="entrada mono" value={codigo} onChange={(e) => setCodigo(e.target.value)} autoComplete="off" autoFocus />
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button type="submit" className="botao botao-pequeno botao-perigo" disabled={codigo.trim().toUpperCase() !== r.codigo || excluir.isPending}>
-          Excluir {r.codigo}
-        </button>
-        <button type="button" className="botao botao-fantasma botao-pequeno" onClick={() => setAberto(false)}>
-          Cancelar
-        </button>
-      </div>
-    </form>
-  );
-}
-
 export default function Registro() {
   const { id } = useParams();
   const consulta = useRegistro(id);
   const acao = useAcaoRegistro();
   const avisar = useAvisar();
   const navegar = useNavigate();
-  const eu = useUsuario();
-  const [tudo, setTudo] = useState(false);
 
   if (consulta.isError) {
     const naoExiste = consulta.error instanceof ErroApi && consulta.error.status === 404;
@@ -323,13 +186,7 @@ export default function Registro() {
 
       <div className={pg.duasColunas}>
         <article className="cartao">
-          {r.tipo === "documento" && <ArquivoOriginal r={r} />}
-          <Conteudo texto={tudo || r.conteudo.length <= LIMITE_LEITURA ? r.conteudo : `${r.conteudo.slice(0, LIMITE_LEITURA)}…`} />
-          {r.conteudo.length > LIMITE_LEITURA && (
-            <button type="button" className="botao botao-pequeno" onClick={() => setTudo((v) => !v)}>
-              {tudo ? "Mostrar menos" : `Mostrar o documento inteiro (${Math.round(r.conteudo.length / 1000)} mil caracteres)`}
-            </button>
-          )}
+          <Conteudo texto={r.conteudo} />
           {r.fonteUrl && (
             <a href={r.fonteUrl} target="_blank" rel="noreferrer noopener" className={css.fonteExterna}>
               <ExternalLink size={14} aria-hidden="true" /> Abrir a origem
@@ -366,8 +223,6 @@ export default function Registro() {
             </dl>
           </section>
 
-          {r.status !== "descartado" && <TarefasDoRegistro r={r} />}
-
           <section className={pg.secao}>
             <h2>Relações</h2>
             <Relacoes r={r} />
@@ -395,7 +250,6 @@ export default function Registro() {
               Escrever um substituto
             </button>
           )}
-          {eu.papel === "admin" && <ExcluirDeVez r={r} />}
         </aside>
       </div>
     </div>

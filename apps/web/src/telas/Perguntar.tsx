@@ -154,7 +154,7 @@ export default function Perguntar() {
                   className={css.entrada}
                   value={rascunho}
                   onChange={(e) => setRascunho(e.target.value)}
-                  placeholder="ex.: qual a regra de multa por atraso?"
+                  placeholder="ex.: qual a política de multa por atraso?"
                   autoComplete="off"
                 />
               </div>
