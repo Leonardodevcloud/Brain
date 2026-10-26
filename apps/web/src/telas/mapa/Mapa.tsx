@@ -29,11 +29,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api/cliente";
 import { MensagemErro, useAtalho } from "../../componentes/comum";
 import { NOME_STATUS, nomeTipo, relativo } from "../../util/formato";
-import { COR_CLIENTE, COR_REVISAR, COR_TIPO } from "./cores";
+import { COR_AREA, COR_CLIENTE, COR_REVISAR } from "./cores";
 import {
   areaDeClique,
   corDaLigacao,
   corDoNo,
+  cruzaAreas,
   desenharNo,
   ehRelacaoExplicita,
   idDe,
@@ -201,12 +202,19 @@ export default function Mapa() {
   }, [foco, vizinhos]);
 
   // O desenho lê um ref: muda a cada quadro sem recriar as funções do grafo.
+  const contagemArea = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of todos?.nos ?? []) if (n.categoria === "registro" && n.area) m.set(n.area, (m.get(n.area) ?? 0) + 1);
+    return m;
+  }, [todos]);
   const estado = useRef<EstadoDesenho>({
     destaque,
     selecionado,
     tempo: 0,
     movimento,
+    contagemArea,
   });
+  estado.current.contagemArea = contagemArea;
   estado.current.destaque = destaque;
   estado.current.selecionado = selecionado;
   estado.current.movimento = movimento;
@@ -355,9 +363,6 @@ export default function Mapa() {
     : undefined;
   const totalConexoes =
     d?.ligacoes.filter((l) => l.tipo !== "area").length ?? 0;
-  const contagemTipo = new Map<TipoRegistro, number>();
-  for (const n of d?.nos ?? [])
-    if (n.tipo) contagemTipo.set(n.tipo, (contagemTipo.get(n.tipo) ?? 0) + 1);
 
   return (
     <div className={css.tela}>
@@ -394,7 +399,7 @@ export default function Mapa() {
               ligacaoEmFoco(l) ? 1.6 : ehRelacaoExplicita(l) ? 1.1 : 0.6
             }
             linkLineDash={(l) => (l.tipo === "semelhante" ? [3, 3] : null)}
-            linkCurvature={(l) => (l.tipo === "semelhante" ? 0.18 : 0)}
+            linkCurvature={(l) => (cruzaAreas(l) ? 0.25 : l.tipo === "semelhante" ? 0.18 : 0)}
             linkDirectionalArrowLength={(l) =>
               ehRelacaoExplicita(l) ? 3.2 : 0
             }
@@ -404,7 +409,7 @@ export default function Mapa() {
             }
             linkDirectionalParticleWidth={2.2}
             linkDirectionalParticleSpeed={0.006}
-            linkDirectionalParticleColor={() => "#A78BFA"}
+            linkDirectionalParticleColor={() => "#F8FAFC"}
             onRenderFramePre={antesDoQuadro}
             onEngineStop={() => {
               if (assentou.current) return;
@@ -545,63 +550,43 @@ export default function Mapa() {
       {areasPresentes.length > 0 && (
         <div className={css.legenda}>
           <div className={css.legendaTopo}>
-            <span className={css.legendaTitulo}>Tipos</span>
+            <span className={css.legendaTitulo}>ÁREAS</span>
             <button
               type="button"
               className={css.recolher}
               aria-expanded={legendaAberta}
               onClick={() => alternarLegenda()}
             >
-              {legendaAberta ? "Recolher" : "Áreas e símbolos"}
+              {legendaAberta ? "RECOLHER" : "SÍMBOLOS"}
             </button>
           </div>
-          <div className={css.tiposLegenda}>
-            {tiposPresentes.map((t) => (
-              <span key={t} className={css.tipoLegenda}>
-                <span
-                  className={css.bolinha}
-                  style={{ background: COR_TIPO[t] }}
-                  aria-hidden="true"
-                />
-                {nomeTipo(t)} <small>{contagemTipo.get(t) ?? 0}</small>
-              </span>
-            ))}
+          <div className={css.areas} role="group" aria-label="Mostrar ou esconder áreas">
+            {areasPresentes.map((a) => {
+              const oculta = areasOcultas.has(a);
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  className={`${css.area} ${oculta ? css.areaOculta : ""}`}
+                  aria-pressed={!oculta}
+                  onClick={() =>
+                    setAreasOcultas((atual) => {
+                      const n = new Set(atual);
+                      if (n.has(a)) n.delete(a);
+                      else n.add(a);
+                      return n;
+                    })
+                  }
+                >
+                  <span className={css.bolinha} style={{ background: COR_AREA[a], boxShadow: `0 0 8px ${COR_AREA[a]}` }} aria-hidden="true" />
+                  <span className={css.areaNome}>{NOME_AREA[a]}</span>
+                  <span className={css.areaQtd}>{contagemArea.get(a) ?? 0}</span>
+                </button>
+              );
+            })}
           </div>
           {legendaAberta && (
             <>
-              <span className={css.legendaTitulo}>Áreas</span>
-              <div
-                className={css.areas}
-                role="group"
-                aria-label="Mostrar ou esconder áreas"
-              >
-                {areasPresentes.map((a) => {
-                  const oculta = areasOcultas.has(a);
-                  return (
-                    <button
-                      key={a}
-                      type="button"
-                      className={`${css.area} ${oculta ? css.areaOculta : ""}`}
-                      aria-pressed={!oculta}
-                      onClick={() =>
-                        setAreasOcultas((atual) => {
-                          const n = new Set(atual);
-                          if (n.has(a)) n.delete(a);
-                          else n.add(a);
-                          return n;
-                        })
-                      }
-                    >
-                      <span
-                        className={css.bolinha}
-                        style={{ background: "#A8A29E" }}
-                        aria-hidden="true"
-                      />
-                      {NOME_AREA[a]}
-                    </button>
-                  );
-                })}
-              </div>
               <div className={css.simbolos} aria-hidden="true">
                 <span>
                   <i className={css.simVigente} /> Vigente
