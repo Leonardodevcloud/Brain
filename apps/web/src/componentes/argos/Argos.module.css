@@ -79,10 +79,11 @@
 }
 .painel {
   --a-texto: #e7e5e4;
+  transition: width var(--medio) var(--curva);
   --a-suave: #a8a29e;
   --a-borda: rgba(255, 255, 255, 0.09);
 
-  width: min(560px, 100%);
+  width: min(620px, 100%);
   max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;

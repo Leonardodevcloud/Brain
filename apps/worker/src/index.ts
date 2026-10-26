@@ -1,6 +1,7 @@
 import { setTimeout as esperar } from "node:timers/promises";
 import cron from "node-cron";
 import { pino } from "pino";
+import { sincronizarAcesso } from "@cerebro/central";
 import { criarPool, jobs, migrar } from "@cerebro/db";
 import { conhecimento, criarContexto, fontes, lerAmbiente } from "@cerebro/servicos";
 import { executarProximo } from "./processar.js";
@@ -37,6 +38,11 @@ agendar("marcar_vencidos", "5 6 * * *", async () => (await conhecimento.marcarVe
 if (ctx.imap) agendar("ler_email", "*/10 * * * *", () => fontes.sincronizarEmail(ctx));
 // A cada 15 min — devolve à fila jobs presos por um worker que caiu.
 agendar("liberar_presos", "*/15 * * * *", () => jobs.liberarPresos(pool, 15));
+// 04:30 — atualiza as views do Argos com tabelas e colunas novas da Central.
+if (ambiente.ARGOS_DB_SENHA) {
+  const senha = ambiente.ARGOS_DB_SENHA;
+  agendar("sincronizar_central", "30 4 * * *", () => sincronizarAcesso(pool, senha));
+}
 // Domingo 03:00 — limpa jobs concluídos há mais de 30 dias.
 agendar("limpar_fila", "0 3 * * 0", () => jobs.limparConcluidos(pool, 30));
 

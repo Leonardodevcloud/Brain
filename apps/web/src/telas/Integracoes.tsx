@@ -26,6 +26,7 @@ const INFO: Record<StatusIntegracaoDTO["nome"], { nome: string; descricao: strin
   email: { nome: "E-mail", descricao: "Lê a caixa dedicada e sugere rascunhos do que for conhecimento." },
   deepseek: { nome: "DeepSeek", descricao: "Respostas, atas e extração de conhecimento." },
   embeddings: { nome: "Gemini", descricao: "Busca por sentido, não só por palavra." },
+  central: { nome: "Banco da Central", descricao: "O Argos consulta disponibilidade, entregas, financeiro e o BI, só para leitura." },
   voz: { nome: "Argos (voz)", descricao: "Whisper pela Groq: transforma a sua fala em comando." },
 };
 
@@ -366,7 +367,7 @@ export default function Integracoes() {
   const porNome = (nome: StatusIntegracaoDTO["nome"]) => status.data?.find((s) => s.nome === nome);
   const urlWebhook = `${location.origin}/api/webhooks/fathom`;
 
-  const fontes = (["claude", "fathom", "google", "notion", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
+  const fontes = (["central", "claude", "fathom", "google", "notion", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
   const ia = (["deepseek", "embeddings", "voz"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
 
   return (

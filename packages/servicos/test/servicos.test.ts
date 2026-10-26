@@ -1,6 +1,7 @@
 import { strToU8, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EmissorTokens } from "@cerebro/auth";
+import { criarPoolLeitura, sincronizarAcesso } from "@cerebro/central";
 import { esquemaCriarRegistro, esquemaPergunta, type AtaDados, type UsuarioDTO } from "@cerebro/core";
 import { integracoes, jobs, type Pool } from "@cerebro/db";
 import type { ClienteNotion } from "@cerebro/integracoes";
@@ -21,7 +22,7 @@ import {
   type Ator,
   type Contexto,
 } from "../src/index.js";
-import { EmbeddingsFalsos, IaFalsa, bancoLimpo, contextoDeTeste } from "./apoio.js";
+import { EmbeddingsFalsos, IaFalsa, URL_TESTE, bancoLimpo, contextoDeTeste } from "./apoio.js";
 
 let pool: Pool;
 let ctx: Contexto;
@@ -377,5 +378,103 @@ describe("Argos", () => {
     expect(await transcreverFala({ ...ctx, voz }, new Uint8Array(5000), "audio/webm")).toBe("abre o mapa");
     await expect(transcreverFala({ ...ctx, voz }, new Uint8Array(10), "audio/webm")).rejects.toMatchObject({ status: 400 });
     await expect(transcreverFala({ ...ctx, voz: null }, new Uint8Array(5000), "audio/webm")).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+describe("Argos consultando a Central", () => {
+  let leitura: ReturnType<typeof criarPoolLeitura>;
+  const SENHA = "senha_de_teste_do_argos_123456";
+
+  beforeAll(async () => {
+    await pool.query(`
+      SET search_path = public;
+      DROP TABLE IF EXISTS disponibilidade_linhas, disponibilidade_lojas, disponibilidade_regioes, bi_entregas CASCADE;
+      CREATE TABLE disponibilidade_regioes (id serial PRIMARY KEY, nome varchar(100));
+      CREATE TABLE disponibilidade_lojas (id serial PRIMARY KEY, regiao_id int, codigo varchar(20), nome varchar(200));
+      CREATE TABLE disponibilidade_linhas (id serial PRIMARY KEY, loja_id int, cod_profissional varchar(50), nome_profissional varchar(200),
+        status varchar(20), is_excedente boolean DEFAULT false, is_reposicao boolean DEFAULT false);
+      CREATE TABLE bi_entregas (id serial PRIMARY KEY, os int, ponto int, nome_fantasia varchar, nome_prof varchar, data_solicitado date,
+        dentro_prazo boolean, valor numeric, valor_prof numeric);
+      INSERT INTO disponibilidade_regioes (nome) VALUES ('Salvador');
+      INSERT INTO disponibilidade_lojas (regiao_id, codigo, nome) VALUES (1, 'L1', 'Loja Centro');
+      INSERT INTO disponibilidade_linhas (loja_id, cod_profissional, nome_profissional, status) VALUES
+        (1, '10', 'Ana Souza', 'EM LOJA'), (1, '11', 'Beto Lima', 'FALTANDO'), (1, '12', 'Caio Reis', 'EM LOJA'), (1, '', null, 'A CONFIRMAR');
+      INSERT INTO bi_entregas (os, ponto, nome_fantasia, nome_prof, data_solicitado, dentro_prazo) VALUES
+        (1, 2, 'Rede Alfa', 'Ana Souza', current_date, true), (2, 2, 'Rede Alfa', 'Beto Lima', current_date, false), (3, 2, 'Rede Beta', 'Ana Souza', current_date, true);
+      SET search_path = "$user", public;
+    `);
+    await sincronizarAcesso(pool, SENHA);
+    leitura = criarPoolLeitura(URL_TESTE, SENHA);
+  });
+
+  afterAll(async () => {
+    await leitura.end();
+  });
+
+  it("responde a disponibilidade sem IA, com a consulta pronta", async () => {
+    const r = await atenderFala({ ...ctx, ia: null, central: leitura }, atorAdmin, "Argos, como está a disponibilidade agora?");
+    expect(r.intencao).toBe("dados");
+    expect(r.dados?.origem).toBe("pronta");
+    expect(r.dados?.totais).toMatchObject({ titulares: 4, em_loja: 2, faltando: 1, vagas_abertas: 1, pct_em_loja: 50 });
+    expect(r.fala).toMatch(/2 motoboys em loja de 4/);
+  });
+
+  it("filtra a região falada, sem acento e sem caixa", async () => {
+    const c = { ...ctx, ia: null, central: leitura };
+    const r = await atenderFala(c, atorAdmin, "como está a disponibilidade em salvador?");
+    expect(r.dados?.totais).toMatchObject({ titulares: 4, em_loja: 2 });
+    expect(r.dados?.colunas).toContain("loja");
+    expect(r.fala).toMatch(/^Em Salvador, agora são 2/);
+    const nada = await atenderFala(c, atorAdmin, "disponibilidade em Maceió");
+    expect(nada.fala).toMatch(/Não encontrei a região Maceio/);
+  });
+
+  it("sem acesso configurado, explica o que falta", async () => {
+    const r = await atenderFala({ ...ctx, ia: null, central: null }, atorAdmin, "como está a disponibilidade agora?");
+    expect(r.fala).toMatch(/ARGOS_DB_SENHA/);
+  });
+
+  it("pergunta livre: a IA escolhe as tabelas, escreve o SQL, corrige o erro e analisa sem ver nomes", async () => {
+    let tentativasSql = 0;
+    const ia = new IaFalsa((p) => {
+      if (p.sistema.includes("assistente de voz")) return { intencao: "dados", alvo: null, tipo: null, titulo: null, conteudo: null, fala: null };
+      if (p.sistema.includes("planeja como responder")) return { ferramenta: "sql", parametros: {}, tabelas: ["bi_entregas", "tabela_que_nao_existe"] };
+      if (p.sistema.includes("escreve UMA consulta SQL")) {
+        tentativasSql++;
+        return tentativasSql === 1
+          ? { sql: "SELECT nome_errado FROM bi_entregas", explicacao: "erro proposital" }
+          : {
+              sql: "SELECT nome_prof AS motoboy, COUNT(*) AS entregas FROM bi_entregas WHERE COALESCE(ponto,1) >= 2 GROUP BY 1 ORDER BY 2 DESC",
+              explicacao: "Entregas por motoboy",
+            };
+      }
+      if (p.sistema.includes("resultado de uma consulta")) {
+        const conteudo = p.mensagens[0]!.conteudo;
+        expect(conteudo).not.toContain("Ana Souza"); // nomes de pessoas vão mascarados
+        const marcador = /\[PESSOA_\d+\]/.exec(conteudo)?.[0] ?? "?";
+        return { fala: `${marcador} lidera com 2 entregas.`, analise: "- Ritmo bom.", destaques: [{ rotulo: "Líder", valor: marcador }] };
+      }
+      return {};
+    });
+    const r = await atenderFala({ ...ctx, ia, central: leitura }, atorAdmin, "quem mais entregou hoje?");
+    expect(tentativasSql).toBe(2);
+    expect(r.dados).toMatchObject({ origem: "livre", tabelas: ["bi_entregas"] });
+    expect(r.dados?.linhas[0]).toMatchObject({ motoboy: "Ana Souza" });
+    expect(r.fala).toBe("Ana Souza lidera com 2 entregas.");
+    expect(r.dados?.destaques[0]).toEqual({ rotulo: "Líder", valor: "Ana Souza" });
+  });
+
+  it("recusa SQL de escrita mesmo que a IA tente", async () => {
+    const ia = new IaFalsa((p) => {
+      if (p.sistema.includes("assistente de voz")) return { intencao: "dados" };
+      if (p.sistema.includes("planeja como responder")) return { ferramenta: "sql", parametros: {}, tabelas: ["bi_entregas"] };
+      if (p.sistema.includes("escreve UMA consulta SQL")) return { sql: "DELETE FROM bi_entregas", explicacao: "x" };
+      return {};
+    });
+    const r = await atenderFala({ ...ctx, ia, central: leitura }, atorAdmin, "apaga as entregas");
+    expect(r.dados ?? null).toBeNull();
+    expect(r.fala).toMatch(/Não consegui montar/);
+    const { rows } = await pool.query("SELECT count(*)::int AS n FROM public.bi_entregas");
+    expect(rows[0].n).toBe(3);
   });
 });

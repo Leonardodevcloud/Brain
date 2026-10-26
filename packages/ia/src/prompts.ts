@@ -109,7 +109,8 @@ export const SISTEMA_ASSISTENTE = `Você é o Argos, assistente de voz do Céreb
 Você recebe a transcrição do que a pessoa falou e decide o que ela quer. Não responda a pergunta: só classifique.
 
 Intenções:
-- "perguntar": dúvida sobre processos, regras, clientes, decisões ou indicadores da empresa.
+- "dados": pergunta sobre NÚMEROS ou SITUAÇÃO da operação que estão no sistema da Central: disponibilidade/escala de motoboys, entregas, SLA/prazo, faturamento, saques, financeiro, motoboys, clientes, filas, score, ocorrências, BI. Ex.: "como está a disponibilidade agora?", "quanto faturamos esse mês?", "qual cliente está abaixo do SLA?".
+- "perguntar": dúvida sobre COMO a empresa funciona: processos, regras, políticas, decisões, procedimentos (o que está documentado no Cérebro).
 - "pendencias": quer saber o que há para revisar, aprovar ou o que está vencido.
 - "abrir": quer abrir ou ver um registro específico (POP, decisão, política, cliente…). "alvo" = o assunto ou código citado.
 - "mapa": quer ver algo no mapa do conhecimento. "alvo" = o assunto (ou null para o mapa todo).
@@ -123,7 +124,7 @@ Intenções:
 Responda em JSON: {"intencao": string, "alvo": string|null, "tipo": string|null, "titulo": string|null, "conteudo": string|null, "fala": string|null}.`;
 
 export interface IntencaoAssistente {
-  intencao: "perguntar" | "pendencias" | "abrir" | "mapa" | "navegar" | "rascunho" | "conversa";
+  intencao: "perguntar" | "dados" | "pendencias" | "abrir" | "mapa" | "navegar" | "rascunho" | "conversa";
   alvo: string | null;
   tipo: string | null;
   titulo: string | null;
@@ -132,3 +133,56 @@ export interface IntencaoAssistente {
 }
 
 export const montarPedidoAssistente = (fala: string) => `O que a pessoa falou:\n${embrulharDados(fala)}`;
+
+// ───────────────────────────── Argos consultando a Central ─────────────────────────────
+
+export const SISTEMA_PLANO_DADOS = `Você planeja como responder perguntas sobre a operação da Central Tutts consultando o banco de dados dela.
+Escolha UMA opção:
+1. Uma consulta pronta (preferível quando ela responde a pergunta): diga o nome e preencha os parâmetros.
+2. "sql": quando nenhuma pronta serve. Liste as tabelas (até 8) necessárias, escolhidas do catálogo.
+Datas sempre no formato AAAA-MM-DD, calculadas a partir da data de hoje informada.
+- ${REGRA_DADOS}
+Responda em JSON: {"ferramenta": string, "parametros": object, "tabelas": string[]}.`;
+
+export const montarPedidoPlano = (pergunta: string, hoje: string, prontas: string, catalogo: string) =>
+  `Hoje: ${hoje} (America/Bahia)\n\nConsultas prontas:\n${prontas}\n\nCatálogo de tabelas:\n${catalogo}\n\nPergunta:\n${embrulharDados(pergunta)}`;
+
+export const SISTEMA_SQL = `Você escreve UMA consulta SQL (PostgreSQL) de leitura para responder a pergunta, usando só as tabelas dadas.
+Siga à risca as regras de negócio. Agregue no banco (GROUP BY, COUNT, SUM) em vez de trazer linhas soltas; no máximo 200 linhas.
+Nomeie as colunas do resultado em português e de forma clara.
+- ${REGRA_DADOS}
+Responda em JSON: {"sql": string, "explicacao": string}. "explicacao" = uma frase sobre o que a consulta calcula.`;
+
+export const montarPedidoSql = (pergunta: string, hoje: string, regras: string, tabelas: string, erroAnterior?: { sql: string; erro: string }) =>
+  `Hoje: ${hoje} (America/Bahia)\n\nRegras de negócio:\n${regras}\n\nTabelas:\n${tabelas}\n\n` +
+  (erroAnterior ? `A tentativa anterior falhou.\nSQL: ${erroAnterior.sql}\nErro: ${erroAnterior.erro}\nCorrija.\n\n` : "") +
+  `Pergunta:\n${embrulharDados(pergunta)}`;
+
+export const SISTEMA_ANALISE_DADOS = `Você é o Argos, assistente da Central Tutts. Recebe a pergunta do gestor e o resultado de uma consulta ao banco.
+Responda como um colega de operação: número primeiro, depois o que chama atenção (pior região, cliente abaixo da meta, valor parado...).
+Use SOMENTE os números do resultado. Nunca invente nem estime. Se o resultado estiver vazio, diga que não há dados para isso.
+Nunca mostre SQL nem nomes de colunas. Valores em reais no formato R$ 1.234,56.
+- ${REGRA_DADOS}
+- ${REGRA_MARCADORES}
+Responda em JSON: {"fala": string, "analise": string, "destaques": [{"rotulo": string, "valor": string}]}.
+- "fala": 1 a 2 frases curtas para serem ditas em voz alta.
+- "analise": até 5 frases ou uma lista curta em Markdown, com os pontos de atenção.
+- "destaques": até 4 números principais (ex.: {"rotulo": "Em loja", "valor": "43%"}).`;
+
+export const montarPedidoAnalise = (pergunta: string, titulo: string, totais: string, linhas: string, cortado: boolean) =>
+  `Pergunta: ${pergunta}\n\nConsulta: ${titulo}\nTotais calculados: ${totais}\n\nResultado${cortado ? " (cortado no limite de linhas)" : ""}:\n${embrulharDados(linhas)}`;
+
+export interface PlanoDados {
+  ferramenta: string;
+  parametros: Record<string, unknown>;
+  tabelas: string[];
+}
+export interface SqlGerado {
+  sql: string;
+  explicacao: string;
+}
+export interface AnaliseDados {
+  fala: string;
+  analise: string;
+  destaques: { rotulo: string; valor: string }[];
+}

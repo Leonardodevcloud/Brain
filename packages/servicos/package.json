@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@cerebro/auth": "workspace:*",
+    "@cerebro/central": "workspace:*",
     "@cerebro/core": "workspace:*",
     "@cerebro/db": "workspace:*",
     "@cerebro/ia": "workspace:*",

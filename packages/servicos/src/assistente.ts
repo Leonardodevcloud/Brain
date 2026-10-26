@@ -10,6 +10,7 @@ import {
   type IntencaoAssistente,
 } from "@cerebro/ia";
 import { buscar, responder } from "./busca.js";
+import { consultarCentral, planoRapido } from "./central.js";
 import { auditar, type Ator, type Contexto } from "./contexto.js";
 import { resumoInicio } from "./painel.js";
 import { criarRegistro } from "./registros.js";
@@ -47,6 +48,9 @@ export function interpretarRapido(fala: string): IntencaoAssistente | null {
   if (/(o que|tem (?:algo|alguma coisa)|quais|quantos?).*(revisar|aprovar|pendent|pendencia|vencid)/.test(t)) {
     return { intencao: "pendencias", ...vazio };
   }
+  if (planoRapido(t) && !/\b(como (funciona|fazer|tratamos|trata)|qual (o|a) (regra|politica|procedimento)|pop)\b/.test(t)) {
+    return { intencao: "dados", ...vazio };
+  }
   if (/^(oi|ola|bom dia|boa tarde|boa noite|obrigad[oa]|valeu)( argos)?$/.test(t)) {
     return { intencao: "conversa", ...vazio, fala: null };
   }
@@ -74,7 +78,7 @@ async function classificar(ctx: Contexto, fala: string): Promise<IntencaoAssiste
       maxTokens: 600,
     });
     const r = lerJson<IntencaoAssistente>(restaurar(bruto, mapa));
-    const validas = ["perguntar", "pendencias", "abrir", "mapa", "navegar", "rascunho", "conversa"];
+    const validas = ["perguntar", "dados", "pendencias", "abrir", "mapa", "navegar", "rascunho", "conversa"];
     return validas.includes(r.intencao) ? r : { ...r, intencao: "perguntar" };
   } catch (erro) {
     ctx.log.warn({ erro: (erro as Error).message }, "falha ao classificar a fala; tratando como pergunta");
@@ -106,6 +110,21 @@ export async function atenderFala(ctx: Contexto, ator: Ator, falaBruta: string):
     case "navegar": {
       const tela = TELAS[i.alvo ?? ""] ?? TELAS.inicio!;
       resultado = { ...base, fala: `Abrindo ${tela.rotulo}.`, acao: { ...tela, automatica: true } };
+      break;
+    }
+
+    case "dados": {
+      if (!ctx.central) {
+        resultado = { ...base, fala: "Ainda não estou ligado ao banco da Central. Peça ao administrador para definir a ARGOS_DB_SENHA." };
+        break;
+      }
+      try {
+        const { fala: f, dados } = await consultarCentral(ctx, ator, fala);
+        resultado = { ...base, fala: f, dados };
+      } catch (erro) {
+        if (!(erro instanceof AppError)) throw erro;
+        resultado = { ...base, fala: erro.message };
+      }
       break;
     }
 

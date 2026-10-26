@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ErroApi, api } from "../../api/cliente";
 import { falar, pararFala } from "./fala";
 import { Gravador } from "./gravador";
+import { DadosCentral } from "./DadosCentral";
 import { Orbe, type EstadoOrbe } from "./Orbe";
 import css from "./Argos.module.css";
 
@@ -37,7 +38,7 @@ const ROTULO: Record<Fase, string> = {
   fechado: "",
   ouvindo: "Ouvindo",
   transcrevendo: "Entendendo",
-  pensando: "Procurando no Cérebro",
+  pensando: "Pensando",
   falando: "Respondendo",
   pronto: "Pronto",
   erro: "Algo deu errado",
@@ -317,12 +318,13 @@ export function Argos() {
               {fase === "ouvindo" && <p className={css.convite}>{segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>}
               {fase === "transcrevendo" && <p className={css.convite}>Entendendo o que você disse…</p>}
               {texto && fase !== "ouvindo" && fase !== "transcrevendo" && <p className={css.voce}>“{texto}”</p>}
-              {fase === "pensando" && <p className={css.convite}>Procurando no Cérebro…</p>}
+              {fase === "pensando" && <p className={css.convite}>Consultando o Cérebro e a Central…</p>}
               {erro && <p className={css.erro}>{erro.mensagem}</p>}
 
               {resposta && (fase === "falando" || fase === "pronto") && (
                 <div className={css.resposta}>
                   <p className={css.fala}>{resposta.fala}</p>
+                  {resposta.dados && <DadosCentral dados={resposta.dados} />}
                   {resposta.fontes.length > 0 && (
                     <div className={css.fontes}>
                       {resposta.fontes.slice(0, 4).map((f) => (

@@ -18,6 +18,7 @@ packages/
   ia/           DeepSeek (API compatível com OpenAI), embeddings Gemini, máscara de dados pessoais, prompts
   integracoes/  Fathom, Notion, Google Agenda, IMAP, exportação do Claude
   servicos/     Regras de negócio. API, MCP e worker são só "portas" para esta camada
+  central/      Acesso só-leitura do Argos ao banco da Central (papel argos_leitura, views sem dados pessoais, consultas prontas)
 ```
 
 Tudo fica numa só origem (`https://cerebro…/`): a interface, `/api/*` e `/mcp/*`.
@@ -104,6 +105,16 @@ O formato do payload deve ser conferido com a primeira reunião real (o leitor �
 segure **Espaço** e fale (solte para enviar), toque rápido no Espaço para ele ouvir até você parar, ou clique na
 esfera no canto. Ele responde perguntas com as fontes, abre registros e telas, mostra itens no mapa e salva
 ditados como rascunho. A transcrição usa Whisper (`whisper-large-v3-turbo`) e a voz é a do navegador.
+
+**Argos × Central (dados da operação).** O Argos consulta o banco da Central (disponibilidade, BI, financeiro,
+saques, CS…) e responde com números, tabela e análise. Gere uma senha longa (24+ letras, números, `_` ou `-`) e
+coloque `ARGOS_DB_SENHA` na `api` e no `worker`. No boot a API cria o papel `argos_leitura` (só leitura, 15 s por
+consulta, 5 conexões) e o schema `argos` com uma view por tabela da Central, **sem** CPF, PIX, dados bancários,
+documentos, senhas e tokens; tabelas sensíveis (tokens, recuperação de senha, documentos, auditoria) ficam fora.
+O worker atualiza as views todo dia às 04:30. Perguntas comuns (disponibilidade, entregas de hoje, faturamento,
+saques) usam consultas prontas e funcionam até sem IA; as demais o DeepSeek escreve o SQL (só SELECT, validado)
+e analisa o resultado com nomes de pessoas mascarados. Toda consulta fica na auditoria (`argos.consulta_central`).
+Requer que o usuário do `DATABASE_URL` possa criar papéis (o `postgres` padrão do Railway pode).
 
 **E-mail.** Caixa dedicada (ex.: `cerebro@tutts.com.br`) com IMAP 993/SSL. Variáveis `IMAP_*`.
 O worker lê a cada 10 minutos; cada e-mail relevante vira rascunho.

@@ -7,6 +7,7 @@ import {
 import { auditoria, integracoes, jobs, lacunas, registros, reunioes, trechos, tokensConector } from "@cerebro/db";
 import type { MapaTarefasNotion } from "@cerebro/integracoes";
 import { auditar, type Ator, type Contexto } from "./contexto.js";
+import { carregarCatalogo } from "@cerebro/central";
 import { lerMapaNotion } from "./fontes.js";
 import { paraResumo } from "./registros.js";
 
@@ -146,6 +147,15 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
         ? `${ctx.ia.nome}. Dados pessoais mascarados antes do envio.${ctx.iaRestrita ? " Conteúdo restrito vai para o provedor seguro." : ""}`
         : "Defina IA_ANALISE_CHAVE para respostas, atas e importações.",
     },
+    await (async (): Promise<StatusIntegracaoDTO> => {
+      if (!ctx.central) return { nome: "central", estado: "desligado", detalhe: "Defina ARGOS_DB_SENHA para o Argos consultar o banco da Central." };
+      try {
+        const tabelas = await carregarCatalogo(ctx.central);
+        return { nome: "central", estado: "ativo", detalhe: `Somente leitura em ${tabelas.length} tabelas. CPF, PIX, dados bancários, senhas e tokens ficam de fora.` };
+      } catch (erro) {
+        return { nome: "central", estado: "erro", detalhe: `Sem acesso: ${(erro as Error).message.slice(0, 120)}` };
+      }
+    })(),
     {
       nome: "voz",
       estado: ctx.voz ? "ativo" : "desligado",

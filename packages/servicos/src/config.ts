@@ -29,6 +29,9 @@ const esquemaAmbiente = z.object({
   GEMINI_CHAVE: opcional(z.string()),
   EMBEDDINGS_DIMENSOES: z.preprocess(vazioParaUndefined, z.coerce.number().int().min(128).max(3072).default(768)),
 
+  // Acesso do Argos ao banco da Central (usuário somente leitura criado pelo próprio Cérebro).
+  ARGOS_DB_SENHA: opcional(z.string().min(24, "ARGOS_DB_SENHA precisa de pelo menos 24 caracteres.")),
+
   // Voz (Whisper). Padrão: Groq, compatível com a API da OpenAI.
   GROQ_CHAVE: opcional(z.string()),
   VOZ_BASE_URL: z.preprocess(vazioParaUndefined, z.url().default("https://api.groq.com/openai/v1")),

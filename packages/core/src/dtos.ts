@@ -93,7 +93,7 @@ export interface AtaDados {
 }
 
 export interface StatusIntegracaoDTO {
-  nome: "claude" | "fathom" | "google" | "notion" | "email" | "deepseek" | "embeddings" | "voz";
+  nome: "claude" | "fathom" | "google" | "notion" | "email" | "deepseek" | "embeddings" | "voz" | "central";
   estado: "ativo" | "incompleto" | "desligado" | "erro";
   detalhe: string;
 }
@@ -141,7 +141,7 @@ export interface MapaDTO {
 export interface RespostaAssistenteDTO {
   /** O que a pessoa falou (ou digitou). */
   texto: string;
-  intencao: "perguntar" | "pendencias" | "abrir" | "mapa" | "navegar" | "rascunho" | "conversa";
+  intencao: "perguntar" | "dados" | "pendencias" | "abrir" | "mapa" | "navegar" | "rascunho" | "conversa";
   /** Versão curta para ser falada em voz alta. */
   fala: string;
   /** Resposta completa em Markdown, quando houver. */
@@ -149,4 +149,24 @@ export interface RespostaAssistenteDTO {
   fontes: FonteDTO[];
   /** Tela para onde a interface deve ir, se o comando pedir. */
   acao: { destino: string; rotulo: string; automatica: boolean } | null;
+  /** Quando a pergunta foi respondida consultando o banco da Central. */
+  dados?: DadosCentralDTO | null;
+}
+
+/** Resultado de uma consulta do Argos ao banco da Central. */
+export interface DadosCentralDTO {
+  titulo: string;
+  /** "pronta" = consulta escrita à mão e testada; "livre" = SQL gerado pela IA para a pergunta. */
+  origem: "pronta" | "livre";
+  colunas: string[];
+  linhas: Record<string, unknown>[];
+  cortado: boolean;
+  totais: Record<string, number | string | null>;
+  destaques: { rotulo: string; valor: string }[];
+  analise: string | null;
+  /** Como o número foi obtido: a consulta exata, para conferir. */
+  sql: string;
+  explicacao: string | null;
+  tabelas: string[];
+  ms: number;
 }

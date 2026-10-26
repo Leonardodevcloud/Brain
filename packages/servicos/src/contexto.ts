@@ -1,4 +1,5 @@
 import { Cofre } from "@cerebro/auth";
+import { criarPoolLeitura, type PoolLeitura } from "@cerebro/central";
 import type { Papel } from "@cerebro/core";
 import { auditoria, type Canal, type Executor, type Pool } from "@cerebro/db";
 import {
@@ -38,6 +39,8 @@ export interface Contexto {
   /** IA para conteúdo restrito. Sem ela, conteúdo restrito nunca vai para IA externa. */
   iaRestrita: ProvedorTexto | null;
   embeddings: ProvedorEmbeddings | null;
+  /** Conexão somente leitura às views da Central. `null` = Argos não consulta a Central. */
+  central: PoolLeitura | null;
   /** Whisper para o Argos. `null` = sem voz (o Argos ainda aceita texto digitado). */
   voz: ProvedorTranscricao | null;
   cofre: Cofre | null;
@@ -73,6 +76,7 @@ export function criarContexto(pool: Pool, ambiente: Ambiente, log: Log): Context
     embeddings: ambiente.GEMINI_CHAVE
       ? new EmbeddingsGemini({ chave: ambiente.GEMINI_CHAVE, dimensoes: ambiente.EMBEDDINGS_DIMENSOES })
       : null,
+    central: ambiente.ARGOS_DB_SENHA ? criarPoolLeitura(ambiente.DATABASE_URL, ambiente.ARGOS_DB_SENHA, ambiente.DATABASE_SSL) : null,
     voz: ambiente.GROQ_CHAVE
       ? new TranscricaoCompativelOpenAI({ baseUrl: ambiente.VOZ_BASE_URL, chave: ambiente.GROQ_CHAVE, modelo: ambiente.VOZ_MODELO })
       : null,
