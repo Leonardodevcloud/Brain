@@ -83,17 +83,20 @@ export function rotasRegistros({ ctx }: Deps) {
   });
 
   r.post("/registros/:id/descartar", async (req, res) => {
-    res.json(await conhecimento.descartarRegistro(ctx, ator(req), validar(esquemaId, req.params).id));
+    await conhecimento.descartarRegistro(ctx, ator(req), validar(esquemaId, req.params).id);
+    res.status(204).end();
   });
 
   r.post("/registros/:id/revisado", async (req, res) => {
-    res.json(await conhecimento.confirmarRevisao(ctx, ator(req), validar(esquemaId, req.params).id));
+    await conhecimento.confirmarRevisao(ctx, ator(req), validar(esquemaId, req.params).id);
+    res.status(204).end();
   });
 
   r.post("/registros/:id/obsoleto", async (req, res) => {
     const { id } = validar(esquemaId, req.params);
     const { motivo } = validar(esquemaObsoleto, req.body);
-    res.json(await conhecimento.tornarObsoleto(ctx, ator(req), id, motivo));
+    await conhecimento.tornarObsoleto(ctx, ator(req), id, motivo);
+    res.status(204).end();
   });
 
   r.post("/perguntar", async (req, res) => {

@@ -96,5 +96,7 @@ export async function api<T>(caminho: string, { metodo = "GET", corpo, arquivo, 
   if (!res.ok) throw await lerErro(res);
   if (res.status === 204) return undefined as T;
   if (bruto) return (await res.blob()) as T;
-  return (await res.json()) as T;
+  // Algumas ações não devolvem nada: resposta vazia é sucesso, não erro.
+  const texto = await res.text();
+  return (texto ? JSON.parse(texto) : undefined) as T;
 }

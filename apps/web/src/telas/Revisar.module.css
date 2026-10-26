@@ -227,3 +227,28 @@
     margin-bottom: 12px;
   }
 }
+
+.explicaAba {
+  margin: -4px 0 4px;
+  line-height: 1.45;
+}
+.lacunasCaixa {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.explicacao {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--raio-g);
+  background: var(--acento-fundo);
+  color: var(--texto-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.explicacao strong {
+  color: var(--texto);
+  font-size: 14px;
+}

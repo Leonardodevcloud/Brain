@@ -11,7 +11,8 @@ import {
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ErroApi } from "../api/cliente";
+import { useQueryClient } from "@tanstack/react-query";
+import { ErroApi, api } from "../api/cliente";
 import { useAtualizarRegistro, useCriarRegistro, useRegistro } from "../api/consultas";
 import { Esqueleto, MensagemErro, useAvisar } from "../componentes/comum";
 import { Conteudo } from "../componentes/Conteudo";
@@ -92,6 +93,7 @@ function inicial(params: URLSearchParams, existente?: RegistroDTO): Formulario {
 
 function Editor({ existente }: { existente?: RegistroDTO }) {
   const [params] = useSearchParams();
+  const qc = useQueryClient();
   const usuario = useUsuario();
   const navegar = useNavigate();
   const avisar = useAvisar();
@@ -157,6 +159,12 @@ function Editor({ existente }: { existente?: RegistroDTO }) {
           })
         : await atualizar.mutateAsync({ ...comum, motivo: motivo.trim() });
       if (novo) gravarRascunho(null);
+      // Veio de "Sem resposta" em Revisar: a pergunta sai da lista, ligada ao registro novo.
+      const lacuna = params.get("lacuna");
+      if (novo && lacuna) {
+        await api(`/lacunas/${lacuna}/resolver`, { metodo: "POST", corpo: { registroId: r.id } }).catch(() => undefined);
+        void qc.invalidateQueries({ queryKey: ["lacunas"] });
+      }
       avisar(novo ? (r.status === "vigente" ? `${r.codigo} publicado.` : `${r.codigo} salvo como rascunho.`) : `${r.codigo} atualizado para a v${r.versao}.`);
       navegar(`/registros/${r.codigo}`, { replace: true });
     } catch (erro) {

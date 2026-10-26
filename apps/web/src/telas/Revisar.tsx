@@ -239,30 +239,58 @@ function Lacunas() {
   const resolver = useResolverLacuna();
   if (lacunas.isError) return <MensagemErro erro={lacunas.error} />;
   if (!lacunas.data) return <Esqueleto />;
-  if (!lacunas.data.length) return <Vazio titulo="Nenhuma lacuna aberta." texto="Toda pergunta sem resposta registrada aparece aqui." />;
   return (
-    <ul className={`lista cartao ${css.lacunas}`}>
-      {lacunas.data.map((l) => (
-        <li key={l.id} className={css.lacuna}>
-          <div className={css.lacunaTexto}>
-            <span style={{ fontWeight: 500 }}>{l.pergunta}</span>
-            <span className="suave pequeno">
-              {l.canal === "mcp" ? "No Claude" : "No Cérebro"} · {relativo(l.criadoEm)}
-            </span>
-          </div>
-          <div className={pg.acoes}>
-            <Link to={`/registros/novo?titulo=${encodeURIComponent(l.pergunta)}`} className="botao botao-pequeno">
-              Documentar
-            </Link>
-            <button type="button" className="botao botao-fantasma botao-pequeno" onClick={() => resolver.mutate(l.id)}>
-              Dispensar
-            </button>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div className={css.lacunasCaixa}>
+      <div className={css.explicacao}>
+        <strong>Perguntas que o Cérebro não soube responder</strong>
+        <p>
+          Quando alguém pergunta algo (aqui, ao Argos ou no Claude) e não existe nenhum POP, regra ou decisão sobre o assunto, a pergunta
+          cai nesta lista. É o mapa do que ainda falta documentar.
+        </p>
+        <p>
+          <b>Escrever registro</b> abre um registro novo já com o assunto, e a pergunta sai da lista quando ele é salvo. <b>Não precisa</b> tira a
+          pergunta da lista sem documentar.
+        </p>
+      </div>
+      {!lacunas.data.length ? (
+        <Vazio titulo="Nenhuma pergunta sem resposta." texto="Tudo o que foi perguntado até agora tinha registro no Cérebro." />
+      ) : (
+        <ul className={`lista cartao ${css.lacunas}`}>
+          {lacunas.data.map((l) => (
+            <li key={l.id} className={css.lacuna}>
+              <div className={css.lacunaTexto}>
+                <span style={{ fontWeight: 500 }}>“{l.pergunta}”</span>
+                <span className="suave pequeno">
+                  Perguntado {l.canal === "mcp" ? "no Claude" : "no Second Brain"} {relativo(l.criadoEm)} · nada registrado sobre isso
+                </span>
+              </div>
+              <div className={pg.acoes}>
+                <Link to={`/registros/novo?titulo=${encodeURIComponent(l.pergunta)}&lacuna=${l.id}`} className="botao botao-pequeno">
+                  Escrever registro
+                </Link>
+                <button
+                  type="button"
+                  className="botao botao-fantasma botao-pequeno"
+                  disabled={resolver.isPending}
+                  onClick={() => resolver.mutate(l.id)}
+                  title="Tira da lista sem documentar"
+                >
+                  Não precisa
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
+
+const EXPLICA_ABA: Record<Aba, string> = {
+  aprovar: "Rascunhos vindos do Claude, de atas, e-mails, documentos e do Argos. Só viram conhecimento depois que você aprova.",
+  vencidos: "Registros publicados cujo prazo de revisão passou. Confirme que continuam valendo ou atualize.",
+  lacunas: "Perguntas que ninguém conseguiu responder com o que está registrado.",
+};
 
 export default function Revisar() {
   const { id } = useParams();
@@ -275,7 +303,7 @@ export default function Revisar() {
   const abas: { chave: Aba; rotulo: string; total?: number }[] = [
     { chave: "aprovar", rotulo: "Aprovar", total: rascunhos.data?.total },
     { chave: "vencidos", rotulo: "Revisão vencida", total: vencidos.data?.total },
-    { chave: "lacunas", rotulo: "Lacunas", total: lacunas.data?.length },
+    { chave: "lacunas", rotulo: "Sem resposta", total: lacunas.data?.length },
   ];
 
   return (
@@ -301,6 +329,7 @@ export default function Revisar() {
               </button>
             ))}
           </div>
+          <p className={`suave pequeno ${css.explicaAba}`}>{EXPLICA_ABA[aba]}</p>
           {aba === "lacunas" ? null : lista.isError ? (
             <MensagemErro erro={lista.error} />
           ) : !lista.data ? (
