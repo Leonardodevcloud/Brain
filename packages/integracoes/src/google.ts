@@ -87,6 +87,33 @@ export class ClienteGoogleAgenda {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
+  /** E-mail da conta dona da agenda principal (o id da agenda "primary" é o e-mail). */
+  async contaDaAgenda(accessToken: string): Promise<string | null> {
+    try {
+      const d = await requisitarJson<{ id?: string }>("Google", "https://www.googleapis.com/calendar/v3/calendars/primary", {
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      return d.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Revoga o acesso no Google (o app some de "Apps com acesso à sua conta"). Falha aqui não impede desconectar. */
+  async revogar(token: string): Promise<boolean> {
+    try {
+      const r = await fetch("https://oauth2.googleapis.com/revoke", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async trocarCodigo(codigo: string): Promise<{ refreshToken: string; accessToken: string }> {
     const dados = await requisitarJson<{ access_token: string; refresh_token?: string }>(
       "Google",

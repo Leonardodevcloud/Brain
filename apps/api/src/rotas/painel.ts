@@ -113,6 +113,10 @@ export function rotasPainel({ ctx }: Deps) {
     res.json({ url: await painel.iniciarConexaoGoogle(ctx, ator(req)) });
   });
 
+  r.delete("/integracoes/google", exigirAdmin, async (req, res) => {
+    res.json(await painel.desconectarGoogle(ctx, ator(req)));
+  });
+
   r.get("/integracoes/fila", exigirAdmin, async (_req, res) => {
     res.json(await painel.saudeFila(ctx));
   });

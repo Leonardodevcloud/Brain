@@ -110,3 +110,14 @@ describe("transcrição", () => {
     expect(lerTranscricao({ segments: [{ text: "legendas", no_speech_prob: 0.95, avg_logprob: -0.3 }] })).toBe("");
   });
 });
+
+describe("e-mail ditado", () => {
+  it("troca arroba e ponto falados pelo e-mail de verdade", async () => {
+    const { normalizarEmailFalado } = await import("./voz.js");
+    expect(normalizarEmailFalado("convida o contato arroba tutts ponto com ponto br")).toBe("convida o contato@tutts.com.br");
+    expect(normalizarEmailFalado("manda pra Marcos ponto Gabriel arroba Gmail ponto com, por favor")).toBe("manda pra marcos.gabriel@gmail.com, por favor");
+    expect(normalizarEmailFalado("convida contato @ tutts.com.br amanhã")).toBe("convida contato@tutts.com.br amanhã");
+    expect(normalizarEmailFalado("o e-mail é Contato@Tutts.com.br.")).toBe("o e-mail é contato@tutts.com.br.");
+    expect(normalizarEmailFalado("ponto de entrega da loja")).toBe("ponto de entrega da loja");
+  });
+});

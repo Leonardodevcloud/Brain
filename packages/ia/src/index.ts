@@ -18,6 +18,7 @@ export {
   VOZES_FALA,
   textoParaFala,
   lerTranscricao,
+  normalizarEmailFalado,
   MARCA_INCERTA,
   type ProvedorFala,
   type ProvedorTranscricao,

@@ -319,6 +319,16 @@ export default function Integracoes() {
     onError: (e) => avisar(textoDoErro(e), "erro"),
   });
 
+  const desconectarGoogle = useMutation({
+    mutationFn: () => api<{ revogado: boolean }>("/integracoes/google", { metodo: "DELETE" }),
+    onSuccess: (r) => {
+      avisar(r.revogado ? "Google Agenda desconectado." : "Desconectado aqui. Se quiser, remova também o acesso em myaccount.google.com/permissions.");
+      void qc.invalidateQueries();
+    },
+    onError: (e) => avisar(textoDoErro(e), "erro"),
+  });
+  const [confirmandoGoogle, setConfirmandoGoogle] = useState(false);
+
   const alternar = (nome: string) => setAberto((a) => (a === nome ? null : nome));
   const porNome = (nome: StatusIntegracaoDTO["nome"]) => status.data?.find((s) => s.nome === nome);
   const urlWebhook = `${location.origin}/api/webhooks/fathom`;
@@ -395,11 +405,34 @@ export default function Integracoes() {
                         s={s}
                         acao={
                           admin &&
-                          s.estado !== "desligado" && (
-                            <button type="button" className="botao botao-pequeno" disabled={conectarGoogle.isPending} onClick={() => conectarGoogle.mutate()}>
-                              {s.estado === "ativo" ? "Reconectar" : "Conectar"}
-                            </button>
-                          )
+                          s.estado !== "desligado" &&
+                          (confirmandoGoogle ? (
+                            <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                              <span className="pequeno suave">Desconectar a agenda?</span>
+                              <button type="button" className="botao botao-pequeno" onClick={() => setConfirmandoGoogle(false)}>
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                className="botao botao-pequeno botao-perigo"
+                                disabled={desconectarGoogle.isPending}
+                                onClick={() => desconectarGoogle.mutate(undefined, { onSettled: () => setConfirmandoGoogle(false) })}
+                              >
+                                Desconectar Google Agenda
+                              </button>
+                            </span>
+                          ) : (
+                            <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+                              <button type="button" className="botao botao-pequeno" disabled={conectarGoogle.isPending} onClick={() => conectarGoogle.mutate()}>
+                                {s.estado === "ativo" ? "Reconectar" : "Conectar"}
+                              </button>
+                              {s.detalhe.includes("onectad") && (
+                                <button type="button" className="botao botao-pequeno botao-fantasma" onClick={() => setConfirmandoGoogle(true)}>
+                                  Desconectar
+                                </button>
+                              )}
+                            </span>
+                          ))
                         }
                       />
                     );

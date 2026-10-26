@@ -231,7 +231,17 @@ export default function Agenda() {
       <header className={css.topo}>
         <div>
           <h1>Agenda</h1>
-          <p className="suave">Reuniões, prazos das tarefas e lembretes, num só lugar.</p>
+          <p className="suave">
+            Reuniões, prazos das tarefas e lembretes, num só lugar.
+            {agenda.data?.google === "ok" && (
+              <>
+                {" "}
+                <Link to="/integracoes" className="pequeno">
+                  Gerenciar conexão
+                </Link>
+              </>
+            )}
+          </p>
         </div>
         <button type="button" className={`botao botao-primario ${css.novoDesktop}`} onClick={() => setLembrete(true)}>
           <AlarmClock size={16} aria-hidden="true" /> Novo lembrete

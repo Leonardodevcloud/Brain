@@ -35,7 +35,7 @@ export class TranscricaoCompativelOpenAI implements ProvedorTranscricao {
     // Vocabulário da casa ajuda o Whisper com nomes próprios.
     formulario.append(
       "prompt",
-      "Argos, como está a disponibilidade hoje? Qual loja está com mais faltas? Motoboys em loja, faltando, sem contato. Entregas de hoje, SLA, faturamento, margem, saques em aberto. Central Tutts, Cérebro, POP, Plific, roteirizador.",
+      "Argos, como está a disponibilidade hoje? Qual loja está com mais faltas? Motoboys em loja, faltando, sem contato. Entregas de hoje, SLA, faturamento, margem, saques em aberto. Central Tutts, Cérebro, POP, Plific, roteirizador. Marca uma reunião amanhã às 15h com contato@tutts.com.br no Google Meet.",
     );
 
     const resposta = await fetch(`${this.cfg.baseUrl.replace(/\/$/, "")}/audio/transcriptions`, {
@@ -56,6 +56,21 @@ export class TranscricaoCompativelOpenAI implements ProvedorTranscricao {
   }
 }
 
+/**
+ * E-mail ditado em voz: "contato arroba tutts ponto com ponto br" → "contato@tutts.com.br".
+ * Também junta "contato @ tutts . com . br" e "marcos ponto gabriel arroba ..." e deixa o e-mail em minúsculas.
+ */
+export function normalizarEmailFalado(texto: string): string {
+  let t = texto.replace(/\s+(?:arroba|arrouba|aroba)\s+/gi, "@").replace(/\s*@\s*/g, "@");
+  if (!t.includes("@")) return texto;
+  // Domínio: "@tutts ponto com ponto br" / "@tutts . com . br"
+  t = t.replace(/@([a-z0-9À-ÿ_-]+)((?:\s*(?:\bponto\b|\.)\s*[a-z0-9_-]+)+)/gi, (_m, nome: string, resto: string) => `@${nome}${resto.replace(/\s*(?:\bponto\b|\.)\s*/gi, ".")}`);
+  // Parte antes do @: "marcos ponto gabriel@" → "marcos.gabriel@"
+  t = t.replace(/([a-z0-9_-]+)\s+ponto\s+([a-z0-9_-]+)@/gi, "$1.$2@");
+  // Sem espaços dentro do e-mail e em minúsculas.
+  return t.replace(/[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi, (e) => e.toLowerCase());
+}
+
 /** Marca colocada no fim quando o Whisper teve pouca confiança: o Argos confirma antes de agir. */
 export const MARCA_INCERTA = "[áudio pouco claro]";
 
@@ -65,7 +80,7 @@ export const MARCA_INCERTA = "[áudio pouco claro]";
  */
 export function lerTranscricao(dados: { text?: string; segments?: { text?: string; no_speech_prob?: number; avg_logprob?: number }[] }): string {
   const segmentos = dados.segments ?? [];
-  if (!segmentos.length) return (dados.text ?? "").trim();
+  if (!segmentos.length) return normalizarEmailFalado((dados.text ?? "").trim());
   const bons = segmentos.filter((s) => (s.no_speech_prob ?? 0) < 0.6 && (s.avg_logprob ?? 0) > -1.6);
   const texto = bons
     .map((s) => (s.text ?? "").trim())
@@ -74,7 +89,8 @@ export function lerTranscricao(dados: { text?: string; segments?: { text?: strin
     .trim();
   if (!texto) return "";
   const media = bons.reduce((t, s) => t + (s.avg_logprob ?? 0), 0) / bons.length;
-  return media < -0.9 ? `${texto} ${MARCA_INCERTA}` : texto;
+  const final = normalizarEmailFalado(texto);
+  return media < -0.9 ? `${final} ${MARCA_INCERTA}` : final;
 }
 
 /** Versão para ser falada: sem Markdown, sem citações [1], curta. */

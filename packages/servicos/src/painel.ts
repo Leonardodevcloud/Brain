@@ -47,12 +47,30 @@ export async function concluirConexaoGoogle(ctx: Contexto, codigo: string, estad
   }
   const { refreshToken, accessToken } = await ctx.google.trocarCodigo(codigo);
   await ctx.google.listarEventos(accessToken, ctx.agora(), new Date(ctx.agora().getTime() + 86_400_000));
+  const conta = await ctx.google.contaDaAgenda(accessToken);
   await integracoes.salvar(ctx.pool, "google", {
-    config: { conectadoEm: ctx.agora().toISOString(), escopo: ESCOPO_AGENDA },
+    config: { conectadoEm: ctx.agora().toISOString(), escopo: ESCOPO_AGENDA, conta },
     segredo: ctx.cofre.cifrar(refreshToken),
   });
   await integracoes.salvar(ctx.pool, "google_estado", { config: {} });
   await auditar(ctx.pool, { usuarioId: cfg.usuarioId ?? null, papel: "admin", canal: "web" }, "google.conectado");
+}
+
+/** Desliga a agenda: revoga o acesso no Google e apaga o token guardado. */
+export async function desconectarGoogle(ctx: Contexto, ator: Ator) {
+  if (ator.papel !== "admin") throw AppError.semPermissao("Só o administrador desconecta a agenda.");
+  const salvo = await integracoes.obter(ctx.pool, "google");
+  let revogado = false;
+  if (salvo?.segredo && ctx.google && ctx.cofre) {
+    try {
+      revogado = await ctx.google.revogar(ctx.cofre.decifrar(salvo.segredo));
+    } catch {
+      revogado = false;
+    }
+  }
+  await integracoes.salvar(ctx.pool, "google", { config: { desconectadoEm: ctx.agora().toISOString() }, segredo: null });
+  await auditar(ctx.pool, ator, "google.desconectado", undefined, { conta: salvo?.config.conta ?? null, revogado });
+  return { revogado };
 }
 
 export async function proximasReunioes(ctx: Contexto, horas = 36) {
@@ -106,7 +124,7 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
         ? "Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET."
         : google?.segredo
           ? google.config.escopo === ESCOPO_AGENDA
-            ? `Conectado em ${quando(google.config.conectadoEm as string)}. Lê as reuniões e escreve a pauta e os lembretes das tarefas.`
+            ? `${google.config.conta ? `Agenda de ${String(google.config.conta)}, conectada` : "Conectado"} em ${quando(google.config.conectadoEm as string)}. Lê as reuniões, marca reuniões e escreve a pauta e os lembretes das tarefas.`
             : "Conectado só para leitura. Reconecte para as tarefas entrarem na pauta e virarem lembretes."
           : "Falta autorizar o acesso à agenda.",
     },

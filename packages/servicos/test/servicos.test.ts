@@ -636,6 +636,15 @@ describe("Argos", () => {
     await expect(agenda.criarReuniao(ctx, atorAdmin, { titulo: "Sem hora", inicio: "2026-10-27" })).rejects.toMatchObject({ status: 400 });
   });
 
+  it("desconectar a agenda apaga o acesso guardado (só o admin)", async () => {
+    await integracoes.salvar(pool, "google", { config: { conectadoEm: new Date().toISOString(), conta: "x@gmail.com" }, segredo: "cifrado" });
+    await expect(painel.desconectarGoogle(ctx, atorMembro)).rejects.toMatchObject({ status: 403 });
+    await painel.desconectarGoogle(ctx, atorAdmin);
+    const salvo = await integracoes.obter(pool, "google");
+    expect(salvo?.segredo).toBeNull();
+    expect(salvo?.config.desconectadoEm).toBeTruthy();
+  });
+
   it("agente: na dúvida, pergunta de volta e a tela fica esperando a resposta", async () => {
     const ia = roteiro([() => ({ acao: "responder", fala: "Não achei a loja Faro. Era a loja Farol?", confirmar: true, analise: "x", mostrar: "r1" })]);
     const r = await atenderFala({ ...ctx, ia }, atorAdmin, "como está a loja do faro [áudio pouco claro]");
