@@ -127,6 +127,35 @@ describe("acesso", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it("o administrador muda nome, e-mail de login e senha; as sessões antigas caem", async () => {
+    const pessoa = await acesso.criarUsuario(ctx, atorAdmin, { nome: "Leonardo Teste", email: "leo.teste@tutts.com.br", senha: "senhaForte789", papel: "admin" });
+    const antigo = await acesso.entrar(ctx, emissor, { email: "leo.teste@tutts.com.br", senha: "senhaForte789" });
+    await expect(acesso.editarUsuario(ctx, atorMembro, pessoa.id, { nome: "X" })).rejects.toMatchObject({ status: 403 });
+    await expect(acesso.editarUsuario(ctx, atorAdmin, pessoa.id, { email: "SUP@tutts.com.br" })).rejects.toMatchObject({ status: 409 });
+    await expect(acesso.editarUsuario(ctx, atorAdmin, pessoa.id, { novaSenha: "fraca" })).rejects.toMatchObject({ status: 400 });
+
+    const r = await acesso.editarUsuario(ctx, atorAdmin, pessoa.id, { nome: "Marcos Gabriel", email: "Contato.Teste@tutts.com.br", novaSenha: "novaSenha12345" });
+    expect(r.usuario).toMatchObject({ nome: "Marcos Gabriel", email: "contato.teste@tutts.com.br" });
+    expect(r.sessoesEncerradas).toBe(true);
+    await expect(acesso.renovarSessao(ctx, emissor, antigo.refreshToken)).rejects.toMatchObject({ status: 401 });
+    await expect(acesso.entrar(ctx, emissor, { email: "leo.teste@tutts.com.br", senha: "novaSenha12345" })).rejects.toMatchObject({ status: 401 });
+    const novo = await acesso.entrar(ctx, emissor, { email: "contato.teste@tutts.com.br", senha: "novaSenha12345" });
+    expect(novo.usuario.nome).toBe("Marcos Gabriel");
+
+    // Só o nome: sessão continua.
+    expect((await acesso.editarUsuario(ctx, atorAdmin, pessoa.id, { nome: "Marcos G." })).sessoesEncerradas).toBe(false);
+  });
+
+  it("não deixa o Cérebro sem administrador", async () => {
+    const lista = await acesso.listarUsuarios(ctx);
+    const admins = lista.filter((u) => u.papel === "admin" && u.ativo);
+    // Rebaixa todos menos um; o último não pode cair.
+    for (const a of admins.slice(1)) await acesso.editarUsuario(ctx, atorAdmin, a.id, { papel: "membro" });
+    await expect(acesso.editarUsuario(ctx, atorAdmin, admins[0]!.id, { papel: "membro" })).rejects.toMatchObject({ status: 400 });
+    await expect(acesso.editarUsuario(ctx, atorAdmin, admins[0]!.id, { ativo: false })).rejects.toMatchObject({ status: 400 });
+    for (const a of admins.slice(1)) await acesso.editarUsuario(ctx, atorAdmin, a.id, { papel: "admin" });
+  });
+
   it("autentica o conector do Claude com token pessoal e revoga", async () => {
     const { token, id } = await acesso.criarTokenConector(ctx, atorMembro, "Claude do supervisor");
     expect(await acesso.autenticarConector(ctx, token)).toMatchObject({ usuarioId: membro.id, canal: "mcp" });

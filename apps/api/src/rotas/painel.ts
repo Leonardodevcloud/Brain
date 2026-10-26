@@ -11,6 +11,15 @@ const esquemaNovoUsuario = z.object({
   papel: z.enum(["admin", "membro"]).default("membro"),
 });
 
+const esquemaEditarUsuario = z
+  .object({
+    nome: z.string().trim().min(2).max(120).optional(),
+    email: z.email().max(200).optional(),
+    papel: z.enum(["admin", "membro"]).optional(),
+    ativo: z.boolean().optional(),
+    novaSenha: z.string().min(1).max(200).optional(),
+  })
+  .strict();
 
 /** Rotas de tela: início, lacunas, usuários, integrações, conector e importação. Todas exigem login. */
 export function rotasPainel({ ctx }: Deps) {
@@ -88,6 +97,11 @@ export function rotasPainel({ ctx }: Deps) {
 
   r.post("/usuarios", exigirAdmin, async (req, res) => {
     res.status(201).json(await acesso.criarUsuario(ctx, ator(req), validar(esquemaNovoUsuario, req.body)));
+  });
+
+  r.patch("/usuarios/:id", exigirAdmin, async (req, res) => {
+    const { id } = validar(esquemaId, req.params);
+    res.json(await acesso.editarUsuario(ctx, ator(req), id, validar(esquemaEditarUsuario, req.body)));
   });
 
   // ── Integrações ──

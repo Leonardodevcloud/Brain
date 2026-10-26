@@ -50,6 +50,22 @@ export const usuarios = {
     ]);
   },
 
+  async atualizar(db: Executor, id: string, campos: { nome?: string; email?: string; papel?: Papel }) {
+    const { rows } = await db.query<UsuarioLinha>(
+      `UPDATE cerebro.usuarios
+          SET nome = coalesce($2, nome), email = coalesce(lower($3), email), papel = coalesce($4, papel), atualizado_em = now()
+        WHERE id = $1
+        RETURNING ${COLUNAS}`,
+      [id, campos.nome ?? null, campos.email ?? null, campos.papel ?? null],
+    );
+    return rows[0] ?? null;
+  },
+
+  async contarAdminsAtivos(db: Executor) {
+    const { rows } = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM cerebro.usuarios WHERE papel = 'admin' AND ativo`);
+    return rows[0]?.n ?? 0;
+  },
+
   async definirAtivo(db: Executor, id: string, ativo: boolean) {
     await db.query(`UPDATE cerebro.usuarios SET ativo = $2, atualizado_em = now() WHERE id = $1`, [id, ativo]);
   },

@@ -96,6 +96,57 @@ export async function criarUsuario(
   return paraDTO(u);
 }
 
+/**
+ * O administrador muda nome, e-mail de login, papel, ativo ou define uma nova senha.
+ * Mudar e-mail ou senha encerra as sessões abertas daquela pessoa (ela entra de novo com os dados novos).
+ */
+export async function editarUsuario(
+  ctx: Contexto,
+  ator: Ator,
+  id: string,
+  dados: { nome?: string; email?: string; papel?: Papel; ativo?: boolean; novaSenha?: string },
+): Promise<{ usuario: UsuarioDTO; sessoesEncerradas: boolean }> {
+  if (ator.papel !== "admin") throw AppError.semPermissao("Só o administrador edita usuários.");
+  const u = await usuarios.buscarPorId(ctx.pool, id);
+  if (!u) throw AppError.naoEncontrado("Usuário não encontrado.");
+
+  const nome = dados.nome?.trim();
+  if (nome !== undefined && (nome.length < 2 || nome.length > 120)) throw AppError.requisicaoInvalida("O nome precisa ter entre 2 e 120 letras.");
+  const email = dados.email?.trim().toLowerCase();
+  if (email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw AppError.requisicaoInvalida("E-mail inválido.");
+  if (email && email !== u.email) {
+    const outro = await usuarios.buscarPorEmail(ctx.pool, email);
+    if (outro && outro.id !== u.id) throw AppError.conflito("Já existe um usuário com este e-mail.");
+  }
+  if (dados.novaSenha) {
+    const problema = validarForcaSenha(dados.novaSenha);
+    if (problema) throw AppError.requisicaoInvalida(`Senha fraca. ${problema}`);
+  }
+  // Nunca deixar o Cérebro sem administrador.
+  const perdeAdmin = u.papel === "admin" && u.ativo && ((dados.papel && dados.papel !== "admin") || dados.ativo === false);
+  if (perdeAdmin && (await usuarios.contarAdminsAtivos(ctx.pool)) <= 1) {
+    throw AppError.requisicaoInvalida("Este é o único administrador. Crie ou promova outro antes de mudar este.");
+  }
+
+  const mudouEmail = Boolean(email && email !== u.email);
+  const encerrar = mudouEmail || Boolean(dados.novaSenha) || dados.ativo === false;
+  const atualizado = await emTransacao(ctx.pool, async (db) => {
+    const r = await usuarios.atualizar(db, u.id, { nome, email, papel: dados.papel });
+    if (dados.novaSenha) await usuarios.atualizarSenha(db, u.id, await gerarHashSenha(dados.novaSenha));
+    if (dados.ativo !== undefined && dados.ativo !== u.ativo) await usuarios.definirAtivo(db, u.id, dados.ativo);
+    if (encerrar) await sessoes.revogarTodas(db, u.id);
+    await auditar(db, ator, "usuario.editado", { entidade: "usuario", id: u.id }, {
+      nome: nome && nome !== u.nome ? { de: u.nome, para: nome } : undefined,
+      email: mudouEmail ? { de: u.email, para: email } : undefined,
+      papel: dados.papel && dados.papel !== u.papel ? dados.papel : undefined,
+      ativo: dados.ativo,
+      senha: dados.novaSenha ? "redefinida" : undefined,
+    });
+    return r!;
+  });
+  return { usuario: paraDTO(atualizado), sessoesEncerradas: encerrar };
+}
+
 export async function trocarSenha(ctx: Contexto, ator: Ator, atual: string, nova: string) {
   if (!ator.usuarioId) throw AppError.naoAutenticado();
   const u = await usuarios.buscarPorId(ctx.pool, ator.usuarioId);

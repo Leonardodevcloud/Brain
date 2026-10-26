@@ -12,10 +12,48 @@
   padding: 0;
 }
 .equipe > li {
+  padding: 12px 20px;
+}
+.equipe > li + li {
+  border-top: 1px solid var(--divisoria);
+}
+.resumoPessoa {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 20px;
+}
+.edicao {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: var(--raio);
+  background: var(--fundo);
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--acento);
+}
+.acoesEdicao {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .resumoPessoa {
+    flex-wrap: wrap;
+  }
+  .equipe > li {
+    padding: 12px 14px;
+  }
 }
 .avatar {
   width: 32px;
