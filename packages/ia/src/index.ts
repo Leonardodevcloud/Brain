@@ -12,4 +12,12 @@ export {
 } from "./provedores.js";
 export * from "./prompts.js";
 export { palavras, vetoresTfIdf, cossenoEsparso, vizinhosMaisProximos, mediaVetores } from "./semelhanca.js";
-export { TranscricaoCompativelOpenAI, textoParaFala, type ProvedorTranscricao } from "./voz.js";
+export {
+  FalaCompativelOpenAI,
+  TranscricaoCompativelOpenAI,
+  VOZES_FALA,
+  textoParaFala,
+  type ProvedorFala,
+  type ProvedorTranscricao,
+  type VozFala,
+} from "./voz.js";

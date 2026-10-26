@@ -1,10 +1,12 @@
-import { BookOpen, Home, Inbox, LogOut, Network, Plug, Search, UserRound } from "lucide-react";
+import { BookOpen, Home, Inbox, ListTodo, LogOut, Network, Plug, Search, UserRound } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useInicio, useRegistros } from "../api/consultas";
+import { useResumoTarefas } from "../api/tarefas";
 import { useSessao, useUsuario } from "../sessao/Sessao";
 import { iniciais } from "../util/formato";
 import { Argos } from "./argos/Argos";
 import css from "./Layout.module.css";
+import { Logo } from "./Logo";
 
 function ContadorRevisar() {
   const rascunhos = useRegistros({ status: "rascunho", porPagina: 1 });
@@ -18,13 +20,25 @@ function ContadorRevisar() {
   );
 }
 
+function ContadorTarefas() {
+  const resumo = useResumoTarefas();
+  const total = resumo.data?.minhas ?? 0;
+  if (!total) return null;
+  return (
+    <span className={`${css.contador} ${resumo.data?.atrasadas ? css.contadorAlerta : ""}`} aria-label={`${total} tarefas suas abertas`}>
+      {total > 99 ? "99+" : total}
+    </span>
+  );
+}
+
 const ITENS = [
   { para: "/", rotulo: "Início", Icone: Home, fim: true },
   { para: "/perguntar", rotulo: "Perguntar", Icone: Search },
   { para: "/biblioteca", rotulo: "Biblioteca", Icone: BookOpen },
+  { para: "/tarefas", rotulo: "Tarefas", Icone: ListTodo, contador: "tarefas" },
   { para: "/mapa", rotulo: "Mapa", Icone: Network },
-  { para: "/revisar", rotulo: "Revisar", Icone: Inbox, contador: true },
-  { para: "/integracoes", rotulo: "Integrações", Icone: Plug },
+  { para: "/revisar", rotulo: "Revisar", Icone: Inbox, contador: "revisar" },
+  { para: "/integracoes", rotulo: "Integrações", Icone: Plug, soDesktop: true },
 ];
 
 export function Layout() {
@@ -39,21 +53,20 @@ export function Layout() {
       </a>
       <nav aria-label="Navegação principal" className={css.lateral}>
         <div className={css.marca}>
-          <div aria-hidden="true" className={css.logo}>
-            <div />
-          </div>
+          <Logo tamanho={30} className={css.logo} />
           <div className={css.marcaTexto}>
-            <span className={css.marcaNome}>Cérebro</span>
-            <span className={css.marcaSub}>Central Tutts</span>
+            <span className={css.marcaNome}>Second Brain</span>
+            <span className={css.marcaSub}>Tutts</span>
           </div>
         </div>
 
         <div className={css.itens}>
-          {ITENS.map(({ para, rotulo, Icone, fim, contador }) => (
-            <NavLink key={para} to={para} end={fim} className={({ isActive }) => `${css.item} ${isActive ? css.ativo : ""}`}>
+          {ITENS.map(({ para, rotulo, Icone, fim, contador, soDesktop }) => (
+            <NavLink key={para} to={para} end={fim} className={({ isActive }) => `${css.item} ${isActive ? css.ativo : ""} ${soDesktop ? css.soDesktop : ""}`}>
               <Icone size={18} strokeWidth={1.75} aria-hidden="true" />
               <span className={css.rotulo}>{rotulo}</span>
-              {contador && <ContadorRevisar />}
+              {contador === "revisar" && <ContadorRevisar />}
+              {contador === "tarefas" && <ContadorTarefas />}
             </NavLink>
           ))}
         </div>

@@ -1,0 +1,57 @@
+import { useId } from "react";
+
+/** Marca do Second Brain: meio cérebro + circuitos, sobre gradiente roxo da Tutts. */
+export function Logo({ tamanho = 32, simples = false, className }: { tamanho?: number; simples?: boolean; className?: string }) {
+  const id = useId().replace(/:/g, "");
+  return (
+    <svg viewBox="0 0 64 64" width={tamanho} height={tamanho} className={className} aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id={`g${id}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#8B5CF6" />
+          <stop offset="1" stopColor="#5B21B6" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="14" fill={`url(#g${id})`} />
+      {simples || tamanho < 24 ? (
+        <g transform="translate(7.68 7.68) scale(0.76)">
+          <g fill="none" stroke="#fff" strokeWidth="4.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M31 9 C27 6 21 6.5 18.5 10.5 C14 10 10.5 13.5 11 18 C7 20 6 25 8.5 28.5 C5.5 31.5 5.5 36.5 9 39.5 C7.5 44 10.5 48.5 15 49 C16 53.5 21 56 25.5 54 C27.5 56 30 56 31 55 Z" />
+            <path d="M31 9 V55" />
+            <path d="M14 31 C18 31 21 28 21 24" />
+            <path d="M31 19 H39 L45 13" />
+            <path d="M31 32 H46" />
+            <path d="M31 45 H39 L45 51" />
+          </g>
+          <g fill="#fff">
+            <circle cx="48" cy="10.5" r="5" />
+            <circle cx="51" cy="32" r="5" />
+            <circle cx="48" cy="53.5" r="5" />
+          </g>
+        </g>
+      ) : (
+        <g transform="translate(8.32 8.32) scale(0.74)">
+          <g fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M31 9 C27 6 21 6.5 18.5 10.5 C14 10 10.5 13.5 11 18 C7 20 6 25 8.5 28.5 C5.5 31.5 5.5 36.5 9 39.5 C7.5 44 10.5 48.5 15 49 C16 53.5 21 56 25.5 54 C27.5 56 30 56 31 55 Z" />
+            <path d="M31 9 V55" />
+            <path d="M19 17 C22 17 24 19 24 22" />
+            <path d="M12.5 29 C16 29 18 27 18 24.5" />
+            <path d="M15.5 40 C19 40 21.5 38 22 35" />
+            <path d="M24 47 C24 44 26 42.5 29 42.5" />
+            <path d="M31 17 H38 L44 11" />
+            <path d="M31 25 H42 L46 21" />
+            <path d="M31 32 H48" />
+            <path d="M31 39 H42 L46 43" />
+            <path d="M31 47 H38 L44 53" />
+          </g>
+          <g fill="#fff">
+            <circle cx="47" cy="8.5" r="4" />
+            <circle cx="49.5" cy="18.5" r="4" />
+            <circle cx="52.5" cy="32" r="4" />
+            <circle cx="49.5" cy="45.5" r="4" />
+            <circle cx="47" cy="55.5" r="4" />
+          </g>
+        </g>
+      )}
+    </svg>
+  );
+}

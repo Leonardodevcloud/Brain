@@ -4,9 +4,10 @@ import { Copy, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/cliente";
-import { chaves, useIntegracoes, useTokens, type MapaNotion } from "../api/consultas";
+import { chaves, useIntegracoes, useTokens } from "../api/consultas";
 import { Esqueleto, MensagemErro, textoDoErro, useAvisar } from "../componentes/comum";
 import { useUsuario } from "../sessao/Sessao";
+import { ouvirAmostra, recarregarVoz } from "../componentes/argos/fala";
 import { relativo } from "../util/formato";
 import pg from "./pagina.module.css";
 import css from "./Integracoes.module.css";
@@ -21,13 +22,13 @@ const ESTADO: Record<StatusIntegracaoDTO["estado"], { texto: string; cor: string
 const INFO: Record<StatusIntegracaoDTO["nome"], { nome: string; descricao: string }> = {
   claude: { nome: "Conector do Claude", descricao: "O Claude consulta o cérebro e salva rascunhos nas suas conversas." },
   fathom: { nome: "Fathom", descricao: "Grava o Meet e envia a transcrição; o cérebro gera a ata." },
-  google: { nome: "Google Agenda", descricao: "Mostra as próximas reuniões no Início." },
-  notion: { nome: "Notion", descricao: "Cria tarefas a partir das atas aprovadas." },
+  google: { nome: "Google Agenda", descricao: "Mostra as próximas reuniões, coloca tarefas na pauta e cria lembretes." },
   email: { nome: "E-mail", descricao: "Lê a caixa dedicada e sugere rascunhos do que for conhecimento." },
   deepseek: { nome: "DeepSeek", descricao: "Respostas, atas e extração de conhecimento." },
   embeddings: { nome: "Gemini", descricao: "Busca por sentido, não só por palavra." },
   central: { nome: "Banco da Central", descricao: "O Argos consulta disponibilidade, entregas, financeiro e o BI, só para leitura." },
-  voz: { nome: "Argos (voz)", descricao: "Whisper pela Groq: transforma a sua fala em comando." },
+  voz: { nome: "Argos (ouvido)", descricao: "Whisper pela Groq: transforma a sua fala em comando." },
+  fala: { nome: "Argos (voz)", descricao: "Voz natural gerada no servidor: a mesma em qualquer aparelho." },
 };
 
 function useCopiar() {
@@ -63,6 +64,91 @@ function Linha({ s, acao, children }: { s: StatusIntegracaoDTO; acao?: ReactNode
       </div>
       {children}
     </li>
+  );
+}
+
+// ── Voz do Argos: uma escolha para a empresa toda ──
+
+const DESCRICAO_VOZ: Record<string, string> = {
+  marin: "Feminina, calorosa e natural (recomendada)",
+  cedar: "Masculina, calma e natural (recomendada)",
+  coral: "Feminina, animada",
+  nova: "Feminina, jovem e clara",
+  shimmer: "Feminina, suave",
+  sage: "Feminina, serena",
+  ballad: "Masculina, expressiva",
+  ash: "Masculina, firme",
+  verse: "Masculina, versátil",
+  alloy: "Neutra",
+  echo: "Masculina, grave",
+  fable: "Masculina, narrador",
+  onyx: "Masculina, bem grave",
+};
+
+function EscolherVoz() {
+  const qc = useQueryClient();
+  const avisar = useAvisar();
+  const usuario = useUsuario();
+  const [cfg, setCfg] = useState<{ voz: string; velocidade: number; vozes: string[] } | null>(null);
+  const [ouvindo, setOuvindo] = useState(false);
+  useEffect(() => {
+    void api<{ voz: string; velocidade: number; vozes: string[] }>("/argos/voz").then(setCfg, () => setCfg(null));
+  }, []);
+  const salvar = useMutation({
+    mutationFn: () => api("/argos/voz", { metodo: "PUT", corpo: { voz: cfg!.voz, velocidade: cfg!.velocidade } }),
+    onSuccess: () => {
+      recarregarVoz();
+      void qc.invalidateQueries({ queryKey: chaves.integracoes });
+      avisar("Voz salva. Vale para todos, em qualquer aparelho.");
+    },
+    onError: (e) => avisar(textoDoErro(e), "erro"),
+  });
+  if (!cfg) return <Esqueleto linhas={2} />;
+  const primeiroNome = usuario.nome.split(" ")[0] ?? "";
+
+  return (
+    <div className={css.voz}>
+      <div className={css.campoVoz}>
+        <label htmlFor="voz-argos">Voz</label>
+        <select id="voz-argos" value={cfg.voz} onChange={(e) => setCfg({ ...cfg, voz: e.target.value })}>
+          {cfg.vozes.map((v) => (
+            <option key={v} value={v}>
+              {v.charAt(0).toUpperCase() + v.slice(1)} · {DESCRICAO_VOZ[v] ?? ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className={css.campoVoz}>
+        <label htmlFor="velocidade-argos">Ritmo · {cfg.velocidade.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}×</label>
+        <input
+          id="velocidade-argos"
+          type="range"
+          min={0.9}
+          max={1.35}
+          step={0.01}
+          value={cfg.velocidade}
+          onChange={(e) => setCfg({ ...cfg, velocidade: Number(e.target.value) })}
+        />
+      </div>
+      <div className={css.acoesVoz}>
+        <button
+          type="button"
+          className="botao"
+          disabled={ouvindo}
+          onClick={() => {
+            setOuvindo(true);
+            ouvirAmostra(cfg.voz, cfg.velocidade, primeiroNome)
+              .catch((e) => avisar(textoDoErro(e), "erro"))
+              .finally(() => setOuvindo(false));
+          }}
+        >
+          {ouvindo ? "Gerando…" : "Ouvir"}
+        </button>
+        <button type="button" className="botao botao-primario" disabled={salvar.isPending} onClick={() => salvar.mutate()}>
+          Usar esta voz
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -158,136 +244,6 @@ function ConectorClaude() {
   );
 }
 
-// ── Notion: mapear colunas ──
-
-interface Colunas {
-  nome: string;
-  colunas: { nome: string; tipo: string }[];
-}
-
-function ConfigNotion({ aoSalvar }: { aoSalvar: () => void }) {
-  const avisar = useAvisar();
-  const [databaseId, setDatabaseId] = useState("");
-  const [colunas, setColunas] = useState<Colunas | null>(null);
-  const [mapa, setMapa] = useState<Partial<MapaNotion>>({});
-  const ler = useMutation({
-    mutationFn: (id: string) => api<Colunas>(`/integracoes/notion/colunas?databaseId=${encodeURIComponent(id)}`),
-    onSuccess: (c) => {
-      setColunas(c);
-      const porTipo = (tipo: string) => c.colunas.find((x) => x.tipo === tipo)?.nome ?? null;
-      setMapa({ propTitulo: porTipo("title") ?? "", propPrazo: porTipo("date"), propStatus: porTipo("status") ?? porTipo("select") });
-    },
-    onError: (e) => avisar(textoDoErro(e), "erro"),
-  });
-  const salvar = useMutation({
-    mutationFn: (m: MapaNotion) => api("/integracoes/notion/mapa", { metodo: "PUT", corpo: m }),
-    onSuccess: () => {
-      avisar("Notion configurado. As próximas atas aprovadas viram tarefas.");
-      aoSalvar();
-    },
-    onError: (e) => avisar(textoDoErro(e), "erro"),
-  });
-
-  // Aceita o link inteiro do banco e extrai o id.
-  const idLimpo = (databaseId.match(/[0-9a-f]{32}/i)?.[0] ?? databaseId).trim();
-  const tipoDe = (nome?: string | null) => colunas?.colunas.find((c) => c.nome === nome)?.tipo;
-  const opcoes = (tipos: string[]) => colunas?.colunas.filter((c) => tipos.includes(c.tipo)) ?? [];
-
-  const selecao = (campo: keyof MapaNotion, rotulo: string, tipos: string[]) => (
-    <div className="campo" key={campo}>
-      <label htmlFor={`n-${campo}`}>{rotulo}</label>
-      <select
-        id={`n-${campo}`}
-        className="selecao"
-        value={(mapa[campo] as string | null | undefined) ?? ""}
-        onChange={(e) => setMapa((m) => ({ ...m, [campo]: e.target.value || null }))}
-      >
-        <option value="">Não usar</option>
-        {opcoes(tipos).map((c) => (
-          <option key={c.nome} value={c.nome}>
-            {c.nome}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-
-  return (
-    <div className={css.extra}>
-      <form
-        className={css.formLinha}
-        onSubmit={(e) => {
-          e.preventDefault();
-          ler.mutate(idLimpo);
-        }}
-      >
-        <div className="campo" style={{ flexGrow: 1 }}>
-          <label htmlFor="notion-db">Link do banco de tarefas</label>
-          <input
-            id="notion-db"
-            className="entrada"
-            value={databaseId}
-            onChange={(e) => setDatabaseId(e.target.value)}
-            placeholder="https://www.notion.so/…"
-          />
-          <span className="ajuda">No Notion, conecte a integração ao banco (••• › Conexões) antes de ler as colunas.</span>
-        </div>
-        <button type="submit" className="botao" disabled={idLimpo.length < 10 || ler.isPending}>
-          {ler.isPending ? "Lendo…" : "Ler colunas"}
-        </button>
-      </form>
-
-      {colunas && (
-        <form
-          className={css.mapa}
-          onSubmit={(e) => {
-            e.preventDefault();
-            salvar.mutate({
-              databaseId: idLimpo,
-              propTitulo: mapa.propTitulo ?? "",
-              propPrazo: mapa.propPrazo ?? null,
-              propResponsavel: mapa.propResponsavel ?? null,
-              tipoResponsavel: tipoDe(mapa.propResponsavel) === "select" ? "select" : "rich_text",
-              propStatus: mapa.propStatus ?? null,
-              tipoStatus: tipoDe(mapa.propStatus) === "select" ? "select" : "status",
-              valorStatusInicial: mapa.valorStatusInicial ?? null,
-              propOrigem: mapa.propOrigem ?? null,
-            });
-          }}
-        >
-          <p className="pequeno">
-            Banco: <strong>{colunas.nome || "sem nome"}</strong>
-          </p>
-          <div className={css.gradeMapa}>
-            {selecao("propTitulo", "Título da tarefa", ["title"])}
-            {selecao("propPrazo", "Prazo", ["date"])}
-            {selecao("propResponsavel", "Responsável", ["rich_text", "select"])}
-            {selecao("propStatus", "Status", ["status", "select"])}
-            {mapa.propStatus && (
-              <div className="campo">
-                <label htmlFor="n-status-inicial">Status de uma tarefa nova</label>
-                <input
-                  id="n-status-inicial"
-                  className="entrada"
-                  value={mapa.valorStatusInicial ?? ""}
-                  onChange={(e) => setMapa((m) => ({ ...m, valorStatusInicial: e.target.value || null }))}
-                  placeholder="ex.: Não iniciado"
-                />
-              </div>
-            )}
-            {selecao("propOrigem", "Link da ata", ["url"])}
-          </div>
-          <div>
-            <button type="submit" className="botao botao-primario" disabled={!mapa.propTitulo || salvar.isPending}>
-              Salvar configuração do Notion
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
-  );
-}
-
 // ── Importação do histórico do Claude ──
 
 function ImportarClaude() {
@@ -367,8 +323,8 @@ export default function Integracoes() {
   const porNome = (nome: StatusIntegracaoDTO["nome"]) => status.data?.find((s) => s.nome === nome);
   const urlWebhook = `${location.origin}/api/webhooks/fathom`;
 
-  const fontes = (["central", "claude", "fathom", "google", "notion", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
-  const ia = (["deepseek", "embeddings", "voz"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
+  const fontes = (["central", "claude", "fathom", "google", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
+  const ia = (["deepseek", "embeddings", "voz", "fala"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
 
   return (
     <div className={`${pg.pagina} ${pg.estreita}`}>
@@ -447,30 +403,6 @@ export default function Integracoes() {
                         }
                       />
                     );
-                  case "notion":
-                    return (
-                      <Linha
-                        key={s.nome}
-                        s={s}
-                        acao={
-                          admin &&
-                          s.estado !== "desligado" && (
-                            <button type="button" className="botao botao-pequeno" aria-expanded={aberto === "notion"} onClick={() => alternar("notion")}>
-                              {aberto === "notion" ? "Fechar" : s.estado === "ativo" ? "Trocar banco" : "Escolher banco"}
-                            </button>
-                          )
-                        }
-                      >
-                        {aberto === "notion" && (
-                          <ConfigNotion
-                            aoSalvar={() => {
-                              setAberto(null);
-                              void qc.invalidateQueries({ queryKey: chaves.integracoes });
-                            }}
-                          />
-                        )}
-                      </Linha>
-                    );
                   default:
                     return <Linha key={s.nome} s={s} />;
                 }
@@ -482,7 +414,9 @@ export default function Integracoes() {
             <h2 id="t-ia">Inteligência artificial</h2>
             <ul className={`lista cartao ${css.lista}`}>
               {ia.map((s) => (
-                <Linha key={s.nome} s={s} />
+                <Linha key={s.nome} s={s}>
+                  {s.nome === "fala" && s.estado === "ativo" && admin && <EscolherVoz />}
+                </Linha>
               ))}
             </ul>
             <p className="ajuda">Dados pessoais (CPF, telefone, PIX, placas, e-mails) são mascarados antes de qualquer envio à IA.</p>

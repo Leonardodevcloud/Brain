@@ -75,3 +75,51 @@ export function textoParaFala(markdown: string, limite = 320): string {
   }
   return (saida || `${limpo.slice(0, limite - 1)}…`).trim();
 }
+
+// ───────────────────────────── Voz do Argos (texto → fala) ─────────────────────────────
+
+/** Vozes do gpt-4o-mini-tts. Todas falam português; as mais naturais em pt-BR primeiro. */
+export const VOZES_FALA = ["marin", "cedar", "coral", "nova", "shimmer", "sage", "ballad", "ash", "verse", "alloy", "echo", "fable", "onyx"] as const;
+export type VozFala = (typeof VOZES_FALA)[number];
+
+/** Gera a fala no servidor: a mesma voz em qualquer aparelho. */
+export interface ProvedorFala {
+  readonly nome: string;
+  falar(texto: string, opcoes: { voz: string; velocidade: number }): Promise<Uint8Array>;
+}
+
+// Como a voz deve soar: o gpt-4o-mini-tts segue instruções de tom e ritmo.
+const INSTRUCOES_FALA =
+  "Fale em português do Brasil, com sotaque brasileiro natural. Tom de um colega de trabalho simpático e seguro: " +
+  "caloroso, direto, conversado, nunca robótico nem de locutor. Ritmo ágil, frases fluidas, pausas curtas. " +
+  "Diga números e valores como uma pessoa diria (\"trinta e oito mil reais\", \"noventa e um por cento\").";
+
+/** OpenAI `/audio/speech` (ou API compatível). */
+export class FalaCompativelOpenAI implements ProvedorFala {
+  readonly nome: string;
+
+  constructor(private readonly cfg: { baseUrl: string; chave: string; modelo: string; timeoutMs?: number }) {
+    this.nome = `${new URL(cfg.baseUrl).hostname}/${cfg.modelo}`;
+  }
+
+  async falar(texto: string, opcoes: { voz: string; velocidade: number }): Promise<Uint8Array> {
+    const resposta = await fetch(`${this.cfg.baseUrl.replace(/\/$/, "")}/audio/speech`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${this.cfg.chave}` },
+      body: JSON.stringify({
+        model: this.cfg.modelo,
+        voice: opcoes.voz,
+        input: texto,
+        instructions: INSTRUCOES_FALA,
+        speed: opcoes.velocidade,
+        response_format: "mp3",
+      }),
+      signal: AbortSignal.timeout(this.cfg.timeoutMs ?? 30_000),
+    });
+    if (!resposta.ok) {
+      const corpo = await resposta.text().catch(() => "");
+      throw new Error(`A voz falhou (${resposta.status}): ${corpo.slice(0, 300)}`);
+    }
+    return new Uint8Array(await resposta.arrayBuffer());
+  }
+}

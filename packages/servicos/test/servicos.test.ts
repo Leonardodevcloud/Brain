@@ -4,7 +4,6 @@ import { EmissorTokens } from "@cerebro/auth";
 import { criarPoolLeitura, sincronizarAcesso } from "@cerebro/central";
 import { esquemaCriarRegistro, esquemaPergunta, type AtaDados, type UsuarioDTO } from "@cerebro/core";
 import { integracoes, jobs, type Pool } from "@cerebro/db";
-import type { ClienteNotion } from "@cerebro/integracoes";
 import {
   ATOR_SISTEMA,
   acesso,
@@ -16,9 +15,14 @@ import {
   atenderFala,
   interpretarRapido,
   transcreverFala,
+  configVoz,
+  salvarVoz,
+  gerarFala,
   montarMapa,
   painel,
   responder,
+  tarefas,
+  documentos,
   type Ator,
   type Contexto,
 } from "../src/index.js";
@@ -251,26 +255,123 @@ describe("reuniões e atas", () => {
     // Prazo que não é data vira null em vez de ir errado para o Notion.
     expect(dados.pendencias.map((p) => p.prazo)).toEqual(["2026-10-28", null]);
 
-    const criadas: string[] = [];
-    const notionFalso = {
-      criarTarefa: async (_mapa: unknown, t: { titulo: string }) => {
-        criadas.push(t.titulo);
-        return { id: `p-${criadas.length}`, url: `https://notion.so/p-${criadas.length}` };
-      },
-    } as unknown as ClienteNotion;
-    const ctxNotion = { ...ctx, notion: notionFalso };
-    await integracoes.salvar(pool, "notion", { config: { databaseId: "db-1", propTitulo: "Nome" } });
-
-    await conhecimento.aprovarRegistro(ctxNotion, atorAdmin, ataId, { decisoes: [0], pendencias: [0] });
+    await conhecimento.aprovarRegistro(ctx, atorAdmin, ataId, { decisoes: [0], pendencias: [0] });
     const aprovada = await conhecimento.obterRegistro(ctx, ataId);
     expect(aprovada.status).toBe("vigente");
     const decisao = aprovada.relacoes.find((r) => r.sentido === "entrada");
     expect(decisao?.registro).toMatchObject({ status: "vigente" });
     expect(decisao?.registro.codigo).toMatch(/^DEC-/);
 
-    await fontes.criarTarefasDaAta(ctxNotion, ataId);
-    await fontes.criarTarefasDaAta(ctxNotion, ataId);
-    expect(criadas).toEqual(["Atualizar o POP de troca em rota"]);
+    // A pendência marcada virou tarefa do Cérebro, ligada à ata, com o prazo da ata.
+    const daAta = await tarefas.listarTarefas(ctx, atorAdmin, { registroId: ataId });
+    expect(daAta.map((t) => t.titulo)).toEqual(["Atualizar o POP de troca em rota"]);
+    expect(daAta[0]).toMatchObject({ origem: "ata", prazo: "2026-10-28", responsavel: { id: null, nome: "Supervisão SSA" } });
+    expect(daAta[0]!.registros[0]).toMatchObject({ id: ataId, origem: true });
+  });
+});
+
+describe("tarefas", () => {
+  it("cria, reconhece o responsável pelo nome, move no quadro e conclui", async () => {
+    const a = await tarefas.criarTarefa(ctx, atorAdmin, { titulo: "Ligar para a Rede Beta", responsavelTexto: "admin", prazo: "2020-01-01" });
+    expect(a.codigo).toMatch(/^TAR-\d{3}$/);
+    expect(a.responsavel).toMatchObject({ id: admin.id, nome: "Admin" });
+    expect(a.atrasada).toBe(true);
+    const b = await tarefas.criarTarefa(ctx, atorMembro, { titulo: "Revisar escala de sábado", responsavelTexto: "Supervisão Maceió" });
+    expect(b.responsavel).toEqual({ id: null, nome: "Supervisão Maceió" });
+
+    // Arrasta B para antes de A na mesma coluna, depois A para "fazendo".
+    await tarefas.moverTarefa(ctx, atorAdmin, b.id, { status: "a_fazer", antesDe: a.id });
+    const coluna = (await tarefas.listarTarefas(ctx, atorAdmin)).filter((t) => t.status === "a_fazer").map((t) => t.id);
+    expect(coluna.indexOf(b.id)).toBeLessThan(coluna.indexOf(a.id));
+    await tarefas.moverTarefa(ctx, atorAdmin, a.codigo, { status: "feita", antesDe: null });
+    const feita = await tarefas.obterTarefa(ctx, a.id);
+    expect(feita).toMatchObject({ status: "feita", atrasada: false });
+    expect(feita.concluidaEm).not.toBeNull();
+    expect(feita.historico.map((h) => h.acao)).toContain("concluiu");
+
+    expect((await tarefas.listarTarefas(ctx, atorAdmin, { filtro: "minhas" })).every((t) => t.responsavel?.id === admin.id)).toBe(true);
+    expect((await tarefas.listarTarefas(ctx, atorAdmin, { filtro: "atrasadas" })).some((t) => t.id === a.id)).toBe(false);
+  });
+
+  it("só quem criou ou o administrador exclui", async () => {
+    const t = await tarefas.criarTarefa(ctx, atorAdmin, { titulo: "Tarefa do admin" });
+    await expect(tarefas.excluirTarefa(ctx, atorMembro, t.id)).rejects.toMatchObject({ status: 403 });
+    await tarefas.excluirTarefa(ctx, atorAdmin, t.id);
+    await expect(tarefas.obterTarefa(ctx, t.id)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("sem a agenda com escrita, explica que precisa reconectar", async () => {
+    const t = await tarefas.criarTarefa(ctx, atorAdmin, { titulo: "Lembrete" });
+    await expect(tarefas.criarLembrete(ctx, atorAdmin, t.id)).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+// PDF mínimo com uma linha de texto (gerado à mão: offsets do xref corretos).
+function pdfComTexto(texto: string) {
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const fluxo = `BT /F1 18 Tf 72 720 Td (${texto}) Tj ET`;
+  objs[3] = `<< /Length ${fluxo.length} >>\nstream\n${fluxo}\nendstream`;
+  let corpo = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objs.forEach((o, i) => {
+    offsets.push(corpo.length);
+    corpo += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = corpo.length;
+  corpo += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  corpo += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return strToU8(corpo);
+}
+
+describe("documentos", () => {
+  it("lê Word, PDF e planilha, vira conhecimento buscável e não aceita o mesmo arquivo duas vezes", async () => {
+    const docx = zipSync({
+      "word/document.xml": strToU8(
+        '<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Manual do motoboy</w:t></w:r></w:p>' +
+          "<w:p><w:r><w:t>Use sempre o colete e confira a nota antes de sair da loja.</w:t></w:r></w:p></w:body></w:document>",
+      ),
+    });
+    const reg = await documentos.enviarDocumento(ctx, atorAdmin, { nome: "Manual_do_motoboy.docx", bytes: docx, area: "pessoas" });
+    expect(reg).toMatchObject({ tipo: "documento", status: "vigente", titulo: "Manual do motoboy", area: "pessoas" });
+    expect(reg.codigo).toMatch(/^DOC-/);
+    expect(reg.conteudo).toContain("## Manual do motoboy");
+    expect(reg.conteudo).toContain("confira a nota");
+    await expect(documentos.enviarDocumento(ctx, atorAdmin, { nome: "copia.docx", bytes: docx })).rejects.toMatchObject({ status: 409 });
+
+    const pdf = await documentos.enviarDocumento(ctx, atorMembro, { nome: "contrato-rede-beta.pdf", bytes: pdfComTexto("Prazo de coleta ate 17h para a Rede Beta") });
+    expect(pdf.status).toBe("rascunho"); // quem não é admin envia para aprovação
+    expect(pdf.conteudo).toContain("Prazo de coleta ate 17h");
+
+    const xlsx = zipSync({
+      "xl/workbook.xml": strToU8('<workbook><sheets><sheet name="Tabela km" sheetId="1"/></sheets></workbook>'),
+      "xl/sharedStrings.xml": strToU8("<sst><si><t>Faixa</t></si><si><t>Valor</t></si><si><t>0 a 5 km</t></si></sst>"),
+      "xl/worksheets/sheet1.xml": strToU8(
+        '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2"><v>12.5</v></c></row></sheetData></worksheet>',
+      ),
+    });
+    const planilha = await documentos.enviarDocumento(ctx, atorAdmin, { nome: "tabela.xlsx", bytes: xlsx });
+    expect(planilha.conteudo).toBe("## Tabela km\n\nFaixa | Valor\n0 a 5 km | 12.5");
+
+    const arquivo = await documentos.baixarArquivo(ctx, reg.codigo);
+    expect(arquivo).toMatchObject({ nome: "Manual_do_motoboy.docx" });
+    expect(new Uint8Array(arquivo.conteudo)).toEqual(docx);
+    await expect(documentos.enviarDocumento(ctx, atorAdmin, { nome: "virus.exe", bytes: strToU8("MZ") })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("só o administrador exclui, e precisa repetir o código", async () => {
+    const r = await documentos.enviarDocumento(ctx, atorAdmin, { nome: "nota-solta.txt", bytes: strToU8("Texto de um documento que vai ser excluído depois.") });
+    await expect(conhecimento.excluirRegistro(ctx, atorMembro, r.id, r.codigo)).rejects.toMatchObject({ status: 403 });
+    await expect(conhecimento.excluirRegistro(ctx, atorAdmin, r.id, "DOC-999")).rejects.toMatchObject({ status: 400 });
+    await conhecimento.excluirRegistro(ctx, atorAdmin, r.id, r.codigo.toLowerCase());
+    await expect(conhecimento.obterRegistro(ctx, r.id)).rejects.toMatchObject({ status: 404 });
+    const { rows } = await pool.query("SELECT count(*)::int AS n FROM cerebro.arquivos WHERE registro_id = $1", [r.id]);
+    expect(rows[0].n).toBe(0);
   });
 });
 
@@ -412,6 +513,19 @@ describe("Argos", () => {
     expect(reg.dados).toMatchObject({ via: "voz" });
   });
 
+  it("agente: cria tarefa quando pedem e abre a tela de tarefas", async () => {
+    const ia = roteiro([
+      () => ({ acao: "criar_tarefa", titulo: "Revisar a escala de sábado", responsavel: "Supervisão Maceió", prazo: "2026-10-31" }),
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/Tarefa TAR-\d+ criada para Supervisão Maceió/);
+        return { acao: "responder", fala: "Criei a tarefa para a Supervisão de Maceió, com prazo sábado." };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia }, atorAdmin, "cria uma tarefa pra supervisão de maceió revisar a escala de sábado");
+    expect(r.acao?.destino).toMatch(/^\/tarefas\?abrir=TAR-\d+$/);
+    expect(interpretarRapido("abre as tarefas")).toMatchObject({ intencao: "navegar", alvo: "tarefas" });
+  });
+
   it("agente: abre um registro pelo código", async () => {
     const ia = roteiro([() => ({ acao: "responder", fala: "Abrindo o POP 1.", abrir: "POP-001" })]);
     const r = await atenderFala({ ...ctx, ia }, atorMembro, "abre o pop 1");
@@ -424,6 +538,20 @@ describe("Argos", () => {
     });
     const r = await atenderFala({ ...ctx, ia: quebrada }, atorAdmin, "valeu");
     expect(r.fala).toMatch(/^Por nada/);
+  });
+
+  it("voz do servidor: a escolha vale para todos e frases repetidas saem do cache", async () => {
+    let chamadas = 0;
+    const fala = { nome: "falsa", falar: async (_t: string, o: { voz: string }) => (chamadas++, new TextEncoder().encode(o.voz)) };
+    const c = { ...ctx, fala };
+    expect(await configVoz({ ...ctx, fala: null })).toMatchObject({ disponivel: false, voz: "marin" });
+    await salvarVoz(c, atorAdmin, { voz: "cedar", velocidade: 1.2 });
+    expect(await configVoz(c)).toMatchObject({ disponivel: true, voz: "cedar", velocidade: 1.2 });
+    expect(new TextDecoder().decode(await gerarFala(c, "Bom dia"))).toBe("cedar");
+    await gerarFala(c, "Bom dia");
+    expect(chamadas).toBe(1);
+    await expect(salvarVoz(c, atorAdmin, { voz: "robo", velocidade: 1 })).rejects.toMatchObject({ status: 400 });
+    await expect(gerarFala({ ...ctx, fala: null }, "oi")).rejects.toMatchObject({ status: 503 });
   });
 
   it("transcreve com o provedor de voz e recusa áudio vazio", async () => {

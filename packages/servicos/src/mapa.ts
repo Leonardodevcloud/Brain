@@ -1,5 +1,5 @@
 import { NOME_AREA, type LigacaoMapaDTO, type MapaDTO, type NoMapaDTO } from "@cerebro/core";
-import { mapa as repo } from "@cerebro/db";
+import { mapa as repo, tarefas } from "@cerebro/db";
 import { cosseno, mediaVetores, normalizar, vetoresTfIdf, cossenoEsparso, vizinhosMaisProximos } from "@cerebro/ia";
 import type { Contexto } from "./contexto.js";
 
@@ -30,7 +30,13 @@ const chaveCliente = (nome: string) =>
 export async function montarMapa(ctx: Contexto): Promise<MapaDTO> {
   if (cache && ctx.agora().getTime() - cache.em < VALIDADE_CACHE_MS) return cache.dados;
 
-  const [linhas, relacoes, vetores] = await Promise.all([repo.nos(ctx.pool), repo.relacoes(ctx.pool), repo.vetores(ctx.pool)]);
+  const [linhas, relacoes, vetores, abertas] = await Promise.all([
+    repo.nos(ctx.pool),
+    repo.relacoes(ctx.pool),
+    repo.vetores(ctx.pool),
+    tarefas.abertasPorRegistro(ctx.pool),
+  ]);
+  const tarefasDe = new Map(abertas.map((a) => [a.registroId, a.abertas]));
 
   const nos = new Map<string, NoMapaDTO>();
   const ligacoes: LigacaoMapaDTO[] = [];
@@ -53,11 +59,12 @@ export async function montarMapa(ctx: Contexto): Promise<MapaDTO> {
       restrito: r.confidencialidade === "restrito",
       grau: 0,
       atualizadoEm: r.atualizadoEm.toISOString(),
+      tarefasAbertas: tarefasDe.get(r.id) ?? 0,
     });
 
     const idArea = `area:${r.area}`;
     if (!nos.has(idArea)) {
-      nos.set(idArea, { id: idArea, categoria: "area", rotulo: NOME_AREA[r.area], codigo: null, tipo: null, area: r.area, status: null, restrito: false, grau: 0, atualizadoEm: null });
+      nos.set(idArea, { id: idArea, categoria: "area", rotulo: NOME_AREA[r.area], codigo: null, tipo: null, area: r.area, status: null, restrito: false, grau: 0, atualizadoEm: null, tarefasAbertas: 0 });
     }
     ligacoes.push({ origem: r.id, destino: idArea, tipo: "area", peso: null });
     somar(idArea);
@@ -74,7 +81,7 @@ export async function montarMapa(ctx: Contexto): Promise<MapaDTO> {
       }
       const idCliente = chaveCliente(r.clienteRef);
       if (!nos.has(idCliente)) {
-        nos.set(idCliente, { id: idCliente, categoria: "cliente", rotulo: r.clienteRef.trim(), codigo: null, tipo: null, area: null, status: null, restrito: false, grau: 0, atualizadoEm: null });
+        nos.set(idCliente, { id: idCliente, categoria: "cliente", rotulo: r.clienteRef.trim(), codigo: null, tipo: null, area: null, status: null, restrito: false, grau: 0, atualizadoEm: null, tarefasAbertas: 0 });
       }
       ligacoes.push({ origem: r.id, destino: idCliente, tipo: "cliente", peso: null });
       somar(r.id);

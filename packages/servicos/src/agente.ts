@@ -10,7 +10,7 @@ import {
   type TabelaCatalogo,
 } from "@cerebro/central";
 import { NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type DadosCentralDTO, type FonteDTO, type TipoRegistro } from "@cerebro/core";
-import { usuarios } from "@cerebro/db";
+import { registros, usuarios } from "@cerebro/db";
 import {
   SISTEMA_AGENTE,
   embrulharDados,
@@ -24,6 +24,7 @@ import {
 import { buscar } from "./busca.js";
 import { auditar, hojeLocal, type Ator, type Contexto } from "./contexto.js";
 import { resumoInicio } from "./painel.js";
+import { criarTarefa, listarTarefas } from "./tarefas.js";
 import { criarRegistro } from "./registros.js";
 
 /** Uma troca anterior da conversa, para o Argos entender "e em Salvador?". */
@@ -39,6 +40,7 @@ export interface RespostaAgente {
   fontes: FonteDTO[];
   abrir: string | null;
   rascunho: { id: string; codigo: string } | null;
+  tarefa: { id: string; codigo: string } | null;
   passos: number;
 }
 
@@ -115,6 +117,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
   const resultados: Resultado[] = [];
   const fontes: FonteDTO[] = [];
   let rascunho: RespostaAgente["rascunho"] = null;
+  let tarefaCriada: RespostaAgente["tarefa"] = null;
 
   const observar = (texto: string, nomes: string[] = []) => mensagens.push({ papel: "user", conteudo: esconder(texto, nomes) });
 
@@ -144,6 +147,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         fontes,
         abrir: final.abrir?.trim() || null,
         rascunho,
+        tarefa: tarefaCriada,
         passos: passo,
       };
     }
@@ -231,6 +235,44 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         break;
       }
 
+      case "tarefas": {
+        const lista = await listarTarefas(ctx, ator, { filtro: p.filtro ?? "todas" });
+        observar(
+          json(
+            lista.slice(0, 40).map((t) => ({
+              codigo: t.codigo,
+              titulo: t.titulo,
+              situacao: t.status,
+              prazo: t.prazo,
+              atrasada: t.atrasada,
+              responsavel: t.responsavel?.nome ?? null,
+              de: t.registros[0]?.codigo ?? null,
+            })),
+          ),
+          lista.map((t) => t.responsavel?.nome ?? "").filter(Boolean),
+        );
+        break;
+      }
+
+      case "criar_tarefa": {
+        const ligado = p.registro ? await registros.buscarPorCodigo(ctx.pool, restaurar(p.registro, mapa).trim().toUpperCase()) : null;
+        const t = await criarTarefa(
+          ctx,
+          ator,
+          {
+            titulo: restaurar(p.titulo ?? "", mapa).trim().slice(0, 300) || pergunta.slice(0, 300),
+            descricao: restaurar(p.descricao ?? "", mapa),
+            responsavelTexto: p.responsavel ? restaurar(p.responsavel, mapa) : null,
+            prazo: p.prazo && /^\d{4}-\d{2}-\d{2}$/.test(p.prazo) ? p.prazo : null,
+            registros: ligado ? [ligado.id] : [],
+          },
+          { origem: "argos" },
+        );
+        tarefaCriada = { id: t.id, codigo: t.codigo };
+        observar(`Tarefa ${t.codigo} criada${t.responsavel ? ` para ${t.responsavel.nome}` : ""}${t.prazo ? `, prazo ${t.prazo}` : ""}.`);
+        break;
+      }
+
       case "rascunho": {
         const tipo: TipoRegistro = p.tipo && (TIPOS_REGISTRO as readonly string[]).includes(p.tipo) && p.tipo !== "reuniao" ? (p.tipo as TipoRegistro) : "nota";
         const titulo = restaurar(p.titulo ?? "", mapa).trim().slice(0, 200) || "Anotação por voz";
@@ -243,10 +285,10 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
       }
 
       default:
-        observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, conhecimento, pendencias, rascunho ou responder.`);
+        observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, conhecimento, pendencias, tarefas, criar_tarefa, rascunho ou responder.`);
     }
   }
-  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, passos: MAX_PASSOS };
+  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS };
 }
 
 /** Valores de colunas de pessoa, para a máscara. */

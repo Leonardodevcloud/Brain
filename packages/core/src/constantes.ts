@@ -1,5 +1,5 @@
 /** Constantes e tipos puros (sem zod): seguros para a interface web. */
-/** Os 9 tipos de registro do cérebro. Um tipo novo só entra quando nenhum destes serve. */
+/** Os 10 tipos de registro do cérebro. Um tipo novo só entra quando nenhum destes serve. */
 export const TIPOS_REGISTRO = [
   "pop",
   "decisao",
@@ -10,6 +10,7 @@ export const TIPOS_REGISTRO = [
   "indicador",
   "reuniao",
   "nota",
+  "documento",
 ] as const;
 export type TipoRegistro = (typeof TIPOS_REGISTRO)[number];
 
@@ -31,7 +32,7 @@ export type Area = (typeof AREAS)[number];
 export const EMPRESAS = ["todas", "tutts", "fiix", "ig"] as const;
 export type Empresa = (typeof EMPRESAS)[number];
 
-export const ORIGENS = ["manual", "claude", "reuniao", "importacao", "email"] as const;
+export const ORIGENS = ["manual", "claude", "reuniao", "importacao", "email", "upload"] as const;
 export type Origem = (typeof ORIGENS)[number];
 
 export const CONFIDENCIALIDADES = ["interno", "restrito"] as const;
@@ -51,18 +52,20 @@ export const PREFIXO_CODIGO: Record<TipoRegistro, string> = {
   indicador: "IND",
   reuniao: "REU",
   nota: "NOT",
+  documento: "DOC",
 };
 
 export const NOME_TIPO: Record<TipoRegistro, string> = {
   pop: "POP",
   decisao: "Decisão",
   ocorrencia: "Ocorrência",
-  politica: "Política",
+  politica: "Regra",
   cliente: "Cliente",
   sistema: "Sistema",
   indicador: "Indicador",
   reuniao: "Ata",
   nota: "Nota",
+  documento: "Documento",
 };
 
 export const NOME_AREA: Record<Area, string> = {
@@ -90,6 +93,7 @@ export const DIAS_REVISAO: Record<TipoRegistro, number | null> = {
   indicador: 180,
   reuniao: null,
   nota: 7,
+  documento: 365,
 };
 
 /** Data (AAAA-MM-DD) da próxima revisão a partir de `base`. */
@@ -108,3 +112,7 @@ export function formatarCodigo(tipo: TipoRegistro, numero: number): string {
 /** Status que aparecem nas respostas da IA. Rascunho aparece só se pedido. */
 export const STATUS_CONSULTAVEIS: StatusRegistro[] = ["vigente", "revisar"];
 
+
+/** Situações de uma tarefa (as colunas do quadro). */
+export const STATUS_TAREFA = ["a_fazer", "fazendo", "feita"] as const;
+export const NOME_STATUS_TAREFA = { a_fazer: "A fazer", fazendo: "Fazendo", feita: "Feita" } as const;

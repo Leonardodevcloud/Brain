@@ -1,75 +1,126 @@
 .coluna {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+  max-width: 820px;
+  width: 100%;
+  margin: 0 auto;
   min-width: 0;
 }
-.pergunta {
-  font-size: 24px;
+.topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sugestoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.sugestao {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio-g);
+  cursor: pointer;
+  transition: border-color var(--rapido) var(--curva), background-color var(--rapido) var(--curva);
+}
+.sugestao svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--acento);
+}
+.sugestao:hover {
+  border-color: var(--acento);
+  background: var(--acento-fundo);
+}
+
+.conversa {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.turno {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.voce {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--acento);
+  color: #fff;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .resposta {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 16px 18px;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 4px 14px 14px 14px;
+  min-width: 0;
 }
-.resposta :global(.prosa) a {
+.resposta :global(.prosa) a[href^="/registros/"] {
   font-size: 12px;
   font-weight: 600;
   vertical-align: super;
   line-height: 0;
 }
-.acoes {
-  display: flex;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--divisoria);
+.pensando {
+  color: var(--texto-2);
+  font-size: 14px;
 }
-.continuar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.reticencias::after {
+  content: "";
+  display: inline-block;
+  width: 1.2em;
+  animation: reticencias 1.2s steps(4) infinite;
 }
-.linhaForm {
-  display: flex;
-  gap: 8px;
-}
-.caixa {
-  flex-grow: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  background: var(--superficie);
-  border: 1px solid var(--borda-forte);
-  border-radius: var(--raio);
-}
-.caixa:focus-within {
-  border-color: var(--acento);
-  box-shadow: var(--foco);
-}
-.entrada {
-  flex-grow: 1;
-  min-width: 0;
-  min-height: 40px;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  font: inherit;
-}
-.entrada:focus-visible {
-  box-shadow: none;
+@keyframes reticencias {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
 }
 
 .fontes {
-  background: var(--superficie);
-  border: 1px solid var(--borda);
-  border-radius: var(--raio-g);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--divisoria);
+}
+.listaFontes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .fonte {
   display: flex;
-  gap: 12px;
-  padding: 14px 16px;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: var(--raio);
   color: var(--texto);
+  font-size: 13px;
 }
 .fonte:hover {
   background: var(--superficie-2);
@@ -77,23 +128,83 @@
   color: var(--texto);
 }
 .indice {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
-  border-radius: 6px;
-  background: var(--acento-fundo);
-  color: var(--acento-ativo);
-  font-size: 12px;
-  font-weight: 600;
   display: grid;
   place-items: center;
-}
-.fonteTexto {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  border-radius: 50%;
+  background: var(--acento-fundo);
+  color: var(--acento);
+  font-size: 11px;
+  font-weight: 600;
 }
 .fonteTitulo {
-  font-weight: 500;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compositor {
+  position: sticky;
+  bottom: 12px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  background: var(--superficie);
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-g);
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.08);
+}
+.compositor:focus-within {
+  border-color: var(--acento);
+  box-shadow: var(--foco);
+}
+.entrada {
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 180px;
+  padding: 10px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  field-sizing: content;
+  background: transparent;
+  font: inherit;
+  line-height: 1.4;
+}
+.entrada:focus-visible {
+  box-shadow: none;
+}
+.enviar {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reticencias::after { animation: none; content: "…"; }
+  .sugestao { transition: none; }
+}
+
+/* Os dados da Central usam o mesmo painel escuro do Argos, para os números terem contraste. */
+.painelDados {
+  padding: 14px;
+  border-radius: 12px;
+  background: #0f0d17;
+  color: #e7e5e4;
+  min-width: 0;
+  overflow-x: auto;
 }

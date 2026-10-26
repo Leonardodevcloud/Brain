@@ -1,58 +1,91 @@
-/** Voz do Argos com a síntese de fala do próprio navegador (gratuita). */
+/**
+ * Voz do Argos.
+ * 1º: voz natural gerada no servidor (OpenAI) — a mesma em qualquer aparelho.
+ * 2º (sem a chave, ou se falhar): a síntese de fala do próprio navegador.
+ */
+import { api } from "../../api/cliente";
 
-let vozEscolhida: SpeechSynthesisVoice | null | undefined;
-// O Chrome descarta falas cuja referência some da memória (e aí o "fim" nunca chega): guardamos aqui.
-let filaAtual: SpeechSynthesisUtterance[] = [];
+interface ConfigVoz {
+  disponivel: boolean;
+  voz: string;
+  velocidade: number;
+}
+
+type Eventos = { aoPalavra?: () => void; aoFim?: () => void };
+
+let config: Promise<ConfigVoz | null> | null = null;
 let sessao = 0;
+// Um único elemento de áudio, liberado num gesto da pessoa (o Safari do iPhone exige isso).
+let tocador: HTMLAudioElement | null = null;
+let urls: string[] = [];
+let cancelarPedidos: AbortController | null = null;
 
-function escolherVoz(): SpeechSynthesisVoice | null {
-  if (vozEscolhida !== undefined) return vozEscolhida;
-  const vozes = window.speechSynthesis?.getVoices() ?? [];
-  if (!vozes.length) return null; // ainda carregando: tenta de novo na próxima fala
-  const pt = vozes.filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith("pt"));
-  const nota = (v: SpeechSynthesisVoice) =>
-    (v.lang.toLowerCase().replace("_", "-") === "pt-br" ? 4 : 0) +
-    // Vozes locais (Microsoft Maria/Daniel, do Windows) são as mais confiáveis; as do Google dependem da rede.
-    (v.localService ? 3 : 0) +
-    (/natural|neural/i.test(v.name) ? 2 : 0) +
-    (/google/i.test(v.name) ? 1 : 0) +
-    (/francisca|thalita|maria/i.test(v.name) ? 1 : 0);
-  vozEscolhida = pt.sort((a, b) => nota(b) - nota(a))[0] ?? null;
-  return vozEscolhida;
+/** Lê (uma vez) qual voz a empresa escolheu. */
+export function lerConfigVoz(): Promise<ConfigVoz | null> {
+  config ??= api<ConfigVoz>("/argos/voz").catch(() => null);
+  return config;
 }
 
-if (typeof window !== "undefined" && window.speechSynthesis) {
-  window.speechSynthesis.getVoices(); // começa a carregar as vozes cedo
-  window.speechSynthesis.onvoiceschanged = () => {
-    vozEscolhida = undefined;
-  };
+/** Depois de trocar a voz em Integrações. */
+export function recarregarVoz() {
+  config = null;
+  void lerConfigVoz();
 }
 
-export const falaSuportada = () => typeof window !== "undefined" && "speechSynthesis" in window;
+export const falaSuportada = () => typeof window !== "undefined" && ("speechSynthesis" in window || typeof Audio !== "undefined");
+
+/** 100 ms de silêncio em WAV, para liberar o áudio dentro do gesto. */
+function silencio(): string {
+  const amostras = 800;
+  const b = new ArrayBuffer(44 + amostras * 2);
+  const v = new DataView(b);
+  const txt = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  txt(0, "RIFF");
+  v.setUint32(4, 36 + amostras * 2, true);
+  txt(8, "WAVEfmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true);
+  v.setUint32(28, 16000, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  txt(36, "data");
+  v.setUint32(40, amostras * 2, true);
+  return URL.createObjectURL(new Blob([b], { type: "audio/wav" }));
+}
 
 /**
- * Chamar dentro de um gesto (tecla ou clique): libera a fala no Chrome/Safari,
- * que bloqueiam a voz quando ela começa longe de uma ação da pessoa.
+ * Chamar dentro de um gesto (tecla ou clique): libera o áudio no Chrome/Safari,
+ * que bloqueiam som que começa longe de uma ação da pessoa.
  */
 export function desbloquearFala() {
-  if (!falaSuportada()) return;
+  void lerConfigVoz();
   try {
-    const u = new SpeechSynthesisUtterance(" ");
-    u.volume = 0;
-    window.speechSynthesis.resume();
-    window.speechSynthesis.speak(u);
+    if (typeof Audio !== "undefined") {
+      tocador ??= new Audio();
+      tocador.src = silencio();
+      void tocador.play().catch(() => undefined);
+    }
+    if ("speechSynthesis" in window) {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(u);
+    }
   } catch {
-    /* sem voz: o Argos segue só com texto */
+    /* sem áudio: o Argos segue só com texto */
   }
 }
 
-/** Frases curtas: o Chrome corta falas longas no meio (~15 s) e para de responder. */
-function dividir(texto: string): string[] {
-  const frases = texto.replace(/\s+/g, " ").match(/[^.!?;:]+[.!?;:]*/g) ?? [texto];
+/** Frases curtas: a primeira sai rápido e o resto vem enquanto ela toca. */
+function dividir(texto: string, primeiro = 110, demais = 260): string[] {
+  const frases = texto.replace(/\s+/g, " ").match(/[^.!?;]+[.!?;]*/g) ?? [texto];
   const partes: string[] = [];
   let atual = "";
   for (const f of frases) {
-    if ((atual + f).length > 180 && atual) {
+    const limite = partes.length === 0 ? primeiro : demais;
+    if ((atual + f).length > limite && atual) {
       partes.push(atual.trim());
       atual = "";
     }
@@ -62,12 +95,108 @@ function dividir(texto: string): string[] {
   return partes;
 }
 
-export function falar(texto: string, eventos: { aoPalavra?: () => void; aoFim?: () => void } = {}) {
-  if (!falaSuportada() || !texto.trim()) {
+export function falar(texto: string, eventos: Eventos = {}) {
+  pararFala();
+  const minha = sessao;
+  if (!texto.trim()) {
     eventos.aoFim?.();
     return;
   }
-  const minha = ++sessao;
+  void lerConfigVoz().then((cfg) => {
+    if (minha !== sessao) return;
+    if (!cfg?.disponivel) {
+      falarNavegador(texto, eventos, minha);
+      return;
+    }
+    falarServidor(texto, eventos, minha).catch((erro: { comecou?: boolean }) => {
+      if (minha !== sessao) return;
+      console.warn("[Argos] voz do servidor falhou", erro);
+      // Só troca para a voz do navegador se nada tiver tocado ainda: nunca duas vozes na mesma resposta.
+      if (!erro?.comecou) falarNavegador(texto, eventos, minha);
+      else eventos.aoFim?.();
+    });
+  });
+}
+
+/** Pede um trecho; se falhar (rede, limite da API), tenta mais uma vez. */
+async function pedirTrecho(texto: string, sinal: AbortSignal): Promise<Blob> {
+  try {
+    return await api<Blob>("/argos/falar", { metodo: "POST", corpo: { texto }, sinal, bruto: true });
+  } catch (erro) {
+    if (sinal.aborted) throw erro;
+    await new Promise((r) => setTimeout(r, 400));
+    return api<Blob>("/argos/falar", { metodo: "POST", corpo: { texto }, sinal, bruto: true });
+  }
+}
+
+async function falarServidor(texto: string, eventos: Eventos, minha: number) {
+  cancelarPedidos = new AbortController();
+  const sinal = cancelarPedidos.signal;
+  const partes = dividir(texto);
+  // O primeiro trecho é pedido na hora; os outros logo em seguida, para já estarem prontos quando chegar a vez.
+  const trechos: Promise<Blob>[] = [];
+  trechos[0] = pedirTrecho(partes[0]!, sinal);
+  for (let i = 1; i < partes.length; i++) trechos[i] = pedirTrecho(partes[i]!, sinal);
+  for (const p of trechos) p.catch(() => undefined); // evita "unhandled rejection" dos que ainda não chegaram a vez
+
+  tocador ??= new Audio();
+  const t = tocador;
+  let pulso: number | undefined;
+  let comecou = false;
+  try {
+    for (let i = 0; i < trechos.length; i++) {
+      const audio = await trechos[i]!;
+      if (minha !== sessao) return;
+      const url = URL.createObjectURL(audio);
+      urls.push(url);
+      await new Promise<void>((ok, falha) => {
+        t.onended = () => ok();
+        t.onerror = () => falha(new Error("áudio inválido"));
+        t.src = url;
+        t.play().then(() => {
+          comecou = true;
+          // A esfera acompanha a fala (o áudio não expõe as palavras; um ritmo de fala serve).
+          window.clearInterval(pulso);
+          pulso = window.setInterval(() => eventos.aoPalavra?.(), 190);
+        }, falha);
+      });
+    }
+  } catch (erro) {
+    throw Object.assign(erro instanceof Error ? erro : new Error(String(erro)), { comecou });
+  } finally {
+    window.clearInterval(pulso);
+    t.onended = null;
+    t.onerror = null;
+  }
+  if (minha === sessao) eventos.aoFim?.();
+}
+
+let vozNavegador: SpeechSynthesisVoice | null | undefined;
+function escolherVozNavegador(): SpeechSynthesisVoice | null {
+  if (vozNavegador !== undefined) return vozNavegador;
+  const vozes = window.speechSynthesis?.getVoices() ?? [];
+  if (!vozes.length) return null;
+  const pt = vozes.filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith("pt"));
+  const nota = (v: SpeechSynthesisVoice) =>
+    (v.lang.toLowerCase().replace("_", "-") === "pt-br" ? 4 : 0) +
+    (/natural|neural|online/i.test(v.name) ? 3 : 0) +
+    (v.localService ? 2 : 0) +
+    (/francisca|thalita|maria/i.test(v.name) ? 1 : 0);
+  vozNavegador = pt.sort((a, b) => nota(b) - nota(a))[0] ?? null;
+  return vozNavegador;
+}
+if (typeof window !== "undefined" && window.speechSynthesis) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    vozNavegador = undefined;
+  };
+}
+
+function falarNavegador(texto: string, eventos: Eventos, minha: number) {
+  if (!("speechSynthesis" in window)) {
+    eventos.aoFim?.();
+    return;
+  }
   const sintese = window.speechSynthesis;
   let terminou = false;
   let comecou = false;
@@ -76,51 +205,59 @@ export function falar(texto: string, eventos: { aoPalavra?: () => void; aoFim?: 
     terminou = true;
     eventos.aoFim?.();
   };
-
-  sintese.cancel();
-  const voz = escolherVoz();
-  console.info("[Argos] voz", { escolhida: voz?.name ?? null, idioma: voz?.lang ?? "pt-BR", vozesInstaladas: sintese.getVoices().length });
-  filaAtual = dividir(texto).map((trecho, i, todos) => {
+  const voz = escolherVozNavegador();
+  const fila = dividir(texto, 180, 180).map((trecho, i, todos) => {
     const u = new SpeechSynthesisUtterance(trecho);
     if (voz) u.voice = voz;
     u.lang = voz?.lang ?? "pt-BR";
-    u.rate = 1.04;
-    u.pitch = 1;
+    u.rate = 1.12;
     u.onstart = () => {
       comecou = true;
     };
     u.onboundary = () => eventos.aoPalavra?.();
     if (i === todos.length - 1) u.onend = fim;
     u.onerror = (e) => {
-      // "interrupted"/"canceled" = outra fala tomou o lugar; o resto é falha real.
-      if (e.error !== "interrupted" && e.error !== "canceled") {
-        console.warn("[Argos] a voz falhou", e.error);
-        fim();
-      }
+      if (e.error !== "interrupted" && e.error !== "canceled") fim();
     };
     return u;
   });
-
-  // O Chrome às vezes engole a fala pedida logo após um cancel(): dá um respiro.
+  // Guardadas aqui: o Chrome descarta falas sem referência e o "fim" nunca chega.
+  (falarNavegador as { fila?: SpeechSynthesisUtterance[] }).fila = fila;
   window.setTimeout(() => {
     if (minha !== sessao) return;
     sintese.resume();
-    for (const u of filaAtual) sintese.speak(u);
+    for (const u of fila) sintese.speak(u);
   }, 80);
-
-  // Se a voz não começar (bloqueada, sem vozes instaladas), não deixa a esfera "falando" para sempre.
   window.setTimeout(() => {
-    if (!comecou && !sintese.speaking) {
-      console.warn("[Argos] a voz não começou", { vozesInstaladas: sintese.getVoices().length });
-      fim();
-    }
+    if (!comecou && !sintese.speaking) fim();
   }, 2500);
-  // Teto de segurança: ~ 85 ms por letra + folga.
-  window.setTimeout(fim, 4000 + texto.length * 85);
+  window.setTimeout(fim, 4000 + texto.length * 80);
 }
 
 export function pararFala() {
   sessao++;
-  filaAtual = [];
-  if (falaSuportada()) window.speechSynthesis.cancel();
+  cancelarPedidos?.abort();
+  cancelarPedidos = null;
+  if (tocador) {
+    tocador.onended = null;
+    tocador.pause();
+  }
+  for (const u of urls) URL.revokeObjectURL(u);
+  urls = [];
+  if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+
+/** Para Integrações: ouvir uma voz antes de escolher. */
+export async function ouvirAmostra(voz: string, velocidade: number, nome: string) {
+  pararFala();
+  const audio = await api<Blob>("/argos/falar", {
+    metodo: "POST",
+    corpo: { texto: `Oi, ${nome}! Eu sou o Argos. Agora são vinte e quatro motoboys em loja, e a loja mais crítica é a do Farol.`, voz, velocidade },
+    bruto: true,
+  });
+  tocador ??= new Audio();
+  const url = URL.createObjectURL(audio);
+  urls.push(url);
+  tocador.src = url;
+  await tocador.play();
 }

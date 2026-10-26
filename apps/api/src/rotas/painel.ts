@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { AppError } from "@cerebro/core";
-import { LIMITE_AUDIO_BYTES, acesso, atenderFala, fontes, montarMapa, painel, transcreverFala } from "@cerebro/servicos";
+import { LIMITE_AUDIO_BYTES, acesso, atenderFala, configVoz, fontes, gerarFala, montarMapa, painel, salvarVoz, transcreverFala } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, exigirAdmin, validar, type Deps } from "../http/base.js";
 
@@ -11,17 +11,6 @@ const esquemaNovoUsuario = z.object({
   papel: z.enum(["admin", "membro"]).default("membro"),
 });
 
-const esquemaMapaNotion = z.object({
-  databaseId: z.string().trim().min(10).max(100),
-  propTitulo: z.string().trim().min(1).max(100),
-  propPrazo: z.string().trim().max(100).nullish(),
-  propResponsavel: z.string().trim().max(100).nullish(),
-  tipoResponsavel: z.enum(["rich_text", "select"]).optional(),
-  propStatus: z.string().trim().max(100).nullish(),
-  tipoStatus: z.enum(["status", "select"]).optional(),
-  valorStatusInicial: z.string().trim().max(100).nullish(),
-  propOrigem: z.string().trim().max(100).nullish(),
-});
 
 /** Rotas de tela: início, lacunas, usuários, integrações, conector e importação. Todas exigem login. */
 export function rotasPainel({ ctx }: Deps) {
@@ -57,6 +46,26 @@ export function rotasPainel({ ctx }: Deps) {
     res.json(await atenderFala(ctx, ator(req), texto, historico));
   });
 
+  // Voz do Argos: gerada no servidor, a mesma em qualquer aparelho.
+  r.get("/argos/voz", async (_req, res) => {
+    res.json(await configVoz(ctx));
+  });
+  r.put("/argos/voz", exigirAdmin, async (req, res) => {
+    const entrada = validar(z.object({ voz: z.string().min(2).max(30), velocidade: z.number().min(0.8).max(1.5) }), req.body);
+    res.json(await salvarVoz(ctx, ator(req), entrada));
+  });
+  r.post("/argos/falar", async (req, res) => {
+    const { texto, voz, velocidade } = validar(
+      z.object({ texto: z.string().trim().min(1).max(1200), voz: z.string().max(30).optional(), velocidade: z.number().min(0.8).max(1.5).optional() }),
+      req.body,
+    );
+    // Testar outra voz é coisa de quem escolhe a voz (o administrador).
+    const teste = voz || velocidade ? (req.ator?.papel === "admin" ? { voz, velocidade } : undefined) : undefined;
+    const audio = await gerarFala(ctx, texto, teste);
+    res.set({ "content-type": "audio/mpeg", "cache-control": "private, max-age=3600" });
+    res.send(Buffer.from(audio));
+  });
+
   r.get("/mapa", async (_req, res) => {
     res.json(await montarMapa(ctx));
   });
@@ -88,16 +97,6 @@ export function rotasPainel({ ctx }: Deps) {
 
   r.post("/integracoes/google/conectar", exigirAdmin, async (req, res) => {
     res.json({ url: await painel.iniciarConexaoGoogle(ctx, ator(req)) });
-  });
-
-  r.get("/integracoes/notion/colunas", exigirAdmin, async (req, res) => {
-    const { databaseId } = validar(z.object({ databaseId: z.string().trim().min(10).max(100) }), req.query);
-    res.json(await painel.colunasNotion(ctx, databaseId));
-  });
-
-  r.put("/integracoes/notion/mapa", exigirAdmin, async (req, res) => {
-    await painel.salvarMapaNotion(ctx, ator(req), validar(esquemaMapaNotion, req.body));
-    res.status(204).end();
   });
 
   r.get("/integracoes/fila", exigirAdmin, async (_req, res) => {

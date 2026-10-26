@@ -12,7 +12,6 @@ export const TRATADORES: Record<TipoJob, Tratador> = {
     invalidarCacheBusca();
   },
   [JOB.gerarAta]: (ctx, p) => fontes.gerarAta(ctx, texto(p.reuniaoId)),
-  [JOB.criarTarefasNotion]: (ctx, p) => fontes.criarTarefasDaAta(ctx, texto(p.ataId)),
   [JOB.extrairConversaClaude]: (ctx, p) =>
     fontes.extrairConhecimento(ctx, {
       chave: `claude:${texto(p.id)}`,
