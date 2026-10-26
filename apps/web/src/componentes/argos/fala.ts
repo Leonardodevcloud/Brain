@@ -104,41 +104,69 @@ export function falar(texto: string, eventos: Eventos = {}) {
   }
   void lerConfigVoz().then((cfg) => {
     if (minha !== sessao) return;
-    if (cfg?.disponivel) {
-      falarServidor(texto, eventos, minha).catch((erro) => {
-        console.warn("[Argos] voz do servidor falhou; usando a do navegador", erro);
-        if (minha === sessao) falarNavegador(texto, eventos, minha);
-      });
-    } else falarNavegador(texto, eventos, minha);
+    if (!cfg?.disponivel) {
+      falarNavegador(texto, eventos, minha);
+      return;
+    }
+    falarServidor(texto, eventos, minha).catch((erro: { comecou?: boolean }) => {
+      if (minha !== sessao) return;
+      console.warn("[Argos] voz do servidor falhou", erro);
+      // Só troca para a voz do navegador se nada tiver tocado ainda: nunca duas vozes na mesma resposta.
+      if (!erro?.comecou) falarNavegador(texto, eventos, minha);
+      else eventos.aoFim?.();
+    });
   });
+}
+
+/** Pede um trecho; se falhar (rede, limite da API), tenta mais uma vez. */
+async function pedirTrecho(texto: string, sinal: AbortSignal): Promise<Blob> {
+  try {
+    return await api<Blob>("/argos/falar", { metodo: "POST", corpo: { texto }, sinal, bruto: true });
+  } catch (erro) {
+    if (sinal.aborted) throw erro;
+    await new Promise((r) => setTimeout(r, 400));
+    return api<Blob>("/argos/falar", { metodo: "POST", corpo: { texto }, sinal, bruto: true });
+  }
 }
 
 async function falarServidor(texto: string, eventos: Eventos, minha: number) {
   cancelarPedidos = new AbortController();
   const sinal = cancelarPedidos.signal;
-  // Pede todos os trechos de uma vez; toca na ordem.
-  const trechos = dividir(texto).map((t) => api<Blob>("/argos/falar", { metodo: "POST", corpo: { texto: t }, sinal, bruto: true }));
+  const partes = dividir(texto);
+  // O primeiro trecho é pedido na hora; os outros logo em seguida, para já estarem prontos quando chegar a vez.
+  const trechos: Promise<Blob>[] = [];
+  trechos[0] = pedirTrecho(partes[0]!, sinal);
+  for (let i = 1; i < partes.length; i++) trechos[i] = pedirTrecho(partes[i]!, sinal);
+  for (const p of trechos) p.catch(() => undefined); // evita "unhandled rejection" dos que ainda não chegaram a vez
+
   tocador ??= new Audio();
   const t = tocador;
   let pulso: number | undefined;
+  let comecou = false;
   try {
     for (let i = 0; i < trechos.length; i++) {
       const audio = await trechos[i]!;
       if (minha !== sessao) return;
       const url = URL.createObjectURL(audio);
       urls.push(url);
-      t.src = url;
-      await t.play();
-      // A esfera acompanha a fala (o áudio não expõe as palavras; um ritmo de fala serve).
-      window.clearInterval(pulso);
-      pulso = window.setInterval(() => eventos.aoPalavra?.(), 190);
       await new Promise<void>((ok, falha) => {
         t.onended = () => ok();
         t.onerror = () => falha(new Error("áudio inválido"));
+        t.src = url;
+        t.play().then(() => {
+          comecou = true;
+          // A esfera acompanha a fala (o áudio não expõe as palavras; um ritmo de fala serve).
+          window.clearInterval(pulso);
+          pulso = window.setInterval(() => eventos.aoPalavra?.(), 190);
+        }, falha);
       });
     }
+  } catch (erro) {
+    throw Object.assign(erro instanceof Error ? erro : new Error(String(erro)), { comecou });
   } finally {
     window.clearInterval(pulso);
+    t.onended = null;
+    t.onerror = null;
   }
   if (minha === sessao) eventos.aoFim?.();
 }
