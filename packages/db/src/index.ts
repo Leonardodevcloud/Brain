@@ -14,3 +14,4 @@ export {
   type Canal,
   type ReuniaoLinha,
 } from "./repositorios/diversos.js";
+export { mapa, type NoMapaLinha } from "./repositorios/mapa.js";

@@ -11,6 +11,8 @@ import {
   fontes,
   indexarRegistro,
   invalidarCacheBusca,
+  invalidarCacheMapa,
+  montarMapa,
   painel,
   responder,
   type Ator,
@@ -307,5 +309,25 @@ describe("fila e painel", () => {
     expect(status.find((s) => s.nome === "deepseek")?.estado).toBe("ativo");
     expect(status.find((s) => s.nome === "email")?.estado).toBe("desligado");
     expect(ATOR_SISTEMA.usuarioId).toBeNull();
+  });
+});
+
+describe("mapa", () => {
+  it("liga registros à área, às relações explícitas e aos parecidos", async () => {
+    invalidarCacheMapa();
+    const m = await montarMapa(ctx);
+    const registros = m.nos.filter((n) => n.categoria === "registro");
+    expect(registros.length).toBeGreaterThan(3);
+    expect(m.nos.some((n) => n.id === "area:operacoes" && n.rotulo === "Operações")).toBe(true);
+    // Toda ponta de ligação existe como nó.
+    const ids = new Set(m.nos.map((n) => n.id));
+    expect(m.ligacoes.every((l) => ids.has(l.origem) && ids.has(l.destino))).toBe(true);
+    // A relação "substitui" criada nos testes de registros aparece.
+    expect(m.ligacoes.some((l) => l.tipo === "substitui")).toBe(true);
+    // Sem embeddings suficientes, a semelhança é medida pelo texto.
+    expect(["texto", "embeddings"]).toContain(m.semelhanca);
+    // Registros descartados ficam de fora.
+    const { rows } = await pool.query(`SELECT id FROM cerebro.registros WHERE status = 'descartado'`);
+    for (const r of rows) expect(ids.has(r.id)).toBe(false);
   });
 });

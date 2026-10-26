@@ -148,6 +148,77 @@ const claude = await conhecimento.criarRegistro(
 );
 void claude;
 
+// Acervo maior, para o Mapa ter o que mostrar: [tipo, área, título, cliente, conteúdo].
+type Semente = [CriarRegistro["tipo"], CriarRegistro["area"], string, string | null, string];
+const ACERVO: Semente[] = [
+  ["pop", "operacoes", "Abertura do turno da manhã", null, "Conferir escala de motoboys, confirmar presença no grupo da praça e liberar as primeiras coletas até 7h30."],
+  ["pop", "operacoes", "Coleta de peça em garantia", null, "Retirar a peça em garantia na loja, conferir nota fiscal e etiqueta, fotografar a embalagem e entregar no fornecedor."],
+  ["pop", "operacoes", "Entrega com cliente ausente", null, "Ligar para o cliente, aguardar 10 minutos, registrar tentativa de entrega com foto e devolver a peça para a loja."],
+  ["pop", "operacoes", "Avaria de peça no transporte", null, "Fotografar a avaria, abrir ocorrência na Central, avisar a loja e o supervisor da praça antes de devolver a peça."],
+  ["pop", "operacoes", "Roteirização de entregas em lote", null, "Agrupar entregas por região no roteirizador, respeitar a janela de cada loja e liberar a rota para o motoboy."],
+  ["pop", "operacoes", "Fechamento do turno", null, "Conferir entregas pendentes, devolver peças não entregues e registrar o fechamento do turno na Central."],
+  ["ocorrencia", "operacoes", "Atraso em coleta na loja Centro", "Autopeças Exemplo", "Motoboy chegou 40 minutos depois da janela de coleta. Causa: troca de motoboy em rota sem aviso à loja."],
+  ["ocorrencia", "operacoes", "Peça trocada na entrega", "Rede Exemplo Norte", "Peça entregue no endereço errado por troca de etiqueta na coleta. Reforçado o POP de conferência de etiqueta."],
+  ["ocorrencia", "atendimento", "Reclamação de motoboy sem uniforme", "Rede Exemplo Norte", "Loja reclamou de motoboy sem colete e sem crachá. Supervisor orientou o profissional e registrou advertência."],
+  ["cliente", "comercial", "Rede Exemplo Norte", "Rede Exemplo Norte", "Rede com 6 lojas. SLA de coleta em 30 minutos, alocação fixa de 2 motoboys pela manhã, faturamento quinzenal."],
+  ["cliente", "comercial", "Distribuidora Exemplo Sul", "Distribuidora Exemplo Sul", "Distribuidora com entregas em lote no fim da tarde. Roteirização obrigatória e janela de entrega até 18h."],
+  ["decisao", "comercial", "Alocação fixa para a Rede Exemplo Norte", "Rede Exemplo Norte", "Dois motoboys fixos pela manhã na Rede Exemplo Norte, com substituto aprovado pelo CEO em caso de falta."],
+  ["politica", "comercial", "Tabela de preço por faixa de km", null, "Valor base por faixa de km rodado, acréscimo por entrega em lote acima de 30 km e cobrança de espera após 15 minutos."],
+  ["decisao", "comercial", "Cobrança de espera após 15 minutos", null, "Espera na loja acima de 15 minutos passa a ser cobrada por faixa, conforme a tabela de preço por km."],
+  ["politica", "financeiro", "Saque semanal dos profissionais", null, "Saque liberado toda sexta pela Plific, com conferência de entregas da semana e desconto de multas aplicadas."],
+  ["pop", "financeiro", "Conferência de saques na Plific", null, "Exportar entregas da semana, conferir valor por profissional, aplicar descontos de multa e aprovar o saque na Plific."],
+  ["pop", "financeiro", "Faturamento quinzenal de clientes", null, "Gerar o relatório de entregas por cliente, conferir SLA e espera cobrada, emitir nota e enviar o faturamento."],
+  ["indicador", "financeiro", "Custo por entrega", null, "Custo total da operação dividido pelo número de entregas no mês. Meta: abaixo da tabela de preço por km."],
+  ["indicador", "operacoes", "SLA de coleta por cliente", null, "Percentual de coletas feitas dentro da janela combinada com cada cliente. Meta: 95% no mês."],
+  ["indicador", "operacoes", "Taxa de falta de motoboy", null, "Faltas não avisadas dividido pelo total de escalas do mês. Usado na política de multa por atraso."],
+  ["sistema", "tecnologia", "Central Tutts — módulo de solicitações", null, "Onde a loja pede ajuste de entrega. Erro comum: solicitação sem endereço completo trava a roteirização."],
+  ["sistema", "tecnologia", "Roteirizador", null, "Agrupa entregas por região com o OpenRouteService. Se o geocoding falhar, corrigir o endereço na Central."],
+  ["sistema", "tecnologia", "Agente de correção de endereços", null, "Automação que corrige endereços no sistema legado. Verificar a fila do agente quando a roteirização falhar."],
+  ["pop", "tecnologia", "Endereço que não geocodifica", null, "Conferir CEP e número, corrigir na Central, acionar o agente de correção de endereços e roteirizar de novo."],
+  ["pop", "pessoas", "Recrutamento de motoboy", null, "Divulgar a vaga, aplicar o teste DISC, conferir documentos da moto e agendar integração com o supervisor."],
+  ["pop", "pessoas", "Integração de novo motoboy", null, "Apresentar os POPs de coleta e entrega, uniforme e colete, uso do aplicativo e a política de multa por atraso."],
+  ["politica", "pessoas", "Uniforme e identificação", null, "Colete e crachá obrigatórios em toda coleta e entrega. Sem uniforme, o motoboy não inicia o turno."],
+  ["decisao", "pessoas", "Bônus mensal de supervisores", null, "Bônus por SLA de coleta acima de 95% e taxa de falta abaixo de 3% na praça do supervisor."],
+  ["pop", "marketing", "Post de recrutamento nas redes", null, "Publicar a vaga de motoboy com a arte padrão, regiões com vaga aberta e link da página de recrutamento."],
+  ["nota", "marketing", "Ideias de conteúdo para lojistas", null, "Mostrar o SLA de coleta, casos de entrega rápida e o processo de garantia como diferencial para lojas."],
+  ["pop", "atendimento", "Atendimento de reclamação de loja", null, "Ouvir a loja, registrar a ocorrência na Central, dar prazo de retorno e avisar o supervisor da praça."],
+  ["pop", "atendimento", "Retorno ao cliente após ocorrência", null, "Retornar à loja com a causa da ocorrência, o que foi feito e como evitar, em até 24 horas."],
+  ["decisao", "gestao", "Reunião semanal de supervisores", null, "Toda segunda às 14h, pauta: faltas, ocorrências da semana, SLA por cliente e lacunas do Cérebro."],
+  ["nota", "gestao", "Prioridades do trimestre", null, "Reduzir a taxa de falta de motoboy, subir o SLA de coleta e documentar os POPs que mais geram dúvida."],
+  ["politica", "gestao", "Aprovação de exceções pelo CEO", null, "Substituto em alocação fixa, desconto de tabela e multa fora da política precisam de aprovação do CEO."],
+];
+
+const criados = new Map<string, string>();
+for (const [tipo, area, titulo, cliente, conteudo] of ACERVO) {
+  const r = await conhecimento.criarRegistro(
+    ctx,
+    eu,
+    novo({ tipo, area, titulo, clienteRef: cliente, conteudo, publicar: !titulo.startsWith("Ideias") }),
+    { origem: "manual" },
+  );
+  criados.set(titulo, r.id);
+}
+const ligar = async (de: string, para: string, tipo: "referencia" | "implementa" | "substitui" | "contradiz") => {
+  const a = criados.get(de) ?? (de === "POP-001" ? pop.id : de === "POL-001" ? pol.id : undefined);
+  const b = criados.get(para) ?? (para === "POP-001" ? pop.id : para === "POL-001" ? pol.id : undefined);
+  if (a && b) await pool.query(`INSERT INTO cerebro.relacoes (origem_id, destino_id, tipo) VALUES ($1, $2, $3)`, [a, b, tipo]);
+};
+await ligar("Alocação fixa para a Rede Exemplo Norte", "Rede Exemplo Norte", "implementa");
+await ligar("Cobrança de espera após 15 minutos", "Tabela de preço por faixa de km", "implementa");
+await ligar("Conferência de saques na Plific", "Saque semanal dos profissionais", "implementa");
+await ligar("Saque semanal dos profissionais", "POL-001", "referencia");
+await ligar("Endereço que não geocodifica", "Agente de correção de endereços", "referencia");
+await ligar("Roteirização de entregas em lote", "Roteirizador", "referencia");
+await ligar("Integração de novo motoboy", "Uniforme e identificação", "referencia");
+await ligar("Reclamação de motoboy sem uniforme", "Uniforme e identificação", "referencia");
+await ligar("Atraso em coleta na loja Centro", "POP-001", "referencia");
+await ligar("Bônus mensal de supervisores", "SLA de coleta por cliente", "referencia");
+await ligar("Bônus mensal de supervisores", "Taxa de falta de motoboy", "referencia");
+await ligar("Taxa de falta de motoboy", "POL-001", "referencia");
+await ligar("Atendimento de reclamação de loja", "Retorno ao cliente após ocorrência", "referencia");
+await ligar("Aprovação de exceções pelo CEO", "Alocação fixa para a Rede Exemplo Norte", "referencia");
+await ligar("Faturamento quinzenal de clientes", "Cobrança de espera após 15 minutos", "referencia");
+
 // Reunião gravada → ata (rascunho) para revisar.
 const reuniao = await fontes.registrarReuniao(ctx, {
   externoId: "demo-1",

@@ -104,3 +104,35 @@ export interface ResumoInicioDTO {
   proximasReunioes: { titulo: string; inicio: string; link: string | null }[];
   atividade: { quando: string; descricao: string; registroId: string | null }[];
 }
+
+/** Grafo de conhecimento para a tela Mapa. */
+export interface NoMapaDTO {
+  id: string;
+  /** registro = um POP, decisão etc.; area e cliente = nós de agrupamento. */
+  categoria: "registro" | "area" | "cliente";
+  rotulo: string;
+  codigo: string | null;
+  tipo: TipoRegistro | null;
+  area: Area | null;
+  status: StatusRegistro | null;
+  restrito: boolean;
+  /** Quantas ligações o nó tem (sem contar a da área): define o tamanho no desenho. */
+  grau: number;
+  atualizadoEm: string | null;
+}
+
+export interface LigacaoMapaDTO {
+  origem: string;
+  destino: string;
+  tipo: TipoRelacao | "area" | "cliente" | "semelhante";
+  /** 0–1; só nas ligações por semelhança. */
+  peso: number | null;
+}
+
+export interface MapaDTO {
+  nos: NoMapaDTO[];
+  ligacoes: LigacaoMapaDTO[];
+  /** Como a semelhança foi medida: por sentido (embeddings) ou por palavras. */
+  semelhanca: "embeddings" | "texto" | "desligada";
+  geradoEm: string;
+}

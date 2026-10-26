@@ -7,3 +7,4 @@ export { buscar, responder, invalidarCacheBusca } from "./busca.js";
 export { indexarRegistro } from "./indexacao.js";
 export * as fontes from "./fontes.js";
 export * as painel from "./painel.js";
+export { montarMapa, invalidarCacheMapa } from "./mapa.js";

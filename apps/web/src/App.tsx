@@ -13,6 +13,7 @@ const Registro = lazy(() => import("./telas/Registro"));
 const EditarRegistro = lazy(() => import("./telas/EditarRegistro"));
 const Revisar = lazy(() => import("./telas/Revisar"));
 const Integracoes = lazy(() => import("./telas/Integracoes"));
+const Mapa = lazy(() => import("./telas/mapa/Mapa"));
 const Conta = lazy(() => import("./telas/Conta"));
 
 function Protegida() {
@@ -53,6 +54,7 @@ export function App() {
               <Route path="registros/:id/editar" element={<EditarRegistro />} />
               <Route path="revisar" element={<Revisar />} />
               <Route path="revisar/:id" element={<Revisar />} />
+              <Route path="mapa" element={<Mapa />} />
               <Route path="integracoes" element={<Integracoes />} />
               <Route path="conta" element={<Conta />} />
               <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,4 +1,4 @@
-import { BookOpen, Home, Inbox, LogOut, Plug, Search, UserRound } from "lucide-react";
+import { BookOpen, Home, Inbox, LogOut, Network, Plug, Search, UserRound } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useInicio, useRegistros } from "../api/consultas";
 import { useSessao, useUsuario } from "../sessao/Sessao";
@@ -21,6 +21,7 @@ const ITENS = [
   { para: "/", rotulo: "Início", Icone: Home, fim: true },
   { para: "/perguntar", rotulo: "Perguntar", Icone: Search },
   { para: "/biblioteca", rotulo: "Biblioteca", Icone: BookOpen },
+  { para: "/mapa", rotulo: "Mapa", Icone: Network },
   { para: "/revisar", rotulo: "Revisar", Icone: Inbox, contador: true },
   { para: "/integracoes", rotulo: "Integrações", Icone: Plug },
 ];

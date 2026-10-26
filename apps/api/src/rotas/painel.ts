@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { AppError } from "@cerebro/core";
-import { acesso, fontes, painel } from "@cerebro/servicos";
+import { acesso, fontes, montarMapa, painel } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, exigirAdmin, validar, type Deps } from "../http/base.js";
 
@@ -29,6 +29,10 @@ export function rotasPainel({ ctx }: Deps) {
 
   r.get("/inicio", async (_req, res) => {
     res.json(await painel.resumoInicio(ctx));
+  });
+
+  r.get("/mapa", async (_req, res) => {
+    res.json(await montarMapa(ctx));
   });
 
   r.get("/lacunas", async (_req, res) => {

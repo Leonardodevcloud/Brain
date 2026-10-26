@@ -11,3 +11,4 @@ export {
   type TipoEmbedding,
 } from "./provedores.js";
 export * from "./prompts.js";
+export { palavras, vetoresTfIdf, cossenoEsparso, vizinhosMaisProximos, mediaVetores } from "./semelhanca.js";
