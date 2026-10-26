@@ -9,6 +9,7 @@ import {
   textoParaFala,
   type IntencaoAssistente,
 } from "@cerebro/ia";
+import { agenteArgos, type TurnoAnterior } from "./agente.js";
 import { buscar, responder } from "./busca.js";
 import { consultarCentral, planoRapido } from "./central.js";
 import { auditar, type Ator, type Contexto } from "./contexto.js";
@@ -132,9 +133,20 @@ async function acharRegistro(ctx: Contexto, alvo: string) {
 }
 
 /** Recebe o que a pessoa falou, decide o que fazer, faz e devolve o que dizer. */
-export async function atenderFala(ctx: Contexto, ator: Ator, falaBruta: string): Promise<RespostaAssistenteDTO> {
+export async function atenderFala(ctx: Contexto, ator: Ator, falaBruta: string, historico: TurnoAnterior[] = []): Promise<RespostaAssistenteDTO> {
   const fala = falaBruta.trim().slice(0, 1000);
   if (fala.length < 2) throw AppError.requisicaoInvalida("Não ouvi nada. Segure o espaço e fale de novo.");
+
+  // Com IA ligada, o agente entende qualquer jeito de perguntar e busca o que precisar.
+  // Só os comandos de tela óbvios ("abre o mapa") ficam no atalho, por serem instantâneos.
+  const rapido = interpretarRapido(fala);
+  if (ctx.ia && rapido?.intencao !== "navegar") {
+    try {
+      return await viaAgente(ctx, ator, fala, historico);
+    } catch (erro) {
+      ctx.log.warn({ erro: (erro as Error).message }, "agente do Argos falhou; usando as regras simples");
+    }
+  }
 
   const i = await classificar(ctx, fala);
   const base = { texto: fala, intencao: i.intencao, detalhe: null, fontes: [], acao: null } satisfies Partial<RespostaAssistenteDTO>;
@@ -244,6 +256,52 @@ export async function atenderFala(ctx: Contexto, ator: Ator, falaBruta: string):
 
   await auditar(ctx.pool, ator, "assistente.comando", undefined, { intencao: resultado.intencao, fala: fala.slice(0, 300) });
   return resultado;
+}
+
+/** Resposta do agente no formato da interface: fala, números, fontes e para onde ir. */
+async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: TurnoAnterior[]): Promise<RespostaAssistenteDTO> {
+  const r = await agenteArgos(ctx, ator, fala, historico);
+  let acao: RespostaAssistenteDTO["acao"] = null;
+  if (r.abrir) {
+    const [tipo, alvo] = r.abrir.includes(":") ? (r.abrir.split(":", 2) as [string, string]) : [null, r.abrir];
+    const tela = !tipo ? TELAS[sem(alvo).replace("integracoes", "integracoes").replace("revisao", "revisar")] : undefined;
+    if (tela) acao = { ...tela, automatica: true };
+    else {
+      const reg = await acharRegistro(ctx, alvo);
+      if (reg) {
+        acao =
+          tipo === "mapa"
+            ? { destino: `/mapa?foco=${reg.id}`, rotulo: "Ver no mapa", automatica: true }
+            : { destino: `/registros/${reg.codigo}`, rotulo: `Abrir ${reg.codigo}`, automatica: true };
+      }
+    }
+  }
+  if (!acao && r.rascunho) acao = { destino: `/revisar/${r.rascunho.id}`, rotulo: `Revisar ${r.rascunho.codigo}`, automatica: false };
+  if (!acao && r.fontes[0] && !r.dados) acao = { destino: `/registros/${r.fontes[0].codigo}`, rotulo: `Abrir ${r.fontes[0].codigo}`, automatica: false };
+
+  const intencao: RespostaAssistenteDTO["intencao"] = r.dados
+    ? "dados"
+    : r.rascunho
+      ? "rascunho"
+      : acao?.automatica
+        ? acao.destino.startsWith("/registros/")
+          ? "abrir"
+          : acao.destino.startsWith("/mapa")
+            ? "mapa"
+            : "navegar"
+        : r.fontes.length
+          ? "perguntar"
+          : "conversa";
+  await auditar(ctx.pool, ator, "assistente.comando", undefined, { intencao, fala: fala.slice(0, 300), passos: r.passos });
+  return {
+    texto: fala,
+    intencao,
+    fala: r.fala,
+    detalhe: r.dados ? null : r.analise,
+    fontes: r.dados ? [] : r.fontes,
+    acao,
+    dados: r.dados,
+  };
 }
 
 export async function transcreverFala(ctx: Contexto, audio: Uint8Array, mime: string) {

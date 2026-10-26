@@ -9,4 +9,5 @@ export * as fontes from "./fontes.js";
 export * as painel from "./painel.js";
 export { montarMapa, invalidarCacheMapa } from "./mapa.js";
 export { atenderFala, transcreverFala, interpretarRapido, LIMITE_AUDIO_BYTES } from "./assistente.js";
+export { agenteArgos, type TurnoAnterior } from "./agente.js";
 export { consultarCentral, planoRapido } from "./central.js";

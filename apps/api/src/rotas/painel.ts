@@ -43,8 +43,18 @@ export function rotasPainel({ ctx }: Deps) {
   );
 
   r.post("/argos", async (req, res) => {
-    const { texto } = validar(z.object({ texto: z.string().trim().min(2).max(1000) }), req.body);
-    res.json(await atenderFala(ctx, ator(req), texto));
+    const { texto, historico } = validar(
+      z.object({
+        texto: z.string().trim().min(2).max(1000),
+        // Últimas trocas da conversa, para perguntas de continuação ("e em Salvador?").
+        historico: z
+          .array(z.object({ pergunta: z.string().max(1000), resposta: z.string().max(2000) }))
+          .max(6)
+          .default([]),
+      }),
+      req.body,
+    );
+    res.json(await atenderFala(ctx, ator(req), texto, historico));
   });
 
   r.get("/mapa", async (_req, res) => {

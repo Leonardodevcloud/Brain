@@ -82,6 +82,8 @@ export function Argos() {
   const energia = useRef(0);
   const campo = useRef<HTMLInputElement>(null);
   const geracao = useRef(0); // invalida respostas de pedidos cancelados
+  // Conversa recente (some ao recarregar a página): deixa o Argos entender "e em Salvador?".
+  const historico = useRef<{ pergunta: string; resposta: string; em: number }[]>([]);
 
   const nivel = useCallback(() => {
     if (faseRef.current === "ouvindo") return gravador.current.nivel();
@@ -106,8 +108,14 @@ export function Argos() {
       setCompleto(false);
       setFase("pensando");
       try {
-        const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto: fala } });
+        // Depois de 15 min parado, a conversa recomeça do zero.
+        const recentes = historico.current.filter((h) => Date.now() - h.em < 15 * 60_000).slice(-4);
+        const r = await api<RespostaAssistenteDTO>("/argos", {
+          metodo: "POST",
+          corpo: { texto: fala, historico: recentes.map(({ pergunta, resposta }) => ({ pergunta, resposta })) },
+        });
         if (minha !== geracao.current) return;
+        historico.current = [...recentes, { pergunta: fala, resposta: r.fala.slice(0, 2000), em: Date.now() }].slice(-4);
         setResposta(r);
         if (r.acao?.automatica) navegar(r.acao.destino);
         if (mudoRef.current) {
@@ -333,7 +341,7 @@ export function Argos() {
               {fase === "ouvindo" && <p className={css.convite}>{segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>}
               {fase === "transcrevendo" && <p className={css.convite}>Entendendo o que você disse…</p>}
               {texto && fase !== "ouvindo" && fase !== "transcrevendo" && <p className={css.voce}>“{texto}”</p>}
-              {fase === "pensando" && <p className={css.convite}>Consultando o Cérebro e a Central…</p>}
+              {fase === "pensando" && <p className={css.convite}>Pensando e consultando os dados…</p>}
               {erro && <p className={css.erro}>{erro.mensagem}</p>}
 
               {resposta && (fase === "falando" || fase === "pronto") && (

@@ -22,7 +22,18 @@ import {
   type Ator,
   type Contexto,
 } from "../src/index.js";
+import type { PedidoTexto } from "@cerebro/ia";
 import { EmbeddingsFalsos, IaFalsa, URL_TESTE, bancoLimpo, contextoDeTeste } from "./apoio.js";
+
+/** IA falsa que segue um roteiro de etapas do agente (uma função por etapa). */
+const roteiro = (passos: ((p: PedidoTexto) => object)[]) =>
+  new IaFalsa((p) => {
+    // Conta só as etapas depois da pergunta atual (o histórico também tem respostas do assistente).
+    const inicio = p.mensagens.findLastIndex((m) => m.papel === "user" && m.conteudo.startsWith("Agora são"));
+    const etapa = p.mensagens.slice(inicio).filter((m) => m.papel === "assistant").length;
+    return (passos[Math.min(etapa, passos.length - 1)] ?? (() => ({ acao: "responder", fala: "ok" })))(p);
+  });
+const ultimaMensagem = (p: PedidoTexto) => p.mensagens.at(-1)!.conteudo;
 
 let pool: Pool;
 let ctx: Contexto;
@@ -351,9 +362,6 @@ describe("Argos", () => {
     expect((await atenderFala({ ...ctx, ia: null }, atorAdmin, "valeu")).fala).toMatch(/^Por nada, Admin/);
   });
 
-  const intencao = (dados: object) =>
-    new IaFalsa((p) => (p.sistema.includes("assistente de voz") ? { alvo: null, tipo: null, titulo: null, conteudo: null, fala: null, ...dados } : { resposta: "Realoque o motoboy [1].", suficiente: true }));
-
   it("entende comandos óbvios sem precisar da IA", async () => {
     const semIa = { ...ctx, ia: null };
     const r = await atenderFala(semIa, atorMembro, "Argos, abre o mapa");
@@ -364,16 +372,38 @@ describe("Argos", () => {
     expect(p.fala).toMatch(/aprovar|em dia/);
   });
 
-  it("responde perguntas com uma fala curta, sem as citações", async () => {
-    const r = await atenderFala({ ...ctx, ia: intencao({ intencao: "perguntar" }) }, atorMembro, "como tratamos falta de motoboy pela manhã?");
+  it("agente: procura no Cérebro e responde com as fontes", async () => {
+    const ia = roteiro([
+      () => ({ acao: "conhecimento", busca: "falta de motoboy manhã" }),
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/Encontrado no Cérebro/);
+        return { acao: "responder", fala: "Realoque o motoboy da janela seguinte e avise a loja.", analise: null };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia }, atorMembro, "como tratamos falta de motoboy pela manhã?");
     expect(r.intencao).toBe("perguntar");
-    expect(r.fala).toBe("Realoque o motoboy.");
+    expect(r.fala).toBe("Realoque o motoboy da janela seguinte e avise a loja.");
     expect(r.fontes.length).toBeGreaterThan(0);
     expect(r.acao?.destino).toMatch(/^\/registros\//);
   });
 
-  it("salva o que foi ditado sempre como rascunho", async () => {
-    const ia = intencao({ intencao: "rascunho", tipo: "decisao", titulo: "Coleta só até 17h", conteudo: "A partir de novembro, coletas só até 17h." });
+  it("agente: conversa pelo nome e lembra da troca anterior", async () => {
+    const ia = roteiro([
+      (p) => {
+        expect(p.sistema).toContain("Você está falando com: Admin");
+        expect(p.mensagens.length).toBe(3); // pergunta anterior, resposta anterior, pergunta nova
+        return { acao: "responder", fala: "Tudo ótimo, Admin! Em que posso ajudar?" };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia }, atorAdmin, "oi, tudo bem?", [{ pergunta: "como está a disponibilidade?", resposta: "24 em loja de 41." }]);
+    expect(r).toMatchObject({ intencao: "conversa", fala: "Tudo ótimo, Admin! Em que posso ajudar?" });
+  });
+
+  it("agente: salva o que foi ditado sempre como rascunho", async () => {
+    const ia = roteiro([
+      () => ({ acao: "rascunho", tipo: "decisao", titulo: "Coleta só até 17h", conteudo: "A partir de novembro, coletas só até 17h." }),
+      () => ({ acao: "responder", fala: "Anotei como rascunho de decisão." }),
+    ]);
     const r = await atenderFala({ ...ctx, ia }, atorAdmin, "salva como decisão: a partir de novembro coleta só até 17h");
     expect(r.intencao).toBe("rascunho");
     const id = r.acao!.destino.split("/").pop()!;
@@ -382,9 +412,18 @@ describe("Argos", () => {
     expect(reg.dados).toMatchObject({ via: "voz" });
   });
 
-  it("abre um registro pelo código falado", async () => {
-    const r = await atenderFala({ ...ctx, ia: intencao({ intencao: "abrir", alvo: "pop 1" }) }, atorMembro, "abre o pop 1");
+  it("agente: abre um registro pelo código", async () => {
+    const ia = roteiro([() => ({ acao: "responder", fala: "Abrindo o POP 1.", abrir: "POP-001" })]);
+    const r = await atenderFala({ ...ctx, ia }, atorMembro, "abre o pop 1");
     expect(r.acao?.destino).toBe("/registros/POP-001");
+  });
+
+  it("se a IA falhar, cai nas regras simples", async () => {
+    const quebrada = new IaFalsa(() => {
+      throw new Error("fora do ar");
+    });
+    const r = await atenderFala({ ...ctx, ia: quebrada }, atorAdmin, "valeu");
+    expect(r.fala).toMatch(/^Por nada/);
   });
 
   it("transcreve com o provedor de voz e recusa áudio vazio", async () => {
@@ -455,46 +494,70 @@ describe("Argos consultando a Central", () => {
     expect(r.fala).toMatch(/ARGOS_DB_SENHA/);
   });
 
-  it("pergunta livre: a IA escolhe as tabelas, escreve o SQL, corrige o erro e analisa sem ver nomes", async () => {
-    let tentativasSql = 0;
-    const ia = new IaFalsa((p) => {
-      if (p.sistema.includes("assistente de voz")) return { intencao: "dados", alvo: null, tipo: null, titulo: null, conteudo: null, fala: null };
-      if (p.sistema.includes("planeja como responder")) return { ferramenta: "sql", parametros: {}, tabelas: ["bi_entregas", "tabela_que_nao_existe"] };
-      if (p.sistema.includes("escreve UMA consulta SQL")) {
-        tentativasSql++;
-        return tentativasSql === 1
-          ? { sql: "SELECT nome_errado FROM bi_entregas", explicacao: "erro proposital" }
-          : {
-              sql: "SELECT nome_prof AS motoboy, COUNT(*) AS entregas FROM bi_entregas WHERE COALESCE(ponto,1) >= 2 GROUP BY 1 ORDER BY 2 DESC",
-              explicacao: "Entregas por motoboy",
-            };
-      }
-      if (p.sistema.includes("resultado de uma consulta")) {
-        const conteudo = p.mensagens[0]!.conteudo;
-        expect(conteudo).not.toContain("Ana Souza"); // nomes de pessoas vão mascarados
-        const marcador = /\[PESSOA_\d+\]/.exec(conteudo)?.[0] ?? "?";
-        return { fala: `${marcador} lidera com 2 entregas.`, analise: "- Ritmo bom.", destaques: [{ rotulo: "Líder", valor: marcador }] };
-      }
-      return {};
-    });
+  it("agente: olha as colunas, escreve o SQL, corrige o erro e analisa sem ver nomes", async () => {
+    const ia = roteiro([
+      (p) => {
+        expect(p.sistema).toContain("bi_entregas");
+        return { acao: "colunas", tabelas: ["bi_entregas", "tabela_que_nao_existe"] };
+      },
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/nome_prof/);
+        expect(ultimaMensagem(p)).toMatch(/Não existem: tabela_que_nao_existe/);
+        return { acao: "sql", sql: "SELECT nome_errado FROM bi_entregas", titulo: "erro proposital" };
+      },
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/Erro na consulta/);
+        return {
+          acao: "sql",
+          sql: "SELECT nome_prof AS motoboy, COUNT(*) AS entregas FROM bi_entregas WHERE COALESCE(ponto,1) >= 2 GROUP BY 1 ORDER BY 2 DESC",
+          titulo: "Entregas por motoboy hoje",
+        };
+      },
+      (p) => {
+        const visto = ultimaMensagem(p);
+        expect(visto).not.toContain("Ana Souza"); // nomes de pessoas vão mascarados
+        const marcador = /\[PESSOA_\d+\]/.exec(visto)?.[0] ?? "?";
+        return { acao: "responder", fala: `${marcador} lidera com 2 entregas.`, analise: "- Ritmo bom.", destaques: [{ rotulo: "Líder", valor: marcador }], mostrar: "r1" };
+      },
+    ]);
     const r = await atenderFala({ ...ctx, ia, central: leitura }, atorAdmin, "quem mais entregou hoje?");
-    expect(tentativasSql).toBe(2);
-    expect(r.dados).toMatchObject({ origem: "livre", tabelas: ["bi_entregas"] });
+    expect(r.intencao).toBe("dados");
+    expect(r.dados).toMatchObject({ origem: "livre", tabelas: ["bi_entregas"], titulo: "Entregas por motoboy hoje" });
     expect(r.dados?.linhas[0]).toMatchObject({ motoboy: "Ana Souza" });
     expect(r.fala).toBe("Ana Souza lidera com 2 entregas.");
     expect(r.dados?.destaques[0]).toEqual({ rotulo: "Líder", valor: "Ana Souza" });
+    expect(r.dados?.analise).toBe("- Ritmo bom.");
+  });
+
+  it("agente: usa a consulta pronta e entende a continuação da conversa", async () => {
+    const ia = roteiro([
+      (p) => {
+        expect(p.mensagens[0]!.conteudo).toContain("como está a disponibilidade?");
+        return { acao: "pronta", nome: "disponibilidade", parametros: { regiao: "salvador", por: "loja" } };
+      },
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/"titulares":4/);
+        return { acao: "responder", fala: "Em Salvador são 2 em loja de 4.", destaques: [{ rotulo: "Em loja", valor: "2 de 4" }] };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia, central: leitura }, atorAdmin, "e em Salvador?", [
+      { pergunta: "como está a disponibilidade?", resposta: "Agora são 2 em loja de 4." },
+    ]);
+    expect(r).toMatchObject({ intencao: "dados", fala: "Em Salvador são 2 em loja de 4." });
+    expect(r.dados?.origem).toBe("pronta");
   });
 
   it("recusa SQL de escrita mesmo que a IA tente", async () => {
-    const ia = new IaFalsa((p) => {
-      if (p.sistema.includes("assistente de voz")) return { intencao: "dados" };
-      if (p.sistema.includes("planeja como responder")) return { ferramenta: "sql", parametros: {}, tabelas: ["bi_entregas"] };
-      if (p.sistema.includes("escreve UMA consulta SQL")) return { sql: "DELETE FROM bi_entregas", explicacao: "x" };
-      return {};
-    });
+    const ia = roteiro([
+      () => ({ acao: "sql", sql: "DELETE FROM bi_entregas" }),
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/Erro na consulta/);
+        return { acao: "responder", fala: "Eu só consigo ler os dados, não apagar." };
+      },
+    ]);
     const r = await atenderFala({ ...ctx, ia, central: leitura }, atorAdmin, "apaga as entregas");
     expect(r.dados ?? null).toBeNull();
-    expect(r.fala).toMatch(/Não consegui montar/);
+    expect(r.fala).toMatch(/só consigo ler/);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM public.bi_entregas");
     expect(rows[0].n).toBe(3);
   });

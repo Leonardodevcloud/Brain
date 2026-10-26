@@ -28,14 +28,25 @@ export interface ResultadoMascara {
 export interface OpcoesMascara {
   /** Nomes de pessoas a esconder (ex.: profissionais citados), trocados por PESSOA_n. */
   nomes?: string[];
+  /**
+   * Mapa de uma máscara anterior da mesma conversa: os marcadores continuam valendo
+   * e a numeração segue, para a IA ver o mesmo [PESSOA_1] em todas as etapas.
+   */
+  mapaAnterior?: Map<string, string>;
 }
 
 const escaparRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export function mascarar(texto: string, opcoes: OpcoesMascara = {}): ResultadoMascara {
-  const mapa = new Map<string, string>();
+  const mapa = opcoes.mapaAnterior ?? new Map<string, string>();
   const reverso = new Map<string, string>();
   const contadores = new Map<string, number>();
+  for (const [m, valor] of mapa) {
+    const [, rotulo, n] = /^\[([A-Z]+)_(\d+)\]$/.exec(m) ?? [];
+    if (!rotulo) continue;
+    reverso.set(`${rotulo}:${valor.toLowerCase()}`, m);
+    contadores.set(rotulo, Math.max(contadores.get(rotulo) ?? 0, Number(n)));
+  }
 
   const marcador = (rotulo: string, valor: string) => {
     const chave = `${rotulo}:${valor.toLowerCase()}`;
