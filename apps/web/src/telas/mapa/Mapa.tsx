@@ -29,7 +29,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api/cliente";
 import { MensagemErro, useAtalho } from "../../componentes/comum";
 import { NOME_STATUS, nomeTipo, relativo } from "../../util/formato";
-import { COR_CLIENTE, COR_HUB, COR_HUD, COR_REVISAR, COR_TIPO } from "./cores";
+import { COR_CLIENTE, COR_REVISAR, COR_TIPO } from "./cores";
 import {
   areaDeClique,
   corDaLigacao,
@@ -400,11 +400,11 @@ export default function Mapa() {
             }
             linkDirectionalArrowRelPos={0.92}
             linkDirectionalParticles={(l) =>
-              movimento && ligacaoEmFoco(l) ? 3 : 0
+              movimento && ligacaoEmFoco(l) ? 2 : 0
             }
-            linkDirectionalParticleWidth={2.4}
-            linkDirectionalParticleSpeed={0.007}
-            linkDirectionalParticleColor={() => "#EDE9FE"}
+            linkDirectionalParticleWidth={2.2}
+            linkDirectionalParticleSpeed={0.006}
+            linkDirectionalParticleColor={() => "#A78BFA"}
             onRenderFramePre={antesDoQuadro}
             onEngineStop={() => {
               if (assentou.current) return;
@@ -428,29 +428,9 @@ export default function Mapa() {
         )}
       </div>
 
-      {/* Varredura do HUD: uma faixa de luz descendo devagar. */}
-      {movimento && <div className={css.varredura} aria-hidden="true" />}
-
-      {/* ── Barra do HUD: marca, busca, filtros e números ── */}
-      <header className={css.topo}>
-        <div className={css.marca}>
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={COR_HUD}
-            strokeWidth="1.6"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <circle cx="12" cy="12" r="9" strokeDasharray="3 3" />
-            <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
-          </svg>
-          <h1 className={css.titulo}>
-            CÉREBRO<span className={css.barras}> // </span>MAPA
-          </h1>
-        </div>
+      {/* ── Busca, filtros e números, flutuando sobre o mapa ── */}
+      <header className={`${css.topo} ${noSelecionado ? css.topoComPainel : ""}`}>
+        <h1 className="so-leitor">Mapa do conhecimento</h1>
 
         <div className={css.busca}>
           <Search size={15} aria-hidden="true" className={css.iconeBusca} />
@@ -461,7 +441,7 @@ export default function Mapa() {
             ref={campoBusca}
             id="busca-mapa"
             className={css.entradaBusca}
-            placeholder="Buscar nó, código ou cliente…"
+            placeholder="Buscar POP, regra, cliente…"
             value={busca}
             autoComplete="off"
             onChange={(e) => setBusca(e.target.value)}
@@ -535,12 +515,14 @@ export default function Mapa() {
           ))}
           <span className={css.separador} aria-hidden="true" />
           <Pilula
+            opcao
             ativa={verParecidos}
             onClick={() => setVerParecidos((v) => !v)}
           >
             Parecidos
           </Pilula>
           <Pilula
+            opcao
             ativa={verRascunhos}
             onClick={() => setVerRascunhos((v) => !v)}
           >
@@ -551,28 +533,10 @@ export default function Mapa() {
         <p className={css.numeros} aria-live="polite">
           {d ? (
             <>
-              <span>
-                <b>{totalRegistros}</b> NÓS
-              </span>
-              <span>
-                <b>{totalConexoes}</b> CONEXÕES
-              </span>
-              <span className={css.sincronia}>
-                <i className={css.pontoVivo} aria-hidden="true" />
-                {d.semelhanca === "embeddings"
-                  ? "POR SENTIDO"
-                  : d.semelhanca === "texto"
-                    ? "POR PALAVRAS"
-                    : "SEM SEMELHANÇA"}{" "}
-                ·{" "}
-                {new Date(d.geradoEm).toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
+              <b>{totalRegistros}</b> registros · <b>{totalConexoes}</b> ligações
             </>
           ) : (
-            "MONTANDO O MAPA…"
+            "Montando o mapa…"
           )}
         </p>
       </header>
@@ -581,14 +545,14 @@ export default function Mapa() {
       {areasPresentes.length > 0 && (
         <div className={css.legenda}>
           <div className={css.legendaTopo}>
-            <span className={css.legendaTitulo}>TIPOS</span>
+            <span className={css.legendaTitulo}>Tipos</span>
             <button
               type="button"
               className={css.recolher}
               aria-expanded={legendaAberta}
               onClick={() => alternarLegenda()}
             >
-              {legendaAberta ? "RECOLHER" : "LEGENDA"}
+              {legendaAberta ? "Recolher" : "Áreas e símbolos"}
             </button>
           </div>
           <div className={css.tiposLegenda}>
@@ -599,13 +563,13 @@ export default function Mapa() {
                   style={{ background: COR_TIPO[t] }}
                   aria-hidden="true"
                 />
-                {nomeTipo(t)} · {contagemTipo.get(t) ?? 0}
+                {nomeTipo(t)} <small>{contagemTipo.get(t) ?? 0}</small>
               </span>
             ))}
           </div>
           {legendaAberta && (
             <>
-              <span className={css.legendaTitulo}>ÁREAS</span>
+              <span className={css.legendaTitulo}>Áreas</span>
               <div
                 className={css.areas}
                 role="group"
@@ -630,7 +594,7 @@ export default function Mapa() {
                     >
                       <span
                         className={css.bolinha}
-                        style={{ background: COR_HUB }}
+                        style={{ background: "#A8A29E" }}
                         aria-hidden="true"
                       />
                       {NOME_AREA[a]}
@@ -761,17 +725,20 @@ export default function Mapa() {
 
 function Pilula({
   ativa,
+  opcao = false,
   onClick,
   children,
 }: {
   ativa: boolean;
+  /** Liga/desliga uma camada (não é filtro de tipo): destaque mais leve. */
+  opcao?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      className={`${css.pilula} ${ativa ? css.pilulaAtiva : ""}`}
+      className={`${css.pilula} ${ativa ? (opcao ? css.pilulaOpcao : css.pilulaAtiva) : ""}`}
       aria-pressed={ativa}
       onClick={onClick}
     >
@@ -825,8 +792,8 @@ function Painel({
     no.categoria === "registro"
       ? `${no.codigo}`
       : no.categoria === "area"
-        ? "ÁREA"
-        : "CLIENTE";
+        ? "Área"
+        : "Cliente";
   const perguntar = () =>
     window.dispatchEvent(
       new CustomEvent("argos:perguntar", {
@@ -841,10 +808,7 @@ function Painel({
 
   return (
     <aside className={css.painel} aria-label={`Detalhes de ${no.rotulo}`}>
-      <span className={css.canto} aria-hidden="true" />
-      <span className={css.cantoFim} aria-hidden="true" />
       <div className={css.painelTopo}>
-        <span className={css.painelMeta}>NÓ SELECIONADO</span>
         <span className={css.painelCodigo} style={{ color: cor }}>
           {meta}
         </span>
@@ -883,15 +847,15 @@ function Painel({
 
       <div className={css.metricas}>
         <div className={css.metrica}>
-          <span>CONEXÕES</span>
+          <span>ligações</span>
           <b>{lista.length}</b>
         </div>
         <div className={css.metrica}>
-          <span>TAREFAS</span>
-          <b style={{ color: no.tarefasAbertas ? "#FCD34D" : undefined }}>{no.tarefasAbertas}</b>
+          <span>tarefas abertas</span>
+          <b style={{ color: no.tarefasAbertas ? "#B45309" : undefined }}>{no.tarefasAbertas}</b>
         </div>
         <div className={css.metrica}>
-          <span>ATUALIZADO</span>
+          <span>atualizado</span>
           <b className={css.metricaTexto}>
             {no.atualizadoEm ? relativo(no.atualizadoEm) : "—"}
           </b>
@@ -901,7 +865,7 @@ function Painel({
       {lista.length > 0 && (
         <>
           <h3 className={css.painelSecao}>
-            {no.categoria === "registro" ? "LIGADO A" : "REGISTROS"}
+            {no.categoria === "registro" ? "Ligado a" : "Registros"}
           </h3>
           <ul className={css.conexoes}>
             {lista.slice(0, 40).map((v) => (

@@ -264,17 +264,71 @@
   .abaArgos {
     color: var(--texto-2);
   }
+  /* Botão do Argos: esfera de luz com anel girando, aura que respira e ondas suaves. */
   .orbeArgos {
+    position: relative;
     display: grid;
     place-items: center;
-    width: 56px;
-    height: 56px;
-    margin-top: -26px;
+    width: 54px;
+    height: 54px;
+    margin-top: -24px;
+    isolation: isolate;
+  }
+  .orbeArgos > span {
+    position: absolute;
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 40%, #1c1726, #0e0d12 70%);
+  }
+  .aura {
+    inset: -6px;
+    z-index: -1;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.55), rgba(124, 58, 237, 0) 68%);
+    filter: blur(6px);
+    animation: respirar 3.2s ease-in-out infinite;
+  }
+  .anelArgos {
+    inset: 0;
+    padding: 2px;
+    background: conic-gradient(from 0deg, #c4b5fd, #7c3aed, #22d3ee, #a78bfa, #c4b5fd);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    animation: girarArgos 6s linear infinite;
+  }
+  .esfera {
+    inset: 6px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 32% 28%, #ede9fe 0%, rgba(237, 233, 254, 0) 34%),
+      radial-gradient(circle at 70% 78%, rgba(34, 211, 238, 0.55) 0%, rgba(34, 211, 238, 0) 46%),
+      radial-gradient(circle at 50% 50%, #8b5cf6 0%, #6d28d9 58%, #3b0764 100%);
     box-shadow:
-      0 8px 22px rgba(124, 58, 237, 0.45),
-      0 0 0 4px var(--superficie);
+      0 6px 18px rgba(109, 40, 217, 0.45),
+      inset 0 -4px 10px rgba(30, 10, 60, 0.45);
+    animation: flutuar 3.2s ease-in-out infinite;
+  }
+  .brilhoEsfera {
+    position: absolute;
+    inset: -40%;
+    background: conic-gradient(from 90deg, transparent 0 60%, rgba(255, 255, 255, 0.35) 72%, transparent 84%);
+    animation: girarArgos 4s linear infinite reverse;
+  }
+  .onda {
+    inset: 6px;
+    border: 1.5px solid rgba(167, 139, 250, 0.7);
+    animation: onda 3.2s ease-out infinite;
+    opacity: 0;
+  }
+  .onda2 {
+    animation-delay: 1.6s;
+  }
+  .abaArgos:active .esfera {
+    transform: scale(0.92);
+  }
+  .abaArgos:focus-visible {
+    outline: none;
+  }
+  .abaArgos:focus-visible .anelArgos {
+    box-shadow: 0 0 0 3px var(--acento-fundo);
   }
   .aba .contador {
     position: absolute;
@@ -398,6 +452,32 @@
     cursor: pointer;
   }
 }
+@keyframes girarArgos {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes respirar {
+  50% {
+    transform: scale(1.18);
+    opacity: 0.7;
+  }
+}
+@keyframes flutuar {
+  50% {
+    transform: translateY(-1.5px) scale(1.03);
+  }
+}
+@keyframes onda {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
 @keyframes aparecer {
   from {
     opacity: 0;
@@ -410,7 +490,14 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .veu,
-  .gaveta {
+  .gaveta,
+  .aura,
+  .anelArgos,
+  .esfera,
+  .brilhoEsfera {
     animation: none;
+  }
+  .onda {
+    display: none;
   }
 }

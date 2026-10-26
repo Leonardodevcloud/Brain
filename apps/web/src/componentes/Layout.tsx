@@ -22,7 +22,6 @@ import { useResumoTarefas } from "../api/tarefas";
 import { useSessao, useUsuario } from "../sessao/Sessao";
 import { iniciais } from "../util/formato";
 import { Argos } from "./argos/Argos";
-import { Orbe } from "./argos/Orbe";
 import css from "./Layout.module.css";
 import { Logo } from "./Logo";
 
@@ -160,7 +159,6 @@ function Gaveta({ aberta, fechar, contagens }: { aberta: boolean; fechar: () => 
   );
 }
 
-const SEM_NIVEL = () => 0;
 const NA_GAVETA = GAVETA.map((g) => g.para);
 
 export function Layout() {
@@ -245,8 +243,14 @@ export function Layout() {
           <span>Agenda</span>
         </NavLink>
         <button type="button" className={`${css.aba} ${css.abaArgos}`} onClick={() => window.dispatchEvent(new Event("argos:ouvir"))} aria-label="Falar com o Argos">
-          <span className={css.orbeArgos}>
-            <Orbe estado="parado" nivel={SEM_NIVEL} tamanho={50} movimento={false} />
+          <span className={css.orbeArgos} aria-hidden="true">
+            <span className={css.aura} />
+            <span className={css.anelArgos} />
+            <span className={css.esfera}>
+              <span className={css.brilhoEsfera} />
+            </span>
+            <span className={css.onda} />
+            <span className={`${css.onda} ${css.onda2}`} />
           </span>
           <span>Argos</span>
         </button>

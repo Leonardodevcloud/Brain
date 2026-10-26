@@ -1,30 +1,32 @@
 import type { TipoRegistro } from "@cerebro/core/publico";
 
 /**
- * Cor de cada tipo de registro no fundo escuro do mapa (estilo HUD).
- * Tons de brilho parecido, mas com claridades diferentes para não depender só do matiz.
+ * Cor de cada tipo de registro no mapa claro.
+ * Tons firmes (lidos sobre branco), com claridades diferentes para não depender só do matiz.
  */
 export const COR_TIPO: Record<TipoRegistro, string> = {
-  pop: "#A78BFA",
-  decisao: "#22D3EE",
-  politica: "#FCD34D",
-  cliente: "#34D399",
-  reuniao: "#F472B6",
-  nota: "#94A3B8",
-  ocorrencia: "#FB7185",
-  sistema: "#60A5FA",
-  indicador: "#A3E635",
-  documento: "#FB923C",
+  pop: "#7C3AED",
+  decisao: "#0891B2",
+  politica: "#D97706",
+  cliente: "#059669",
+  reuniao: "#DB2777",
+  nota: "#78716C",
+  ocorrencia: "#E11D48",
+  sistema: "#2563EB",
+  indicador: "#65A30D",
+  documento: "#EA580C",
 };
 
-/** Hubs de área: claros e neutros, para os registros coloridos se destacarem em volta. */
-export const COR_HUB = "#E2E8F0";
-export const COR_CLIENTE = "#34D399";
+/** Áreas viram etiquetas neutras; os registros coloridos se destacam em volta. */
+export const COR_HUB = "#57534E";
+export const COR_CLIENTE = "#059669";
 export const COR_REVISAR = "#F97316";
-/** Destaque do HUD (anéis do selecionado, partículas). */
-export const COR_HUD = "#A78BFA";
-export const COR_HUD_2 = "#22D3EE";
-export const FUNDO_MAPA = "#05060B";
+/** Destaque do selecionado e das ligações em foco. */
+export const COR_HUD = "#7C3AED";
+export const COR_HUD_2 = "#A78BFA";
+export const FUNDO_MAPA = "#FAFAF9";
+export const TEXTO_MAPA = "#1C1917";
+export const BORDA_MAPA = "#E7E5E4";
 
 /** "#A78BFA" + 0.4 → "rgba(167,139,250,0.4)" */
 export function comAlfa(hex: string, alfa: number) {

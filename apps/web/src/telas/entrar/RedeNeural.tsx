@@ -48,12 +48,12 @@ export function RedeNeural({ className }: { className?: string }) {
       canvas!.width = Math.round(largura * dpr);
       canvas!.height = Math.round(altura * dpr);
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const total = Math.max(28, Math.min(120, Math.round((largura * altura) / 13000)));
+      const total = Math.max(28, Math.min(120, Math.round((largura * altura) / 15000)));
       nos = Array.from({ length: total }, () => ({
         x: Math.random() * largura,
         y: Math.random() * altura,
-        vx: (Math.random() - 0.5) * 0.28,
-        vy: (Math.random() - 0.5) * 0.28,
+        vx: (Math.random() - 0.5) * 0.16,
+        vy: (Math.random() - 0.5) * 0.16,
         r: 0.9 + Math.random() * 1.6,
         brilho: 0,
       }));
@@ -128,7 +128,7 @@ export function RedeNeural({ className }: { className?: string }) {
       }
 
       // Pulsos de dados.
-      if (!parado && agora - ultimoPulso > 220 && pulsos.length < 26) {
+      if (!parado && agora - ultimoPulso > 650 && pulsos.length < 10) {
         novoPulso();
         ultimoPulso = agora;
       }
@@ -139,7 +139,7 @@ export function RedeNeural({ className }: { className?: string }) {
         p.t += p.vel;
         if (p.t >= 1) {
           b.brilho = 1;
-          if (Math.random() < 0.55) novoPulso(p.b); // o sinal segue pela rede
+          if (Math.random() < 0.35) novoPulso(p.b); // o sinal segue pela rede
           return false;
         }
         const x = a.x + (b.x - a.x) * p.t;
