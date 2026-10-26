@@ -15,7 +15,12 @@ export class Gravador {
   /** Já houve fala desde o início? */
   falou = false;
   /** Ruído de fundo estimado: o limiar de "voz" se adapta ao ambiente. */
-  private ruido = 0.03;
+  private ruido = 0.02;
+  /** Último volume medido (a medição roda sozinha, sem depender da animação da esfera). */
+  private ultimoNivel = 0;
+  /** Maior volume visto na gravação: diz se o microfone captou alguma coisa. */
+  pico = 0;
+  private medidor = 0;
 
   static suportado() {
     return typeof window !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
@@ -34,6 +39,8 @@ export class Gravador {
     this.gravador.start(250);
 
     this.contexto = new AudioContext();
+    // Alguns navegadores criam o contexto suspenso; sem isso o volume fica zerado.
+    if (this.contexto.state === "suspended") await this.contexto.resume().catch(() => undefined);
     const fonte = this.contexto.createMediaStreamSource(this.stream);
     this.analisador = this.contexto.createAnalyser();
     this.analisador.fftSize = 512;
@@ -43,26 +50,36 @@ export class Gravador {
     this.inicio = performance.now();
     this.ultimaVoz = this.inicio;
     this.falou = false;
-    this.ruido = 0.03;
+    this.ruido = 0.02;
+    this.pico = 0;
+    this.ultimoNivel = 0;
+    this.medidor = window.setInterval(() => this.medir(), 40);
   }
 
-  /** Volume de 0 a 1 (RMS com um ganho para a fala ficar visível). */
+  /** Volume de 0 a 1 para a esfera. */
   nivel(): number {
-    if (!this.analisador || !this.amostras) return 0;
+    return this.ultimoNivel;
+  }
+
+  /** Mede o volume (RMS com ganho) e atualiza a detecção de fala. */
+  private medir() {
+    if (!this.analisador || !this.amostras) return;
     this.analisador.getByteTimeDomainData(this.amostras);
     let soma = 0;
     for (const v of this.amostras) {
       const x = (v - 128) / 128;
       soma += x * x;
     }
-    const n = Math.min(1, Math.sqrt(soma / this.amostras.length) * 4.5);
+    const n = Math.min(1, Math.sqrt(soma / this.amostras.length) * 6);
+    this.ultimoNivel = n;
+    if (n > this.pico) this.pico = n;
     // O piso acompanha o ruído devagar (sobe pouco, desce rápido), para não confundir a fala com ruído.
     this.ruido = n < this.ruido ? this.ruido * 0.9 + n * 0.1 : this.ruido * 0.995 + n * 0.005;
-    if (n > Math.max(0.12, this.ruido * 2.4)) {
+    // Limiar baixo de propósito: microfones de notebook com supressão de ruído chegam bem fracos.
+    if (n > Math.max(0.05, this.ruido * 2)) {
       this.ultimaVoz = performance.now();
       this.falou = true;
     }
-    return n;
   }
 
   duracao() {
@@ -95,6 +112,8 @@ export class Gravador {
   }
 
   private liberar() {
+    window.clearInterval(this.medidor);
+    this.ultimoNivel = 0;
     this.stream?.getTracks().forEach((t) => t.stop());
     void this.contexto?.close().catch(() => undefined);
     this.stream = null;

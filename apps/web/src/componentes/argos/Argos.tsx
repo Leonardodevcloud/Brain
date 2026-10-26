@@ -3,7 +3,7 @@ import { ArrowRight, ChevronDown, Keyboard, Mic, Volume2, VolumeX, X } from "luc
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ErroApi, api } from "../../api/cliente";
-import { falar, pararFala } from "./fala";
+import { desbloquearFala, falar, pararFala } from "./fala";
 import { Gravador } from "./gravador";
 import { DadosCentral } from "./DadosCentral";
 import { Orbe, type EstadoOrbe } from "./Orbe";
@@ -55,6 +55,8 @@ const ESTADO_ORBE: Record<Fase, EstadoOrbe> = {
 };
 
 /** O Argos: assistente de voz disponível em qualquer tela. Segure Espaço para falar. */
+const ALUCINACAO = /^(obrigad[oa]( por assistir)?|tchau|legendas?\b.*|inscreva-se.*|\.+|…)[.!]*$/i;
+
 export function Argos() {
   const navegar = useNavigate();
   const [fase, setFase] = useState<Fase>("fechado");
@@ -135,17 +137,24 @@ export function Argos() {
     const minha = ++geracao.current;
     const duracao = gravador.current.duracao();
     const falou = gravador.current.falou;
+    const pico = gravador.current.pico;
     setFase("transcrevendo");
     const audio = await gravador.current.parar();
     if (minha !== geracao.current) return;
-    if (duracao < 450 || audio.size < 1500 || !falou) {
-      falhar("Não ouvi nada. Segure o espaço enquanto fala, ou digite abaixo.", true);
+    if (duracao < 450 || audio.size < 1000) {
+      falhar("Foi rápido demais. Segure o espaço enquanto fala, ou digite abaixo.", true);
+      return;
+    }
+    // Microfone mudo de verdade (nenhum som em toda a gravação): nem adianta mandar para transcrição.
+    if (!falou && pico < 0.004) {
+      falhar("O microfone não captou som. Confira se o navegador está usando o microfone certo (cadeado ao lado do endereço › Microfone), ou digite abaixo.", true);
       return;
     }
     try {
       const { texto: transcrito } = await api<{ texto: string }>("/argos/transcrever", { metodo: "POST", arquivo: audio });
       if (minha !== geracao.current) return;
-      if (!transcrito.trim()) {
+      // Sem fala, o Whisper às vezes "inventa" frases curtas de legenda.
+      if (!transcrito.trim() || (!falou && ALUCINACAO.test(transcrito.trim()))) {
         falhar("Não entendi o que foi dito. Tente de novo, um pouco mais perto do microfone.");
         return;
       }
@@ -161,6 +170,7 @@ export function Argos() {
     async (m: Modo) => {
       geracao.current++;
       pararFala();
+      if (!mudoRef.current) desbloquearFala(); // ainda dentro do gesto (tecla/clique)
       setErro(null);
       setResposta(null);
       setTexto("");
@@ -205,7 +215,15 @@ export function Argos() {
       if (d > MAX_GRAVACAO_MS) void enviar();
       else if (modoRef.current === "continuo") {
         if (g.falou && performance.now() - g.ultimaVoz > SILENCIO_FIM_MS) void enviar();
-        else if (!g.falou && d > SEM_FALA_MS) falhar("Não ouvi nada. Tente de novo ou digite abaixo.", true);
+        else if (!g.falou && d > SEM_FALA_MS) {
+          g.cancelar();
+          falhar(
+            g.pico < 0.004
+              ? "O microfone não captou som. Confira se o navegador está usando o microfone certo (cadeado ao lado do endereço › Microfone), ou digite abaixo."
+              : "Não ouvi nada. Tente de novo ou digite abaixo.",
+            true,
+          );
+        }
       }
     }, 120);
     return () => window.clearInterval(id);

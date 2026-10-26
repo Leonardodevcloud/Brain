@@ -337,6 +337,13 @@ describe("mapa", () => {
 });
 
 describe("Argos", () => {
+  it("responde cumprimento pelo nome, sem virar lacuna", async () => {
+    const r = await atenderFala({ ...ctx, ia: null }, atorAdmin, "oi, tudo bem ?");
+    expect(r.intencao).toBe("conversa");
+    expect(r.fala).toMatch(/^(Bom dia|Boa tarde|Boa noite), Admin! Tudo certo por aqui/);
+    expect((await atenderFala({ ...ctx, ia: null }, atorAdmin, "valeu")).fala).toMatch(/^Por nada, Admin/);
+  });
+
   const intencao = (dados: object) =>
     new IaFalsa((p) => (p.sistema.includes("assistente de voz") ? { alvo: null, tipo: null, titulo: null, conteudo: null, fala: null, ...dados } : { resposta: "Realoque o motoboy [1].", suficiente: true }));
 

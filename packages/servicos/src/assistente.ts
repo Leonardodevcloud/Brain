@@ -1,5 +1,5 @@
 import { AppError, NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type RespostaAssistenteDTO, type TipoRegistro } from "@cerebro/core";
-import { registros } from "@cerebro/db";
+import { registros, usuarios } from "@cerebro/db";
 import {
   SISTEMA_ASSISTENTE,
   lerJson,
@@ -51,10 +51,29 @@ export function interpretarRapido(fala: string): IntencaoAssistente | null {
   if (planoRapido(t) && !/\b(como (funciona|fazer|tratamos|trata)|qual (o|a) (regra|politica|procedimento)|pop)\b/.test(t)) {
     return { intencao: "dados", ...vazio };
   }
-  if (/^(oi|ola|bom dia|boa tarde|boa noite|obrigad[oa]|valeu)( argos)?$/.test(t)) {
-    return { intencao: "conversa", ...vazio, fala: null };
-  }
+  if (ehConversa(t)) return { intencao: "conversa", ...vazio, fala: null };
   return null;
+}
+
+const CUMPRIMENTO = /^(oi|ola|opa|e ai|eai|hey|fala|bom dia|boa tarde|boa noite|salve)\b/;
+const PAPO = /\b(tudo (bem|bom|certo|tranquilo|joia|beleza)|como (vai|voce (esta|ta)|esta voce|ce ta)|beleza|blz|obrigad[oa]|valeu|brigad[oa]|quem e voce|o que voce (faz|sabe fazer|pode fazer)|voce me ouve|ta me ouvindo|teste|testando)\b/;
+/** Cumprimento ou papo curto, sem assunto da operação no meio. */
+function ehConversa(t: string) {
+  const palavras = t.split(" ").filter(Boolean);
+  if (palavras.length > 9) return false;
+  const resto = t.replace(CUMPRIMENTO, "").replace(PAPO, "").replace(/\b(argos|ai|ae|e|ce|voce|cara|meu|amigo|mano|por|ai)\b/g, "").trim();
+  return (CUMPRIMENTO.test(t) || PAPO.test(t)) && resto.split(" ").filter(Boolean).length <= 2;
+}
+
+/** Resposta de conversa sem IA: cumprimenta pelo nome e oferece ajuda. */
+function respostaConversa(t: string, saudar: string, nome: string | null) {
+  const quem = nome ? `, ${nome}` : "";
+  if (/obrigad|valeu|brigad/.test(t)) return `Por nada${quem}! Se precisar, é só chamar.`;
+  if (/quem e voce|o que voce/.test(t))
+    return `Sou o Argos, o assistente do Cérebro da Central Tutts. Respondo sobre processos e decisões, trago números da operação, como disponibilidade, entregas, faturamento e saques, abro registros e anoto ideias como rascunho.`;
+  if (/me ouve|me ouvindo|teste|testando/.test(t)) return `Estou te ouvindo bem${quem}. Pode perguntar.`;
+  const bem = /tudo (bem|bom|certo|tranquilo|joia|beleza)|como (vai|voce|esta|ce)|beleza|blz/.test(t) ? " Tudo certo por aqui, e com você?" : "";
+  return `${saudar}${quem}!${bem} Posso te dizer como está a disponibilidade, as entregas de hoje, o faturamento ou os saques, ou responder sobre algum processo.`;
 }
 
 function saudacao(agora: Date) {
@@ -182,10 +201,10 @@ export async function atenderFala(ctx: Contexto, ator: Ator, falaBruta: string):
     }
 
     case "conversa": {
-      resultado = {
-        ...base,
-        fala: i.fala?.trim() || `${saudacao(ctx.agora())}! Pode me perguntar sobre processos, clientes e decisões, ou pedir para eu abrir algo.`,
-      };
+      const usuario = ator.usuarioId ? await usuarios.buscarPorId(ctx.pool, ator.usuarioId).catch(() => null) : null;
+      const nome = usuario?.nome?.trim().split(/\s+/)[0] ?? null;
+      const t = sem(fala).replace(/[.,!?]/g, " ").replace(/\s+/g, " ").trim();
+      resultado = { ...base, fala: i.fala?.trim() || respostaConversa(t, saudacao(ctx.agora()), nome) };
       break;
     }
 
