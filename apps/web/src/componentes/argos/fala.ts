@@ -164,6 +164,8 @@ export function falar(texto: string, eventos: Eventos = {}, preparada?: VozPrepa
   });
 }
 
+const esperar = (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms));
+
 /** Pede para o servidor começar a gerar um trecho; devolve o id do áudio. */
 async function preparar(texto: string, sinal: AbortSignal): Promise<string> {
   try {
@@ -229,8 +231,11 @@ async function falarServidor(texto: string, eventos: Eventos, minha: number, pre
       t.onerror = () => falha(new Error("áudio inválido"));
     });
     terminou.catch(() => undefined);
+    t.preload = "auto";
     t.src = url;
-    await new Promise((ok) => fonte.addEventListener("sourceopen", ok, { once: true }));
+    const abriu = new Promise((ok) => fonte.addEventListener("sourceopen", ok, { once: true }));
+    await Promise.race([abriu, esperar(3000)]);
+    if (fonte.readyState !== "open") throw new Error("o fluxo não abriu");
     const buffer = fonte.addSourceBuffer("audio/mpeg");
     const anexar = (pedaco: Uint8Array) =>
       new Promise<void>((ok, falha) => {
@@ -239,22 +244,51 @@ async function falarServidor(texto: string, eventos: Eventos, minha: number, pre
         buffer.appendBuffer(pedaco as Uint8Array<ArrayBuffer>);
       });
     const leitor = resposta.body.getReader();
-    let primeiro = true;
-    for (;;) {
-      const { done, value } = await leitor.read();
-      if (minha !== sessao) return;
-      if (done) break;
-      if (!value?.byteLength) continue;
-      await anexar(value);
-      if (primeiro) {
-        primeiro = false;
-        await t.play();
-        comecar();
+    // O play() só termina quando há áudio suficiente: por isso NÃO esperamos por ele aqui —
+    // a leitura continua entregando pedaços enquanto o navegador junta o bastante para começar.
+    let tocando: Promise<void> | null = null;
+    let desistiu = false;
+    // Sem som em 6 s: desiste do fluxo (o trecho é baixado inteiro em seguida).
+    const vigia = window.setTimeout(() => {
+      if (comecou) return;
+      desistiu = true;
+      leitor.cancel().catch(() => undefined);
+    }, 6000);
+    try {
+      for (;;) {
+        const { done, value } = await leitor.read();
+        if (minha !== sessao) return;
+        if (done) break;
+        if (!value?.byteLength) continue;
+        await anexar(value);
+        tocando ??= t.play().then(comecar);
+        tocando.catch(() => undefined);
       }
+    } finally {
+      window.clearTimeout(vigia);
     }
     if (fonte.readyState === "open") fonte.endOfStream();
-    if (primeiro) return; // veio vazio: nada a tocar
-    await terminou;
+    if (desistiu) throw new Error("o fluxo não começou a tocar");
+    if (!tocando) return; // veio vazio: nada a tocar
+    await Promise.race([tocando, esperar(4000)]);
+    if (!comecou) throw new Error("o fluxo não começou a tocar");
+    // Se o "ended" não vier (alguns navegadores com MediaSource), sai quando o áudio parar no fim.
+    await Promise.race([
+      terminou,
+      new Promise<void>((ok) => {
+        let parado = 0;
+        const id = window.setInterval(() => {
+          if (minha !== sessao) return (window.clearInterval(id), ok());
+          const fim = t.buffered.length ? t.buffered.end(t.buffered.length - 1) : 0;
+          parado = t.currentTime >= fim - 0.15 ? parado + 1 : 0;
+          if (parado >= 6) {
+            window.clearInterval(id);
+            ok();
+          }
+        }, 250);
+        void terminou.finally(() => window.clearInterval(id));
+      }),
+    ]);
   };
 
   try {
