@@ -27,6 +27,7 @@ import { resumoInicio } from "./painel.js";
 import { criarReuniao } from "./agenda.js";
 import { criarTarefa, listarTarefas } from "./tarefas.js";
 import { criarRegistro } from "./registros.js";
+import { planoRapido } from "./central.js";
 
 /** Uma troca anterior da conversa, para o Argos entender "e em Salvador?". */
 export interface TurnoAnterior {
@@ -43,6 +44,8 @@ export interface RespostaAgente {
   rascunho: { id: string; codigo: string } | null;
   tarefa: { id: string; codigo: string } | null;
   passos: number;
+  /** Quanto cada etapa levou (ms). */
+  tempos: Record<string, number>;
   /** A fala é uma pergunta de volta: a interface já fica ouvindo a resposta. */
   confirmar: boolean;
 }
@@ -69,26 +72,53 @@ interface Resultado {
   ms: number;
 }
 
+// Perguntas de "como fazemos" vão para o conhecimento, não para a consulta pronta.
+const PERGUNTA_DE_PROCESSO = /\b(como (funciona|fazer|tratamos|trata|e o processo)|qual (o|a) (regra|politica|procedimento|processo)|pop|procedimento)\b/;
+
+/** A consulta pronta que quase certamente responde a pergunta ("como está a disponibilidade?"), para já ir buscando. */
+function preBuscaProvavel(pergunta: string) {
+  const t = pergunta.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (PERGUNTA_DE_PROCESSO.test(t)) return null;
+  const plano = planoRapido(pergunta);
+  return plano && consultaPronta(plano.ferramenta) ? plano : null;
+}
+
+async function rodarPronta(ctx: Contexto, nome: string, parametros: Record<string, unknown>): Promise<Omit<Resultado, "id">> {
+  const pronta = consultaPronta(nome);
+  if (!pronta) throw new Error(`Consulta pronta "${nome}" não existe. Use: ${CONSULTAS_PRONTAS.map((c) => c.nome).join(", ")}.`);
+  const x = await pronta.executar(ctx.central!, parametros);
+  return { titulo: x.titulo, origem: "pronta", sql: x.sql, colunas: x.colunas, linhas: x.linhas, cortado: x.cortado, totais: x.totais, tabelas: [], ms: x.ms };
+}
+
 const json = (v: unknown) => JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? Number(x) : x));
 
 /** Agente do Argos: entende a pergunta, consulta o que precisar (em etapas) e responde. */
 export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, historico: TurnoAnterior[] = []): Promise<RespostaAgente> {
   const ia = ctx.ia!;
-  const usuario = ator.usuarioId ? await usuarios.buscarPorId(ctx.pool, ator.usuarioId).catch(() => null) : null;
+  const inicio = Date.now();
+  const tempos: Record<string, number> = {};
+  const plano = ctx.central ? preBuscaProvavel(pergunta) : null;
+  const processo = PERGUNTA_DE_PROCESSO.test(pergunta.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+
+  // Tudo o que não depende da IA sai junto: quem pergunta, o catálogo e, se der para prever, os dados.
+  const [usuario, leitura, preBusca, preConhecimento] = await Promise.all([
+    ator.usuarioId ? usuarios.buscarPorId(ctx.pool, ator.usuarioId).catch(() => null) : null,
+    ctx.central ? carregarCatalogo(ctx.central).then((c) => ({ c, erro: null }), (erro: Error) => ({ c: [] as TabelaCatalogo[], erro })) : null,
+    plano ? rodarPronta(ctx, plano.ferramenta, plano.parametros).catch(() => null) : null,
+    // "Como fazemos X?": já procura nos POPs e regras (só conteúdo não restrito vai para a IA).
+    processo ? buscar(ctx, { pergunta, incluirRascunhos: false, incluirRestritos: false }).catch(() => null) : null,
+  ]);
+  tempos.preparo = Date.now() - inicio;
   const pessoa = usuario?.nome?.trim() || "um gestor da Central";
 
   let catalogo: TabelaCatalogo[] = [];
   let avisoCentral = "";
-  if (ctx.central) {
-    try {
-      catalogo = await carregarCatalogo(ctx.central);
-    } catch (erro) {
-      avisoCentral = "O banco da Central está fora do ar agora.";
-      ctx.log.warn({ erro: (erro as Error).message }, "catálogo da Central indisponível");
-    }
-  } else {
+  if (!ctx.central) {
     avisoCentral = "O banco da Central ainda não está ligado ao Argos (falta a ARGOS_DB_SENHA). Diga isso se a pergunta precisar de dados.";
-  }
+  } else if (leitura?.erro) {
+    avisoCentral = "O banco da Central está fora do ar agora.";
+    ctx.log.warn({ erro: leitura.erro.message }, "catálogo da Central indisponível");
+  } else catalogo = leitura?.c ?? [];
   const nomesTabelas = new Set(catalogo.map((t) => t.nome));
 
   const agora = ctx.agora();
@@ -128,11 +158,52 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
 
   const observar = (texto: string, nomes: string[] = []) => mensagens.push({ papel: "user", conteudo: esconder(texto, nomes) });
 
+  /** Guarda o resultado, registra na auditoria e mostra para a IA (com os nomes mascarados). */
+  const registrarResultado = async (r: Resultado, origem: string, extra = "") => {
+    resultados.push(r);
+    await auditar(ctx.pool, ator, "argos.consulta_central", undefined, { pergunta: pergunta.slice(0, 300), origem, linhas: r.linhas.length, ms: r.ms });
+    const amostra = r.linhas.slice(0, LINHAS_PARA_IA);
+    observar(
+      `Resultado ${r.id} — ${r.titulo}: ${r.linhas.length}${r.cortado ? "+ (cortado)" : ""} linhas, ${r.ms} ms.${extra}\n` +
+        (Object.keys(r.totais).length ? `Totais: ${json(r.totais)}\n` : "") +
+        `Colunas: ${r.colunas.join(", ")}\n` +
+        embrulharDados(json(amostra)) +
+        (r.linhas.length > LINHAS_PARA_IA ? `\n(mostrando ${LINHAS_PARA_IA} de ${r.linhas.length}; agregue no SQL se precisar do todo)` : ""),
+      nomesDePessoas(amostra, r.tabelas),
+    );
+  };
+
+  const mostrarConhecimento = (achados: Awaited<ReturnType<typeof buscar>>) => {
+    for (const f of achados.slice(0, 5)) if (!fontes.some((x) => x.registroId === f.registroId)) fontes.push({ ...f, indice: fontes.length + 1 });
+    observar(
+      achados.length
+        ? `Encontrado no Cérebro:\n${embrulharDados(achados.slice(0, 5).map((f) => `[${f.codigo}] ${f.titulo}\n${f.trecho}`).join("\n\n"))}`
+        : "Nada sobre isso na base de conhecimento do Cérebro.",
+    );
+  };
+
+  if (preConhecimento) {
+    mensagens.push({ papel: "assistant", conteudo: json({ acao: "conhecimento", busca: pergunta.slice(0, 200), pensamento: "procurar no Cérebro" }) });
+    mostrarConhecimento(preConhecimento);
+  }
+
+  // A consulta prevista já voltou: entra na conversa como se fosse a 1ª etapa, e a IA costuma responder de primeira.
+  if (plano && preBusca) {
+    mensagens.push({ papel: "assistant", conteudo: json({ acao: "pronta", nome: plano.ferramenta, parametros: plano.parametros, pensamento: "consulta pronta para essa pergunta" }) });
+    await registrarResultado(
+      { ...preBusca, id: "r1" },
+      `pronta:${plano.ferramenta}`,
+      " Se isso já responde, responda agora; se a pergunta pedir outro recorte, consulte de novo.",
+    );
+  }
+
   for (let passo = 1; passo <= MAX_PASSOS; passo++) {
     const ultimo = passo === MAX_PASSOS;
     if (ultimo) observar('Limite de etapas atingido. Responda agora com {"acao":"responder", ...} usando o que já tem.');
 
-    const bruto = await ia.gerar({ sistema, mensagens, json: true, temperatura: 0.1, maxTokens: 1800 });
+    const t = Date.now();
+    const bruto = await ia.gerar({ sistema, mensagens, json: true, temperatura: 0.1, maxTokens: 1200, raciocinio: ctx.ambiente.ARGOS_RACIOCINIO });
+    tempos[`ia${passo}`] = Date.now() - t;
     mensagens.push({ papel: "assistant", conteudo: bruto });
     let p: PassoAgente;
     try {
@@ -148,6 +219,8 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
       const escolhido =
         (final.mostrar && resultados.find((r) => r.id === final.mostrar)) || [...resultados].reverse().find((r) => r.linhas.length) || resultados.at(-1) || null;
       const confirmar = final.confirmar === true;
+      tempos.total = Date.now() - inicio;
+      ctx.log.info({ tempos, passos: passo }, "argos: respondeu");
       return {
         fala: (final.fala ?? "").trim() || "Pronto.",
         analise: confirmar ? null : final.analise?.trim() || null,
@@ -157,6 +230,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         rascunho,
         tarefa: tarefaCriada,
         passos: passo,
+        tempos,
         confirmar,
       };
     }
@@ -185,34 +259,18 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         }
         const id = `r${resultados.length + 1}`;
         try {
+          const t = Date.now();
           let r: Resultado;
           if (p.acao === "pronta") {
-            const pronta = consultaPronta(p.nome ?? "");
-            if (!pronta) throw new Error(`Consulta pronta "${p.nome}" não existe. Use: ${CONSULTAS_PRONTAS.map((c) => c.nome).join(", ")}.`);
-            const x = await pronta.executar(ctx.central, p.parametros ?? {});
-            r = { id, titulo: x.titulo, origem: "pronta", sql: x.sql, colunas: x.colunas, linhas: x.linhas, cortado: x.cortado, totais: x.totais, tabelas: [], ms: x.ms };
+            r = { ...(await rodarPronta(ctx, p.nome ?? "", p.parametros ?? {})), id };
           } else {
             const sql = validarSql(p.sql ?? "");
             const x = await consultar(ctx.central, sql, [], { limite: 200 });
             const tabelas = [...nomesTabelas].filter((t) => new RegExp(`\\b${t}\\b`, "i").test(sql));
             r = { id, titulo: p.titulo?.trim() || "Consulta à Central", origem: "livre", sql, colunas: x.colunas, linhas: x.linhas, cortado: x.cortado, totais: {}, tabelas, ms: x.ms };
           }
-          resultados.push(r);
-          await auditar(ctx.pool, ator, "argos.consulta_central", undefined, {
-            pergunta: pergunta.slice(0, 300),
-            origem: r.origem === "pronta" ? `pronta:${p.nome}` : "livre",
-            linhas: r.linhas.length,
-            ms: r.ms,
-          });
-          const amostra = r.linhas.slice(0, LINHAS_PARA_IA);
-          observar(
-            `Resultado ${id} — ${r.titulo}: ${r.linhas.length}${r.cortado ? "+ (cortado)" : ""} linhas, ${r.ms} ms.\n` +
-              (Object.keys(r.totais).length ? `Totais: ${json(r.totais)}\n` : "") +
-              `Colunas: ${r.colunas.join(", ")}\n` +
-              embrulharDados(json(amostra)) +
-              (r.linhas.length > LINHAS_PARA_IA ? `\n(mostrando ${LINHAS_PARA_IA} de ${r.linhas.length}; agregue no SQL se precisar do todo)` : ""),
-            nomesDePessoas(amostra, r.tabelas),
-          );
+          tempos[`banco${passo}`] = Date.now() - t;
+          await registrarResultado(r, r.origem === "pronta" ? `pronta:${p.nome}` : "livre");
         } catch (erro) {
           const msg = (erro as Error).message.slice(0, 500);
           ctx.log.warn({ erro: msg }, "argos: consulta falhou");
@@ -223,13 +281,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
 
       case "conhecimento": {
         // Só conteúdo não restrito vai para a IA externa.
-        const achados = await buscar(ctx, { pergunta: p.busca || pergunta, incluirRascunhos: false, incluirRestritos: false });
-        for (const f of achados.slice(0, 5)) if (!fontes.some((x) => x.registroId === f.registroId)) fontes.push({ ...f, indice: fontes.length + 1 });
-        observar(
-          achados.length
-            ? `Encontrado no Cérebro:\n${embrulharDados(achados.slice(0, 5).map((f) => `[${f.codigo}] ${f.titulo}\n${f.trecho}`).join("\n\n"))}`
-            : "Nada sobre isso na base de conhecimento do Cérebro.",
-        );
+        mostrarConhecimento(await buscar(ctx, { pergunta: p.busca || pergunta, incluirRascunhos: false, incluirRestritos: false }));
         break;
       }
 
@@ -329,7 +381,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, conhecimento, pendencias, tarefas, criar_tarefa, agendar_reuniao, rascunho ou responder.`);
     }
   }
-  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS, confirmar: false };
+  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS, tempos: { ...tempos, total: Date.now() - inicio }, confirmar: false };
 }
 
 /**

@@ -19,6 +19,8 @@ export {
   configVoz,
   salvarVoz,
   gerarFala,
+  prepararFala,
+  falaEmCurso,
   LIMITE_AUDIO_BYTES,
   type ConfigVoz,
 } from "./assistente.js";

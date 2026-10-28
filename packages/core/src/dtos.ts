@@ -154,6 +154,10 @@ export interface RespostaAssistenteDTO {
   dados?: DadosCentralDTO | null;
   /** O Argos fez uma pergunta de volta (não teve certeza): a interface já volta a ouvir. */
   aguardaResposta?: boolean;
+  /** O 1º trecho da fala, já sendo gerado no servidor: a interface toca direto de /argos/falar/:id. */
+  voz?: { id: string; texto: string } | null;
+  /** Quanto cada etapa levou (ms), para acompanhar a velocidade. */
+  tempos?: Record<string, number>;
 }
 
 /** Resultado de uma consulta do Argos ao banco da Central. */

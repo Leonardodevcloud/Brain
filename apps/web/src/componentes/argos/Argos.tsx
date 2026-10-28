@@ -18,7 +18,7 @@ type Modo = "segurando" | "continuo";
 
 // Segurar o espaço por mais que isso = "aperte e fale"; menos = toque, ouve até o silêncio.
 const LIMIAR_SEGURAR_MS = 320;
-const SILENCIO_FIM_MS = 1600;
+const SILENCIO_FIM_MS = 1000;
 const MAX_GRAVACAO_MS = 45_000;
 const SEM_FALA_MS = 7000;
 // No modo conversa, se a pessoa não disser nada depois da resposta, o Argos para de ouvir sem alarde.
@@ -131,7 +131,7 @@ export function Argos() {
       const historico = fio.historicoParaApi();
       const id = fio.adicionar(limparTranscricao(fala));
       try {
-        const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto: fala, historico } });
+        const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto: fala, historico, falar: !mudoRef.current } });
         if (minha !== geracao.current) {
           fio.remover(id);
           return;
@@ -165,7 +165,7 @@ export function Argos() {
           aoFim: () => {
             if (geracao.current === minha && faseRef.current === "falando") continuar();
           },
-        });
+        }, r.voz);
       } catch (e) {
         if (minha !== geracao.current) {
           fio.remover(id);

@@ -21,6 +21,8 @@ const esquemaAmbiente = z.object({
   IA_ANALISE_BASE_URL: z.preprocess(vazioParaUndefined, z.url().default("https://api.deepseek.com")),
   IA_ANALISE_CHAVE: opcional(z.string()),
   IA_ANALISE_MODELO: z.preprocess(vazioParaUndefined, z.string().default("deepseek-flash")),
+  // Raciocínio do modelo no Argos: "desligado" responde na hora; "baixo" pensa um pouco antes (mais lento).
+  ARGOS_RACIOCINIO: z.preprocess(vazioParaUndefined, z.enum(["desligado", "baixo", "alto"]).default("desligado")),
   // Provedor opcional para conteúdo restrito (mesmo modelo hospedado fora da China).
   IA_RESTRITO_BASE_URL: opcional(z.url()),
   IA_RESTRITO_CHAVE: opcional(z.string()),

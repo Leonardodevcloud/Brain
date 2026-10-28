@@ -126,6 +126,8 @@ export type VozFala = (typeof VOZES_FALA)[number];
 export interface ProvedorFala {
   readonly nome: string;
   falar(texto: string, opcoes: { voz: string; velocidade: number }): Promise<Uint8Array>;
+  /** O mesmo áudio, entregue em pedaços enquanto é gerado (começa a tocar antes de terminar). */
+  falarFluxo?(texto: string, opcoes: { voz: string; velocidade: number }): Promise<AsyncIterable<Uint8Array>>;
 }
 
 // Como a voz deve soar: o gpt-4o-mini-tts segue instruções de tom e ritmo.
@@ -143,6 +145,22 @@ export class FalaCompativelOpenAI implements ProvedorFala {
   }
 
   async falar(texto: string, opcoes: { voz: string; velocidade: number }): Promise<Uint8Array> {
+    const resposta = await this.pedir(texto, opcoes);
+    return new Uint8Array(await resposta.arrayBuffer());
+  }
+
+  async falarFluxo(texto: string, opcoes: { voz: string; velocidade: number }): Promise<AsyncIterable<Uint8Array>> {
+    const resposta = await this.pedir(texto, opcoes);
+    if (!resposta.body) {
+      const tudo = new Uint8Array(await resposta.arrayBuffer());
+      return (async function* () {
+        yield tudo;
+      })();
+    }
+    return resposta.body as unknown as AsyncIterable<Uint8Array>;
+  }
+
+  private async pedir(texto: string, opcoes: { voz: string; velocidade: number }) {
     const resposta = await fetch(`${this.cfg.baseUrl.replace(/\/$/, "")}/audio/speech`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${this.cfg.chave}` },
@@ -160,6 +178,6 @@ export class FalaCompativelOpenAI implements ProvedorFala {
       const corpo = await resposta.text().catch(() => "");
       throw new Error(`A voz falhou (${resposta.status}): ${corpo.slice(0, 300)}`);
     }
-    return new Uint8Array(await resposta.arrayBuffer());
+    return resposta;
   }
 }

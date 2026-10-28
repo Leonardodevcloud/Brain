@@ -18,6 +18,8 @@ import {
   configVoz,
   salvarVoz,
   gerarFala,
+  prepararFala,
+  falaEmCurso,
   montarMapa,
   painel,
   responder,
@@ -233,7 +235,7 @@ describe("registros", () => {
   });
 
   it("marca como 'revisar' o que venceu", async () => {
-    await pool.query(`UPDATE cerebro.registros SET revisar_em = current_date - 1 WHERE id = $1`, [popId]);
+    await pool.query(`UPDATE cerebro.registros SET revisar_em = current_date - 2 WHERE id = $1`, [popId]);
     const afetados = await conhecimento.marcarVencidos(ctx);
     expect(afetados.map((a) => a.id)).toContain(popId);
     const r = await conhecimento.confirmarRevisao(ctx, atorMembro, popId);
@@ -700,6 +702,33 @@ describe("Argos", () => {
     await expect(gerarFala({ ...ctx, fala: null }, "oi")).rejects.toMatchObject({ status: 503 });
   });
 
+  it("voz em fluxo: começa a gerar na hora, entrega os pedaços e guarda no cache", async () => {
+    let chamadas = 0;
+    const fala = {
+      nome: "falsa",
+      falar: async () => (chamadas++, new Uint8Array([9])),
+      falarFluxo: async () =>
+        (async function* () {
+          chamadas++;
+          yield new Uint8Array([1, 2]);
+          yield new Uint8Array([3]);
+        })(),
+    };
+    const c = { ...ctx, fala };
+    const id = await prepararFala(c, "Oi, tudo certo por aqui.");
+    await new Promise((r) => setTimeout(r, 20));
+    const f = falaEmCurso(id)!;
+    expect(f.terminou).toBe(true);
+    expect(f.pedacos.map((p) => [...p])).toEqual([[1, 2], [3]]);
+    expect([...(await gerarFala(c, "Oi, tudo certo por aqui."))]).toEqual([1, 2, 3]);
+    expect(chamadas).toBe(1);
+    expect(falaEmCurso("00000000-0000-4000-8000-000000000000")).toBeNull();
+    // Com "falar", a resposta já vem com o 1º trecho sendo gerado.
+    const r = await atenderFala({ ...c, ia: null }, atorAdmin, "obrigado, Argos", [], { falar: true });
+    expect(r.voz?.texto).toBe(r.fala); // frase curta: um trecho só
+    expect(falaEmCurso(r.voz!.id)).not.toBeNull();
+  });
+
   it("transcreve com o provedor de voz e recusa áudio vazio", async () => {
     const voz = { nome: "falsa", transcrever: async () => " abre o mapa " };
     expect(await transcreverFala({ ...ctx, voz }, new Uint8Array(5000), "audio/webm")).toBe("abre o mapa");
@@ -766,6 +795,22 @@ describe("Argos consultando a Central", () => {
   it("sem acesso configurado, explica o que falta", async () => {
     const r = await atenderFala({ ...ctx, ia: null, central: null }, atorAdmin, "como está a disponibilidade agora?");
     expect(r.fala).toMatch(/ARGOS_DB_SENHA/);
+  });
+
+  it("agente rápido: já traz a consulta pronta prevista e responde numa etapa só, sem raciocínio longo", async () => {
+    const ia = roteiro([
+      (p) => {
+        expect(ultimaMensagem(p)).toMatch(/Resultado r1 — /);
+        expect(ultimaMensagem(p)).not.toContain("Ana Souza");
+        return { acao: "responder", fala: "Agora são 2 motoboys em loja de 4.", destaques: [], mostrar: "r1" };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia, central: leitura }, atorAdmin, "como está a disponibilidade agora?");
+    expect(ia.pedidos).toHaveLength(1);
+    expect(ia.pedidos[0]!.raciocinio).toBe("desligado");
+    expect(r.dados?.origem).toBe("pronta");
+    expect(r.dados?.totais).toMatchObject({ titulares: 4, em_loja: 2 });
+    expect(r.tempos).toMatchObject({ total: expect.any(Number), ia1: expect.any(Number) });
   });
 
   it("agente: olha as colunas, escreve o SQL, corrige o erro e analisa sem ver nomes", async () => {

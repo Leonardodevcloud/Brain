@@ -1,4 +1,5 @@
-import { AppError, NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type RespostaAssistenteDTO, type TipoRegistro } from "@cerebro/core";
+import { randomUUID } from "node:crypto";
+import { AppError, NOME_TIPO, dividirFala, TIPOS_REGISTRO, esquemaCriarRegistro, type RespostaAssistenteDTO, type TipoRegistro } from "@cerebro/core";
 import { integracoes, registros, usuarios } from "@cerebro/db";
 import {
   SISTEMA_ASSISTENTE,
@@ -139,8 +140,26 @@ async function acharRegistro(ctx: Contexto, alvo: string) {
   return melhor ? { id: melhor.registroId, codigo: melhor.codigo, titulo: melhor.titulo } : null;
 }
 
-/** Recebe o que a pessoa falou, decide o que fazer, faz e devolve o que dizer. */
-export async function atenderFala(ctx: Contexto, ator: Ator, falaBruta: string, historico: TurnoAnterior[] = []): Promise<RespostaAssistenteDTO> {
+/**
+ * Recebe o que a pessoa falou, decide o que fazer, faz e devolve o que dizer.
+ * Com `falar`, o 1º trecho da voz já começa a ser gerado antes de a resposta sair daqui.
+ */
+export async function atenderFala(
+  ctx: Contexto,
+  ator: Ator,
+  falaBruta: string,
+  historico: TurnoAnterior[] = [],
+  opcoes: { falar?: boolean } = {},
+): Promise<RespostaAssistenteDTO> {
+  const r = await responderFala(ctx, ator, falaBruta, historico);
+  if (!opcoes.falar || !ctx.fala || !r.fala.trim()) return r;
+  const primeiro = dividirFala(r.fala)[0];
+  if (!primeiro) return r;
+  const id = await prepararFala(ctx, primeiro).catch(() => null);
+  return id ? { ...r, voz: { id, texto: primeiro } } : r;
+}
+
+async function responderFala(ctx: Contexto, ator: Ator, falaBruta: string, historico: TurnoAnterior[]): Promise<RespostaAssistenteDTO> {
   const fala = falaBruta.trim().slice(0, 1000);
   if (fala.length < 2) throw AppError.requisicaoInvalida("Não ouvi nada. Segure o espaço e fale de novo.");
 
@@ -301,7 +320,7 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
         : r.fontes.length
           ? "perguntar"
           : "conversa";
-  await auditar(ctx.pool, ator, "assistente.comando", undefined, { intencao, fala: fala.slice(0, 300), passos: r.passos });
+  await auditar(ctx.pool, ator, "assistente.comando", undefined, { intencao, fala: fala.slice(0, 300), passos: r.passos, ms: r.tempos.total });
   return {
     texto: fala,
     intencao,
@@ -311,6 +330,7 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
     acao,
     dados: r.dados,
     aguardaResposta: r.confirmar,
+    tempos: r.tempos,
   };
 }
 
@@ -338,13 +358,19 @@ export interface ConfigVoz {
 
 const VOZ_PADRAO = { voz: "marin", velocidade: 1.12 };
 const cacheFala = new Map<string, Uint8Array>();
+// A voz escolhida muda raramente: lida do banco no máximo a cada 30 s (e na hora, depois de salvar).
+const vozGuardada = new WeakMap<object, { em: number; cfg: ConfigVoz }>();
 
 /** A voz escolhida vale para todo mundo, em qualquer aparelho. */
 export async function configVoz(ctx: Contexto): Promise<ConfigVoz> {
+  const guardada = vozGuardada.get(ctx.pool);
+  if (guardada && Date.now() - guardada.em < 30_000 && guardada.cfg.disponivel === Boolean(ctx.fala)) return guardada.cfg;
   const salvo = await integracoes.obter(ctx.pool, "argos_voz");
   const voz = typeof salvo?.config.voz === "string" && (VOZES_FALA as readonly string[]).includes(salvo.config.voz) ? salvo.config.voz : VOZ_PADRAO.voz;
   const velocidade = typeof salvo?.config.velocidade === "number" ? salvo.config.velocidade : VOZ_PADRAO.velocidade;
-  return { disponivel: Boolean(ctx.fala), voz, velocidade, vozes: VOZES_FALA };
+  const cfg = { disponivel: Boolean(ctx.fala), voz, velocidade, vozes: VOZES_FALA };
+  vozGuardada.set(ctx.pool, { em: Date.now(), cfg });
+  return cfg;
 }
 
 export async function salvarVoz(ctx: Contexto, ator: Ator, entrada: { voz: string; velocidade: number }) {
@@ -352,27 +378,104 @@ export async function salvarVoz(ctx: Contexto, ator: Ator, entrada: { voz: strin
   const velocidade = Math.min(1.5, Math.max(0.8, Math.round(entrada.velocidade * 100) / 100));
   await integracoes.salvar(ctx.pool, "argos_voz", { config: { voz: entrada.voz, velocidade } });
   await auditar(ctx.pool, ator, "argos.voz", undefined, { voz: entrada.voz, velocidade });
+  vozGuardada.delete(ctx.pool);
   return configVoz(ctx);
 }
 
-/** Texto → MP3 com a voz configurada (ou outra, para ouvir antes de escolher). Frases repetidas saem do cache. */
-export async function gerarFala(ctx: Contexto, texto: string, teste?: { voz?: string; velocidade?: number }) {
+async function escolherVoz(ctx: Contexto, texto: string, teste?: { voz?: string; velocidade?: number }) {
   if (!ctx.fala) throw AppError.indisponivel("A voz do servidor não está ligada. Defina OPENAI_CHAVE no Railway.");
   const limpo = texto.replace(/\s+/g, " ").trim().slice(0, 1200);
   if (limpo.length < 1) throw AppError.requisicaoInvalida("Nada para falar.");
   const cfg = await configVoz(ctx);
   const voz = teste?.voz && (VOZES_FALA as readonly string[]).includes(teste.voz) ? teste.voz : cfg.voz;
   const velocidade = teste?.velocidade ? Math.min(1.5, Math.max(0.8, teste.velocidade)) : cfg.velocidade;
-  const chave = `${voz}|${velocidade}|${limpo}`;
+  return { limpo, voz, velocidade, chave: `${voz}|${velocidade}|${limpo}` };
+}
+
+function guardarNoCache(chave: string, audio: Uint8Array) {
+  cacheFala.set(chave, audio);
+  if (cacheFala.size > 80) cacheFala.delete(cacheFala.keys().next().value!);
+}
+
+/** Texto → MP3 com a voz configurada (ou outra, para ouvir antes de escolher). Frases repetidas saem do cache. */
+export async function gerarFala(ctx: Contexto, texto: string, teste?: { voz?: string; velocidade?: number }) {
+  const { limpo, voz, velocidade, chave } = await escolherVoz(ctx, texto, teste);
   const guardado = cacheFala.get(chave);
   if (guardado) return guardado;
   try {
-    const audio = await ctx.fala.falar(limpo, { voz, velocidade });
-    cacheFala.set(chave, audio);
-    if (cacheFala.size > 80) cacheFala.delete(cacheFala.keys().next().value!);
+    const audio = await ctx.fala!.falar(limpo, { voz, velocidade });
+    guardarNoCache(chave, audio);
     return audio;
   } catch (erro) {
     ctx.log.warn({ erro: (erro as Error).message }, "falha ao gerar a voz");
     throw AppError.indisponivel("Não consegui gerar a voz agora.");
   }
+}
+
+// ── Voz em fluxo: a geração começa já, e o navegador toca enquanto os pedaços chegam ──
+
+/** Um áudio sendo gerado: os pedaços que já chegaram e quem está esperando os próximos. */
+export interface FalaEmCurso {
+  pedacos: Uint8Array[];
+  terminou: boolean;
+  falhou: boolean;
+  criadaEm: number;
+  avisar: Set<() => void>;
+}
+
+const falasEmCurso = new Map<string, FalaEmCurso>();
+const VALIDADE_FALA_MS = 3 * 60_000;
+
+function limparFalasVelhas() {
+  const agora = Date.now();
+  for (const [id, f] of falasEmCurso) if (agora - f.criadaEm > VALIDADE_FALA_MS) falasEmCurso.delete(id);
+  while (falasEmCurso.size > 300) falasEmCurso.delete(falasEmCurso.keys().next().value!);
+}
+
+/**
+ * Começa a gerar a voz agora e devolve um identificador. O áudio é lido em GET /argos/falar/:id,
+ * que entrega os pedaços conforme chegam — a fala começa sem esperar o arquivo inteiro.
+ */
+export async function prepararFala(ctx: Contexto, texto: string, teste?: { voz?: string; velocidade?: number }): Promise<string> {
+  const { limpo, voz, velocidade, chave } = await escolherVoz(ctx, texto, teste);
+  limparFalasVelhas();
+  const id = randomUUID();
+  const f: FalaEmCurso = { pedacos: [], terminou: false, falhou: false, criadaEm: Date.now(), avisar: new Set() };
+  falasEmCurso.set(id, f);
+  const mudou = () => {
+    for (const fn of f.avisar) fn();
+  };
+  const guardado = cacheFala.get(chave);
+  if (guardado) {
+    f.pedacos.push(guardado);
+    f.terminou = true;
+    return id;
+  }
+  const fala = ctx.fala!;
+  void (async () => {
+    try {
+      if (fala.falarFluxo) {
+        for await (const pedaco of await fala.falarFluxo(limpo, { voz, velocidade })) {
+          f.pedacos.push(pedaco);
+          mudou();
+        }
+      } else f.pedacos.push(await fala.falar(limpo, { voz, velocidade }));
+      f.terminou = true;
+      const total = new Uint8Array(f.pedacos.reduce((n, p) => n + p.byteLength, 0));
+      let pos = 0;
+      for (const p of f.pedacos) total.set(p, (pos += p.byteLength) - p.byteLength);
+      guardarNoCache(chave, total);
+    } catch (erro) {
+      ctx.log.warn({ erro: (erro as Error).message }, "falha ao gerar a voz em fluxo");
+      f.falhou = true;
+      f.terminou = true;
+    }
+    mudou();
+  })();
+  return id;
+}
+
+/** A fala em andamento (ou já pronta) com esse id; `null` se não existe ou expirou. */
+export function falaEmCurso(id: string): FalaEmCurso | null {
+  return falasEmCurso.get(id) ?? null;
 }
