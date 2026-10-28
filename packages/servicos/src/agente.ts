@@ -9,7 +9,7 @@ import {
   validarSql,
   type TabelaCatalogo,
 } from "@cerebro/central";
-import { NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type DadosCentralDTO, type FonteDTO, type TipoRegistro } from "@cerebro/core";
+import { NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type DadosCentralDTO, type FonteDTO, type GraficoDTO, type TipoRegistro } from "@cerebro/core";
 import { registros, usuarios } from "@cerebro/db";
 import {
   SISTEMA_AGENTE,
@@ -224,7 +224,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
       return {
         fala: (final.fala ?? "").trim() || "Pronto.",
         analise: confirmar ? null : final.analise?.trim() || null,
-        dados: !confirmar && escolhido ? paraTela(escolhido, resultados, final) : null,
+        dados: !confirmar && escolhido ? paraTela(escolhido, resultados, final, pergunta) : null,
         fontes: confirmar ? [] : fontes,
         abrir: confirmar ? null : final.abrir?.trim() || null,
         rascunho,
@@ -405,7 +405,7 @@ function nomesDePessoas(linhas: Record<string, unknown>[], tabelas: string[]): s
   return [...nomes];
 }
 
-function paraTela(r: Resultado, todos: Resultado[], final: PassoAgente): DadosCentralDTO {
+function paraTela(r: Resultado, todos: Resultado[], final: PassoAgente, pergunta: string): DadosCentralDTO {
   const outras = todos.filter((x) => x !== r);
   return {
     titulo: r.titulo,
@@ -420,5 +420,26 @@ function paraTela(r: Resultado, todos: Resultado[], final: PassoAgente): DadosCe
     explicacao: todos.length > 1 ? `${todos.length} consultas para chegar na resposta.` : null,
     tabelas: [...new Set(todos.flatMap((x) => x.tabelas))],
     ms: todos.reduce((s, x) => s + x.ms, 0),
+    grafico: lerGrafico(final.grafico, r, pergunta),
   };
+}
+
+const PEDIU_GRAFICO = /gr[aá]fico|grafic|barras?|pizza|linha do tempo|evolu[cç][aã]o|tend[eê]ncia|compar/i;
+
+const ehNumero = (v: unknown) => v === null || typeof v === "number" || typeof v === "bigint" || (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v));
+
+/**
+ * O gráfico que a IA sugeriu, conferido contra o resultado: só colunas que existem,
+ * só números no eixo dos valores. Os valores desenhados são sempre as linhas da consulta.
+ */
+export function lerGrafico(g: PassoAgente["grafico"], r: Pick<Resultado, "colunas" | "linhas">, pergunta: string): GraficoDTO | null {
+  if (!g || typeof g !== "object" || !r.linhas.length) return null;
+  const tipo = g.tipo === "linha" || g.tipo === "barras" || g.tipo === "pizza" ? g.tipo : null;
+  if (!tipo || !g.x || !r.colunas.includes(g.x)) return null;
+  const amostra = r.linhas.slice(0, 20);
+  const pedidos = (Array.isArray(g.y) ? g.y : g.y ? [g.y] : []).filter((c): c is string => typeof c === "string");
+  const y = [...new Set(pedidos)].filter((c) => c !== g.x && r.colunas.includes(c) && amostra.every((l) => ehNumero(l[c]))).slice(0, tipo === "pizza" ? 1 : 3);
+  if (!y.length) return null;
+  if (tipo === "pizza" && r.linhas.length > 12) return null;
+  return { tipo, x: g.x, y, titulo: typeof g.titulo === "string" && g.titulo.trim() ? g.titulo.trim().slice(0, 120) : null, principal: PEDIU_GRAFICO.test(pergunta) };
 }

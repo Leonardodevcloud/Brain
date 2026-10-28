@@ -260,3 +260,44 @@
     padding: 14px;
   }
 }
+
+.acoesTabela {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.abas {
+  display: inline-flex;
+  margin-top: 6px;
+  padding: 2px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+.aba {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: #a8a29e;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.aba[aria-selected="true"] {
+  background: rgba(139, 92, 246, 0.35);
+  color: #fff;
+}
+.aba:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 1px;
+}
+.graficoJanela {
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}

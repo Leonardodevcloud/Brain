@@ -5,7 +5,7 @@ import { ErroApi } from "../api/cliente";
 import { Logo } from "../componentes/Logo";
 import { useSessao } from "../sessao/Sessao";
 import css from "./Entrar.module.css";
-import { RedeNeural } from "./entrar/RedeNeural";
+import { NebulosaEntrada } from "./entrar/NebulosaEntrada";
 
 function saudacao() {
   const h = new Date().getHours();
@@ -122,9 +122,9 @@ export function Entrar() {
         <p className={css.creditos}>© {new Date().getFullYear()} Central Tutts</p>
       </section>
 
-      {/* Painel da constelação. */}
+      {/* Painel da Nebulosa. */}
       <aside className={css.painel} aria-hidden="true">
-        <RedeNeural className={css.rede} />
+        <NebulosaEntrada className={css.rede} />
         <div className={css.frase}>
           <strong>O conhecimento da Tutts, conectado.</strong>
           <span>POPs, regras, dados da Central e o Argos, num só lugar.</span>

@@ -204,7 +204,7 @@ Se a conversa já trouxer um resultado ou trecho do Cérebro que responde a perg
 - {"acao":"criar_tarefa","titulo":"...","responsavel":"nome ou time ou null","prazo":"AAAA-MM-DD ou null","descricao":"...","registro":"código ou null"} → só quando a pessoa PEDIR para criar/anotar uma tarefa ou lembrete. Vale na hora.
 - {"acao":"agendar_reuniao","titulo":"...","inicio":"AAAA-MM-DDTHH:MM (horário da Bahia)","duracaoMin":60,"convidados":["nome ou e-mail"],"descricao":"pauta ou null","meet":true} → quando a pessoa pedir para MARCAR/AGENDAR uma reunião, call ou compromisso. Cria o evento no Google Agenda com link do Meet e convida quem tiver e-mail. Sem dia OU sem hora → pergunte antes (confirmar).
 - {"acao":"rascunho","tipo":"nota|pop|politica|decisao|cliente","titulo":"...","conteudo":"markdown"} → só quando a pessoa PEDIR para anotar/salvar algo. Vira rascunho para aprovação.
-- {"acao":"responder","fala":"...","analise":"markdown ou null","destaques":[{"rotulo":"...","valor":"..."}],"mostrar":"r2 ou null","abrir":"tela ou código ou null","confirmar":false} → resposta final.
+- {"acao":"responder","fala":"...","analise":"markdown ou null","destaques":[{"rotulo":"...","valor":"..."}],"mostrar":"r2 ou null","grafico":{"tipo":"linha|barras|pizza","x":"coluna","y":["coluna numérica"],"titulo":"..."} ou null,"abrir":"tela ou código ou null","confirmar":false} → resposta final.
 - {"acao":"responder","fala":"pergunta curta","confirmar":true} → quando você NÃO tem certeza do que a pessoa quis: devolva uma pergunta curta e nada mais.
 
 Na resposta final:
@@ -212,6 +212,7 @@ Na resposta final:
 - "analise": markdown curto (até 6 linhas) com o que importa e o porquê, só quando acrescentar algo à fala. Para conversa simples, null.
 - "destaques": até 4 números-chave para a tela (rótulos curtos). Vazio se não houver números.
 - "mostrar": o id do resultado (r1, r2…) cuja tabela deve aparecer na tela, ou null.
+- "grafico": como desenhar o resultado de "mostrar". Use quando a pessoa pedir gráfico/"mostra em barras"/"compara", ou quando o resultado for uma série de datas (linha) ou um ranking de até 15 itens (barras). "x" e "y" são nomes EXATOS de colunas do resultado; "y" só com colunas numéricas (até 3). Pizza só para partes de um todo, com até 8 fatias. Você não escreve números no gráfico: a tela usa as linhas da consulta. Se a pessoa pediu gráfico e o resultado não tem as colunas certas, consulte de novo agregando (ex.: GROUP BY dia). Sem dados tabulares, null.
 - "abrir": quando a pessoa pedir para abrir/ir para algo: "inicio", "perguntar", "biblioteca", "tarefas", "agenda", "email", "mapa", "revisar", "integracoes", "conta", um código de tarefa ("TAR-018"), um código de registro ("POP-001") ou "mapa:POP-001" para mostrar o registro no mapa. Senão null.
 
 Entender antes de responder (o mais importante):
@@ -259,6 +260,7 @@ export interface PassoAgente {
   fala?: string;
   analise?: string | null;
   destaques?: { rotulo: string; valor: string }[];
+  grafico?: { tipo?: string; x?: string; y?: string[] | string; titulo?: string | null } | null;
   mostrar?: string | null;
   abrir?: string | null;
   /** A resposta é uma pergunta de volta (a IA não teve certeza do pedido). */

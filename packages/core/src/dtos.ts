@@ -176,6 +176,20 @@ export interface DadosCentralDTO {
   explicacao: string | null;
   tabelas: string[];
   ms: number;
+  /** Como desenhar os dados (a IA escolhe o tipo e as colunas; os números são sempre os da consulta). */
+  grafico?: GraficoDTO | null;
+}
+
+export interface GraficoDTO {
+  /** linha = ao longo do tempo; barras = comparar; pizza = partes de um todo. */
+  tipo: "linha" | "barras" | "pizza";
+  /** Coluna das categorias ou datas. */
+  x: string;
+  /** Colunas numéricas (até 3; pizza usa só a primeira). */
+  y: string[];
+  titulo: string | null;
+  /** O gráfico abre primeiro (a pessoa pediu) ou fica como opção ao lado da tabela. */
+  principal: boolean;
 }
 
 /** Tarefa do Cérebro (o que ficou combinado em reuniões, registros e com o Argos). */

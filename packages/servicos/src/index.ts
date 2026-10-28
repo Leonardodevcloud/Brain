@@ -24,5 +24,5 @@ export {
   LIMITE_AUDIO_BYTES,
   type ConfigVoz,
 } from "./assistente.js";
-export { agenteArgos, type TurnoAnterior } from "./agente.js";
+export { agenteArgos, lerGrafico, type TurnoAnterior } from "./agente.js";
 export { consultarCentral, planoRapido } from "./central.js";

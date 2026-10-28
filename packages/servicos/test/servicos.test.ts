@@ -19,6 +19,7 @@ import {
   salvarVoz,
   gerarFala,
   prepararFala,
+  lerGrafico,
   falaEmCurso,
   montarMapa,
   painel,
@@ -727,6 +728,18 @@ describe("Argos", () => {
     const r = await atenderFala({ ...c, ia: null }, atorAdmin, "obrigado, Argos", [], { falar: true });
     expect(r.voz?.texto).toBe(r.fala); // frase curta: um trecho só
     expect(falaEmCurso(r.voz!.id)).not.toBeNull();
+  });
+
+  it("gráfico: confere colunas e números, e só abre primeiro quando a pessoa pede", () => {
+    const r = { colunas: ["dia", "faturamento", "regiao"], linhas: [{ dia: "2026-10-01", faturamento: "120.5", regiao: "Salvador" }, { dia: "2026-10-02", faturamento: 98, regiao: "Natal" }] };
+    expect(lerGrafico({ tipo: "linha", x: "dia", y: ["faturamento", "regiao", "nao_existe"] }, r, "faturamento em gráfico")).toEqual({
+      tipo: "linha", x: "dia", y: ["faturamento"], titulo: null, principal: true,
+    });
+    expect(lerGrafico({ tipo: "barras", x: "regiao", y: "faturamento", titulo: "Por região" }, r, "como foi o faturamento?")).toMatchObject({ y: ["faturamento"], principal: false, titulo: "Por região" });
+    expect(lerGrafico({ tipo: "linha", x: "dia", y: ["regiao"] }, r, "x")).toBeNull(); // texto não vira eixo de valores
+    expect(lerGrafico({ tipo: "radar", x: "dia", y: ["faturamento"] }, r, "x")).toBeNull();
+    expect(lerGrafico({ tipo: "linha", x: "inventada", y: ["faturamento"] }, r, "x")).toBeNull();
+    expect(lerGrafico(null, r, "x")).toBeNull();
   });
 
   it("transcreve com o provedor de voz e recusa áudio vazio", async () => {

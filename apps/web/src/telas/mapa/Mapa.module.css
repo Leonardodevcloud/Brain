@@ -815,3 +815,66 @@
     animation: none;
   }
 }
+
+/* ── Vista 3D (partículas) ── */
+.tela3d {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.rotulos3d {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.rotulos3d :global(.mapa3d-hub) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: 14px 0 0;
+  translate: -50% 0;
+  display: inline-flex;
+  gap: 6px;
+  font: 500 10.5px var(--fonte-mono, "Geist Mono Variable", ui-monospace, monospace);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #f1f5f9;
+  white-space: nowrap;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.9);
+  will-change: transform;
+  transition: opacity 200ms linear;
+}
+.rotulos3d :global(.mapa3d-hub) i {
+  font-style: normal;
+  color: var(--c);
+}
+.rotulos3d :global(.mapa3d-foco) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: 14px -50%;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(15, 14, 24, 0.9);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  color: #f1f5f9;
+  font-size: 13px;
+  line-height: 1.35;
+  will-change: transform;
+}
+.rotulos3d :global(.mapa3d-foco) b {
+  font: 500 11px var(--fonte-mono, "Geist Mono Variable", ui-monospace, monospace);
+  color: #c4b5fd;
+  letter-spacing: 0.04em;
+}
+.botaoVista {
+  font: 600 11px var(--fonte-mono, "Geist Mono Variable", ui-monospace, monospace);
+  letter-spacing: 0.08em;
+}

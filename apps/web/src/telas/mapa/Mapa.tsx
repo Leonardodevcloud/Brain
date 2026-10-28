@@ -44,6 +44,20 @@ import {
   type No,
 } from "./desenho";
 import css from "./Mapa.module.css";
+import { Mapa3D } from "./Mapa3D";
+import type { Cena3D } from "./cena3d";
+import { webglDisponivel } from "../../componentes/particulas/nebulosa";
+
+type Vista = "3d" | "plano";
+const CHAVE_VISTA = "cerebro.mapa.vista";
+function vistaInicial(): Vista {
+  if (!webglDisponivel()) return "plano";
+  try {
+    return localStorage.getItem(CHAVE_VISTA) === "plano" ? "plano" : "3d";
+  } catch {
+    return "3d";
+  }
+}
 
 const NOME_LIGACAO: Record<string, string> = {
   referencia: "Referencia",
@@ -106,6 +120,18 @@ export default function Mapa() {
   const movimentoReduzido = useMovimentoReduzido();
   const movimento = !movimentoReduzido;
   const grafo = useRef<ForceGraphMethods<No, Ligacao> | undefined>(undefined);
+  // Vista 3D (partículas) ou plana; a escolha fica lembrada neste navegador.
+  const [vista, setVista] = useState<Vista>(vistaInicial);
+  const cena3d = useRef<Cena3D | null>(null);
+  const em3d = vista === "3d";
+  const trocarVista = useCallback((v: Vista) => {
+    setVista(v);
+    try {
+      localStorage.setItem(CHAVE_VISTA, v);
+    } catch {
+      /* sem armazenamento: vale só agora */
+    }
+  }, []);
   const [moldura, tamanho] = useTamanho<HTMLDivElement>();
   const campoBusca = useRef<HTMLInputElement>(null);
 
@@ -269,6 +295,12 @@ export default function Mapa() {
 
   const irPara = useCallback(
     (id: string, zoom = 2.8) => {
+      if (em3d) {
+        if (!cacheNos.current.has(id)) return;
+        setSelecionado(id);
+        cena3d.current?.focar(id);
+        return;
+      }
       const no = cacheNos.current.get(id);
       if (!no || no.x === undefined || no.y === undefined) return;
       setSelecionado(id);
@@ -281,7 +313,7 @@ export default function Mapa() {
       grafo.current?.centerAt(no.x + dx, no.y + dy, movimento ? 700 : 0);
       grafo.current?.zoom(alvo, movimento ? 700 : 0);
     },
-    [movimento],
+    [movimento, em3d],
   );
 
   // Chegando com ?foco=<id> (ex.: "Argos, mostra no mapa a Rede Exemplo Norte").
@@ -300,9 +332,13 @@ export default function Mapa() {
   }, [focoUrl, visiveis, irPara, setParams, movimento]);
 
   const enquadrar = useCallback(
-    () => grafo.current?.zoomToFit(movimento ? 600 : 0, margemEnquadrar()),
-    [movimento],
+    () => (em3d ? cena3d.current?.enquadrar() : grafo.current?.zoomToFit(movimento ? 600 : 0, margemEnquadrar())),
+    [movimento, em3d],
   );
+  const aproximar = (fator: number) => {
+    if (em3d) cena3d.current?.zoom(fator);
+    else grafo.current?.zoom((grafo.current.zoom() ?? 1) * fator, 250);
+  };
   useAtalho(
     "/",
     useCallback(() => campoBusca.current?.focus(), []),
@@ -372,7 +408,32 @@ export default function Mapa() {
         aria-label="Mapa do conhecimento: registros ligados por área, cliente e assunto"
         role="img"
       >
-        {tamanho.largura > 0 && visiveis.nodes.length > 0 && (
+        {em3d && visiveis.nodes.length > 0 && (
+          <Mapa3D
+            nos={visiveis.nodes}
+            ligacoes={visiveis.links}
+            destaque={destaque}
+            principal={foco}
+            movimento={movimento}
+            deslocamento={
+              selecionado
+                ? ehCelular()
+                  ? { x: 0, y: Math.round(window.innerHeight * 0.22) }
+                  : { x: LARGURA_PAINEL / 2, y: 0 }
+                : { x: 0, y: 0 }
+            }
+            aoApontar={setApontado}
+            aoClicar={(id) => {
+              if (!id) setSelecionado(null);
+              else irPara(id);
+            }}
+            aoPronto={(c) => {
+              cena3d.current = c;
+            }}
+            aoFalhar={() => trocarVista("plano")}
+          />
+        )}
+        {!em3d && tamanho.largura > 0 && visiveis.nodes.length > 0 && (
           <ForceGraph2D<No, Ligacao>
             ref={grafo}
             width={tamanho.largura}
@@ -631,9 +692,7 @@ export default function Mapa() {
           className={css.botaoZoom}
           title="Aproximar"
           aria-label="Aproximar"
-          onClick={() =>
-            grafo.current?.zoom((grafo.current.zoom() ?? 1) * 1.4, 250)
-          }
+          onClick={() => aproximar(1.4)}
         >
           <Plus size={16} aria-hidden="true" />
         </button>
@@ -642,9 +701,7 @@ export default function Mapa() {
           className={css.botaoZoom}
           title="Afastar"
           aria-label="Afastar"
-          onClick={() =>
-            grafo.current?.zoom((grafo.current.zoom() ?? 1) / 1.4, 250)
-          }
+          onClick={() => aproximar(1 / 1.4)}
         >
           <Minus size={16} aria-hidden="true" />
         </button>
@@ -657,6 +714,22 @@ export default function Mapa() {
         >
           <Maximize2 size={15} aria-hidden="true" />
         </button>
+        {webglDisponivel() && (
+          <button
+            type="button"
+            className={`${css.botaoZoom} ${css.botaoVista}`}
+            title={em3d ? "Ver o mapa plano" : "Ver o mapa em 3D"}
+            aria-label={em3d ? "Ver o mapa plano" : "Ver o mapa em 3D"}
+            onClick={() => {
+              setSelecionado(null);
+              enquadrado.current = false;
+              assentou.current = false;
+              trocarVista(em3d ? "plano" : "3d");
+            }}
+          >
+            {em3d ? "2D" : "3D"}
+          </button>
+        )}
       </div>
 
       {/* ── Estados ── */}

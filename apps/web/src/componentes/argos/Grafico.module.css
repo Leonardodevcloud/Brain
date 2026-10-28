@@ -1,0 +1,145 @@
+.grafico {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 8px 8px;
+}
+.area {
+  position: relative;
+  width: 100%;
+}
+.area svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;
+}
+.grade {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+}
+.guia {
+  stroke: rgba(196, 181, 253, 0.4);
+  stroke-width: 1;
+}
+.eixo {
+  fill: #8a83a3;
+  font-size: 11px;
+  font-family: var(--fonte-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+.rotuloBarra {
+  fill: #c9c3dc;
+  font-size: 12.5px;
+}
+.valorBarra {
+  fill: #f5f3ff;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--fonte-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+.trilho {
+  fill: rgba(255, 255, 255, 0.04);
+}
+.barra {
+  animation: crescer 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+@keyframes crescer {
+  from {
+    transform: scaleX(0);
+  }
+}
+.dica {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 14px));
+  background: #241d3d;
+  border: 1px solid #3b3263;
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  color: #f5f3ff;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+.dica b {
+  font-size: 11px;
+  color: #a9a3bf;
+  font-weight: 500;
+}
+.dica span,
+.series li,
+.legenda li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dica i,
+.series i,
+.legenda i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.series {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: #c9c3dc;
+}
+.pizza {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+}
+.totalPizza {
+  fill: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.legenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: #c9c3dc;
+  min-width: 0;
+  flex: 1 1 160px;
+}
+.legenda span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.legenda b {
+  margin-left: auto;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .barra {
+    animation: none;
+  }
+}
