@@ -16,9 +16,11 @@ export interface EventosCena {
 
 const FRAG = /* glsl */ `varying vec3 vCor; varying float vAlfa;
 void main(){ vec2 c=gl_PointCoord-.5; float d=length(c);
-  float nucleo=smoothstep(.16,.0,d); float halo=pow(smoothstep(.5,.0,d),1.7);
-  float a=(nucleo+halo*.75)*vAlfa; if(a<.004) discard;
-  gl_FragColor=vec4(vCor*(nucleo*1.3+halo*.75),a); }`;
+  float nucleo=smoothstep(.14,.0,d); float halo=pow(smoothstep(.5,.0,d),1.8);
+  float a=(nucleo*.9+halo*.7)*vAlfa; if(a<.004) discard;
+  // Cor da área no halo; só o miolo puxa para o branco (sem estourar tudo em branco).
+  vec3 cor=mix(vCor,vec3(1.),nucleo*.45)*nucleo+vCor*halo*.65;
+  gl_FragColor=vec4(cor,a); }`;
 
 /** Número estável a partir de um texto: o mesmo registro cai sempre no mesmo lugar. */
 function semente(texto: string) {
@@ -227,7 +229,7 @@ export class Cena3D {
             void main(){ vec4 mv=modelViewMatrix*vec4(position,1.);
               float pisca=.85+.15*sin(uT*(1.5+aSem*2.)+aSem*30.);
               float apaga=aFoco<0. ? .18 : 1.;
-              vCor=aCor*(1.25+max(aFoco,0.)*.9); vAlfa=pisca*aAlfa*apaga;
+              vCor=min(aCor*(1.+max(aFoco,0.)*.5),vec3(1.)); vAlfa=pisca*aAlfa*apaga;
               gl_PointSize=(130.*aTam*(1.+max(aFoco,0.)*.9)+aSem*30.)*uPx/-mv.z; gl_Position=projectionMatrix*mv; }`,
           fragmentShader: FRAG,
           transparent: true,
@@ -345,7 +347,7 @@ export class Cena3D {
           void main(){ float t=fract(aOff+uT*aVel*(1.+max(aFoco,0.))); float u=1.-t;
             vec3 p=u*u*aP0+2.*u*t*aP1+t*t*aP2;
             vec4 mv=modelViewMatrix*vec4(p,1.);
-            vCor=aCor*(1.4+max(aFoco,0.)); vAlfa=sin(t*3.14159)*(aFoco<0. ? .1 : 1.);
+            vCor=min(aCor*(1.1+max(aFoco,0.)*.4),vec3(1.)); vAlfa=sin(t*3.14159)*(aFoco<0. ? .1 : 1.);
             gl_PointSize=(80.+max(aFoco,0.)*50.)*uPx/-mv.z; gl_Position=projectionMatrix*mv; }`,
         fragmentShader: FRAG,
         transparent: true,
