@@ -72,6 +72,10 @@ export class Cena3D {
   private alvo: Tres.Vector3;
   private destino: { alvo: Tres.Vector3; distancia: number } | null = null;
   private parado = 10;
+  /** Gira sozinho só na visão geral, até a pessoa mexer (depois fica onde ela deixou). */
+  private girarSozinho = true;
+  private modoArraste: "girar" | "mover" = "girar";
+  private meioToques: { x: number; y: number } | null = null;
   private arraste: { x: number; y: number; moveu: number } | null = null;
   private toques = new Map<number, { x: number; y: number }>();
   private pinca: number | null = null;
@@ -410,6 +414,7 @@ export class Cena3D {
     if (!nc) return;
     this.destino = { alvo: nc.pos.clone(), distancia: perto ? (nc.no.categoria === "area" ? 8 : 5.5) : this.distancia };
     this.parado = 0;
+    this.girarSozinho = false;
   }
 
   enquadrar() {
@@ -422,11 +427,37 @@ export class Cena3D {
     const fov = (this.camera.fov * Math.PI) / 180;
     const aspecto = Math.max(0.5, Math.min(1, this.camera.aspect));
     this.destino = { alvo: centro, distancia: (raio + 1.5) / Math.tan(fov / 2) / aspecto };
+    this.girarSozinho = true;
   }
 
-  zoom(fator: number) {
-    this.destino = { alvo: (this.destino?.alvo ?? this.alvo).clone(), distancia: Math.max(3, Math.min(80, (this.destino?.distancia ?? this.distancia) / fator)) };
+  /**
+   * Aproxima (fator > 1) ou afasta. Com um ponto da tela, aproxima EM DIREÇÃO a ele
+   * (como num mapa): o que está sob o mouse continua sob o mouse, e vira o novo centro do giro.
+   */
+  zoom(fator: number, naTela?: { x: number; y: number }) {
+    const base = (this.destino?.alvo ?? this.alvo).clone();
+    const dist = this.destino?.distancia ?? this.distancia;
+    const nova = Math.max(2.5, Math.min(80, dist / fator));
+    if (naTela) {
+      const p = this.pontoNaTela(naTela.x, naTela.y);
+      if (p) base.add(p.sub(base).multiplyScalar(1 - nova / dist));
+    }
+    this.destino = { alvo: base, distancia: nova };
     this.parado = 0;
+    this.girarSozinho = false;
+  }
+
+  /** Arrasta a vista sem girar (botão direito, Shift ou dois dedos). */
+  mover(dx: number, dy: number) {
+    const h = this.canvas.clientHeight || 1;
+    const porPixel = (2 * this.distancia * Math.tan((this.camera.fov * Math.PI) / 360)) / h;
+    const direita = new this.THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const cima = new this.THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    const delta = direita.multiplyScalar(-dx * porPixel).add(cima.multiplyScalar(dy * porPixel));
+    this.alvo.add(delta);
+    this.destino?.alvo.add(delta);
+    this.parado = 0;
+    this.girarSozinho = false;
   }
 
   /** Desloca o centro da vista em pixels (abrir espaço para o painel ou a folha do celular). */
@@ -512,7 +543,24 @@ export class Cena3D {
     return melhor;
   }
 
-  private local(e: PointerEvent | WheelEvent) {
+  /** Onde o ponto da tela cai no plano que passa pelo centro atual da vista (de frente para a câmera). */
+  private pontoNaTela(x: number, y: number): Tres.Vector3 | null {
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (!w || !h) return null;
+    const T = this.THREE;
+    const longe = new T.Vector3((x / w) * 2 - 1, -(y / h) * 2 + 1, 0.5).unproject(this.camera);
+    const origem = this.camera.position.clone();
+    const dir = longe.sub(origem).normalize();
+    const frente = new T.Vector3();
+    this.camera.getWorldDirection(frente);
+    const den = dir.dot(frente);
+    if (Math.abs(den) < 1e-4) return null;
+    const t = this.alvo.clone().sub(origem).dot(frente) / den;
+    return t > 0 ? origem.add(dir.multiplyScalar(t)) : null;
+  }
+
+  private local(e: PointerEvent | WheelEvent | MouseEvent) {
     const r = this.canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
@@ -520,26 +568,41 @@ export class Cena3D {
   private aoBaixar = (e: PointerEvent) => {
     this.canvas.setPointerCapture(e.pointerId);
     this.toques.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (this.toques.size === 1) this.arraste = { x: e.clientX, y: e.clientY, moveu: 0 };
-    else this.arraste = null;
+    if (this.toques.size === 1) {
+      this.arraste = { x: e.clientX, y: e.clientY, moveu: 0 };
+      this.modoArraste = e.button === 1 || e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey ? "mover" : "girar";
+      this.canvas.style.cursor = this.modoArraste === "mover" ? "move" : "grabbing";
+    } else {
+      this.arraste = null;
+      this.meioToques = null;
+    }
     this.parado = 0;
   };
 
   private aoMover = (e: PointerEvent) => {
     if (this.toques.has(e.pointerId)) this.toques.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.toques.size === 2) {
+      // Dois dedos: pinça aproxima onde os dedos estão, e arrastar os dois move a vista.
       const [a, b] = [...this.toques.values()];
       const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-      if (this.pinca) this.zoom(d / this.pinca);
+      const r = this.canvas.getBoundingClientRect();
+      const meio = { x: (a!.x + b!.x) / 2 - r.left, y: (a!.y + b!.y) / 2 - r.top };
+      if (this.meioToques) this.mover(meio.x - this.meioToques.x, meio.y - this.meioToques.y);
+      if (this.pinca) this.zoom(d / this.pinca, meio);
       this.pinca = d;
+      this.meioToques = meio;
       return;
     }
     if (this.arraste) {
       const dx = e.clientX - this.arraste.x;
       const dy = e.clientY - this.arraste.y;
       this.arraste.moveu += Math.abs(dx) + Math.abs(dy);
-      this.yaw -= dx * 0.006;
-      this.pitch = Math.max(-1.25, Math.min(1.25, this.pitch + dy * 0.005));
+      this.girarSozinho = false;
+      if (this.modoArraste === "mover") this.mover(dx, dy);
+      else {
+        this.yaw -= dx * 0.006;
+        this.pitch = Math.max(-1.25, Math.min(1.25, this.pitch + dy * 0.005));
+      }
       this.arraste.x = e.clientX;
       this.arraste.y = e.clientY;
       this.parado = 0;
@@ -559,7 +622,11 @@ export class Cena3D {
   private aoSoltar = (e: PointerEvent) => {
     const clique = this.arraste && this.arraste.moveu < 6 && this.toques.size === 1;
     this.toques.delete(e.pointerId);
-    if (this.toques.size < 2) this.pinca = null;
+    if (this.toques.size < 2) {
+      this.pinca = null;
+      this.meioToques = null;
+    }
+    this.canvas.style.cursor = this.apontado ? "pointer" : "grab";
     if (clique) {
       const { x, y } = this.local(e);
       this.eventos.clicou(this.noEm(x, y));
@@ -576,8 +643,20 @@ export class Cena3D {
 
   private aoRolar = (e: WheelEvent) => {
     e.preventDefault();
-    this.zoom(e.deltaY > 0 ? 1 / 1.12 : 1.12);
+    // Trackpad manda passos pequenos; a roda do mouse, grandes. O zoom acompanha os dois.
+    const passo = Math.max(-1, Math.min(1, -e.deltaY / (e.deltaMode === 1 ? 3 : 100)));
+    this.zoom(Math.pow(1.18, passo), this.local(e));
   };
+
+  /** Duplo clique: abre o registro sob o mouse, ou aproxima ali. */
+  private aoDuploClique = (e: MouseEvent) => {
+    const { x, y } = this.local(e);
+    const id = this.noEm(x, y);
+    if (id) this.eventos.clicou(id);
+    else this.zoom(2, { x, y });
+  };
+
+  private semMenu = (e: Event) => e.preventDefault();
 
   private ligarControles() {
     const c = this.canvas;
@@ -589,6 +668,8 @@ export class Cena3D {
     c.addEventListener("pointercancel", this.aoSoltar);
     c.addEventListener("pointerleave", this.aoSair);
     c.addEventListener("wheel", this.aoRolar, { passive: false });
+    c.addEventListener("dblclick", this.aoDuploClique);
+    c.addEventListener("contextmenu", this.semMenu);
   }
 
   private desligarControles() {
@@ -599,6 +680,8 @@ export class Cena3D {
     c.removeEventListener("pointercancel", this.aoSoltar);
     c.removeEventListener("pointerleave", this.aoSair);
     c.removeEventListener("wheel", this.aoRolar);
+    c.removeEventListener("dblclick", this.aoDuploClique);
+    c.removeEventListener("contextmenu", this.semMenu);
   }
 
   private animar = (agora: number) => {
@@ -609,7 +692,7 @@ export class Cena3D {
     this.parado += dt;
     if (this.movimento) this.uniforms.uT.value += dt;
     // Gira devagar sozinho quando ninguém mexe.
-    if (this.movimento && !this.arraste && this.parado > 2.5 && !this.destino) this.yaw += dt * 0.05;
+    if (this.movimento && this.girarSozinho && !this.arraste && this.parado > 2.5 && !this.destino) this.yaw += dt * 0.05;
     if (this.destino) {
       const k = this.movimento ? Math.min(1, dt * 3.2) : 1;
       this.alvo.lerp(this.destino.alvo, k);

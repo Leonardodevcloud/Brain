@@ -681,6 +681,14 @@ export default function Mapa() {
         </div>
       )}
 
+      {em3d && visiveis.nodes.length > 0 && !noSelecionado && (
+        <p className={css.dica3d} aria-hidden="true">
+          {ehCelular()
+            ? "Um dedo gira · dois dedos movem e aproximam · toque abre"
+            : "Arraste gira · botão direito ou Shift move · roda aproxima onde está o mouse · duplo clique abre"}
+        </p>
+      )}
+
       {/* ── Zoom ── */}
       <div
         className={`${css.zoom} ${noSelecionado ? css.zoomComPainel : ""}`}
