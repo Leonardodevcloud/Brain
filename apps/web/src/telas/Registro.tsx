@@ -303,7 +303,8 @@ export default function Registro() {
                     acao.mutate(
                       { id: r.id, acao: "revisado" },
                       {
-                        onSuccess: (novo) => avisar(`Confirmado. Próxima revisão em ${dataCurta(novo.revisarEm)}.`),
+                        onSuccess: (novo) =>
+                          avisar(novo?.revisarEm ? `Confirmado. Próxima revisão em ${dataCurta(novo.revisarEm)}.` : "Confirmado: segue válido."),
                         onError: (erro) => avisar(textoDoErro(erro), "erro"),
                       },
                     )

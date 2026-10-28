@@ -242,6 +242,12 @@ describe("registros", () => {
     const r = await conhecimento.confirmarRevisao(ctx, atorMembro, popId);
     expect(r.status).toBe("vigente");
   });
+
+  it("confirmar antes do vencimento empurra a data a partir do vencimento atual", async () => {
+    await pool.query(`UPDATE cerebro.registros SET revisar_em = '2099-01-10', status = 'vigente' WHERE id = $1`, [popId]);
+    const r = await conhecimento.confirmarRevisao(ctx, atorMembro, popId);
+    expect(r.revisarEm).toBe("2099-04-10"); // POP: 90 dias depois do vencimento, não de hoje
+  });
 });
 
 describe("busca e resposta", () => {
