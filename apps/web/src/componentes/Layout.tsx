@@ -162,6 +162,8 @@ function Gaveta({ aberta, fechar, contagens }: { aberta: boolean; fechar: () => 
 const NA_GAVETA = GAVETA.map((g) => g.para);
 
 export function Layout() {
+  // A tela Perguntar ocupa a altura toda (é um app de conversa, não uma página que rola).
+  const cheia = useLocation().pathname.startsWith("/perguntar");
   const usuario = useUsuario();
   const { sair } = useSessao();
   const local = useLocation();
@@ -228,7 +230,7 @@ export function Layout() {
         </button>
       </header>
 
-      <main id="conteudo" className={css.principal} tabIndex={-1}>
+      <main id="conteudo" className={`${css.principal} ${cheia ? css.principalCheio : ""}`} tabIndex={-1}>
         <Outlet />
       </main>
 

@@ -1,18 +1,17 @@
 import type { RespostaAssistenteDTO } from "@cerebro/core/publico";
-import { ArrowRight, ChevronDown, Keyboard, Maximize2, Mic, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Keyboard, Maximize2, Mic, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ErroApi, api } from "../../api/cliente";
 import { desbloquearFala, falar, nivelFala, pararFala } from "./fala";
 import { Escuta, Gravador } from "./gravador";
-import { DadosCentral } from "./DadosCentral";
-import { anexo, conversa as fio, memorizarDepois, useConversa, type TurnoConversa } from "./conversa";
-import { BotaoAnexar, ChipAnexo, MemoriaDaResposta } from "./Memoria";
+import { anexo, conversa as fio, memorizarDepois, useConversa } from "./conversa";
+import { controleArgos, publicarEstadoArgos } from "./estado";
+import { BotaoAnexar, ChipAnexo } from "./Memoria";
+import { TurnoArgos } from "./TurnoArgos";
 import { Orbe, type EstadoOrbe } from "./Orbe";
 import css from "./Argos.module.css";
-
-const Conteudo = lazy(() => import("../Conteudo").then((m) => ({ default: m.Conteudo })));
 
 type Fase = "fechado" | "ouvindo" | "transcrevendo" | "pensando" | "falando" | "pronto" | "erro";
 type Modo = "segurando" | "continuo";
@@ -67,6 +66,9 @@ const ALUCINACAO = /^(obrigad[oa]( por assistir)?|tchau|legendas?\b.*|inscreva-s
 
 export function Argos() {
   const navegar = useNavigate();
+  // Na tela Perguntar o Argos fica embutido: o motor de voz é este, mas quem desenha é a página.
+  const { pathname } = useLocation();
+  const embutido = pathname.startsWith("/perguntar");
   const qc = useQueryClient();
   const [fase, setFase] = useState<Fase>("fechado");
   const [modo, setModo] = useState<Modo>("segurando");
@@ -413,10 +415,36 @@ export function Argos() {
     void processar(t);
   }
 
+  // Estado e controles públicos, para a tela Perguntar usar o mesmo motor.
+  useEffect(() => {
+    publicarEstadoArgos({ fase, segundos, erro: erro?.mensagem ?? null, mudo, conversa });
+  }, [fase, segundos, erro, mudo, conversa]);
+  const alternarMudoRef = useRef(alternarMudo);
+  alternarMudoRef.current = alternarMudo;
+  useEffect(() => {
+    controleArgos.nivel = nivel;
+    controleArgos.falarOuEnviar = () => {
+      const f = faseRef.current;
+      if (f === "ouvindo") void enviar();
+      else if (f === "fechado" || f === "pronto" || f === "erro" || f === "falando") {
+        if (!mudoRef.current) desbloquearFala();
+        void ouvir("continuo");
+      }
+    };
+    controleArgos.cancelar = fechar;
+    controleArgos.alternarMudo = () => alternarMudoRef.current();
+  }, [nivel, enviar, ouvir, fechar]);
+  // Saindo da tela Perguntar com uma resposta na tela: o painel não abre sozinho na próxima tela.
+  useEffect(() => {
+    if (!embutido && (faseRef.current === "pronto" || faseRef.current === "erro")) setFase("fechado");
+  }, [embutido]);
+
   const aberto = fase !== "fechado";
   const temTurnos = turnos.length > 0;
   const temDados = turnos.some((t) => t.resposta?.dados);
   const podeDigitar = fase === "pronto" || fase === "erro";
+
+  if (embutido) return null;
 
   return (
     <>
@@ -595,63 +623,5 @@ export function Argos() {
         </div>
       )}
     </>
-  );
-}
-
-/** Uma troca da conversa: o que a pessoa disse e a resposta do Argos (com dados, fontes e ação). */
-function TurnoArgos({ t, irPara, fechar }: { t: TurnoConversa; irPara: (destino: string) => void; fechar: () => void }) {
-  const [completo, setCompleto] = useState(false);
-  const r = t.resposta;
-  return (
-    <article className={css.turno}>
-      <p className={css.bolhaVoce}>{t.pergunta}</p>
-      {!r && !t.erro && (
-        <p className={css.statusFio}>
-          Pensando e consultando os dados<span className={css.reticencias} aria-hidden="true" />
-        </p>
-      )}
-      {t.erro && <p className={css.erro}>{t.erro}</p>}
-      {r && (
-        <div className={css.bolhaArgos}>
-          <p className={css.falaTurno}>{r.fala}</p>
-          {r.dados && <DadosCentral dados={r.dados} compacto />}
-          <MemoriaDaResposta t={t} aoAbrir={fechar} />
-          {r.fontes.length > 0 && (
-            <div className={css.fontesTurno}>
-              {r.fontes.slice(0, 4).map((f) => (
-                <Link key={f.registroId} to={`/registros/${f.codigo}`} className={css.fonte} onClick={fechar}>
-                  <span className={css.fonteCodigo}>{f.codigo}</span> {f.titulo}
-                </Link>
-              ))}
-            </div>
-          )}
-          {r.detalhe && (
-            <>
-              <button type="button" className={css.verMais} onClick={() => setCompleto((v) => !v)} aria-expanded={completo}>
-                {completo ? "Esconder resposta completa" : "Ver resposta completa"}
-                <ChevronDown size={14} aria-hidden="true" style={{ transform: completo ? "rotate(180deg)" : undefined }} />
-              </button>
-              {completo && (
-                <div className={css.completo}>
-                  <Suspense fallback={null}>
-                    <Conteudo
-                      texto={r.detalhe.replace(/\[(\d+)\]/g, (marca, n: string) => {
-                        const f = r.fontes.find((x) => x.indice === Number(n));
-                        return f ? `[[${n}]](/registros/${f.codigo})` : marca;
-                      })}
-                    />
-                  </Suspense>
-                </div>
-              )}
-            </>
-          )}
-          {r.acao && !r.acao.automatica && (
-            <button type="button" className={`botao botao-primario botao-pequeno ${css.acaoTurno}`} onClick={() => irPara(r.acao!.destino)}>
-              {r.acao.rotulo} <ArrowRight size={14} aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      )}
-    </article>
   );
 }

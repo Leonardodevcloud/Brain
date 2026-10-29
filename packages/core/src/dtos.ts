@@ -298,3 +298,23 @@ export interface CaixaEmailDTO {
   pendentes: number;
   emails: EmailDTO[];
 }
+
+/** Uma troca guardada numa conversa (o que a tela mostra). */
+export interface TurnoSalvoDTO {
+  pergunta: string;
+  resposta: RespostaAssistenteDTO | null;
+  erro: string | null;
+  em: number;
+  guardadas?: MemoriaGuardadaDTO[];
+}
+
+export interface ResumoConversaDTO {
+  id: string;
+  titulo: string;
+  trocas: number;
+  atualizadoEm: string;
+}
+
+export interface ConversaDTO extends ResumoConversaDTO {
+  turnos: TurnoSalvoDTO[];
+}

@@ -1,11 +1,12 @@
-import type { AnexoDTO, DadosCentralDTO, MemoriaGuardadaDTO, RespostaAssistenteDTO } from "@cerebro/core/publico";
+import type { AnexoDTO, ConversaDTO, DadosCentralDTO, MemoriaGuardadaDTO, RespostaAssistenteDTO, ResumoConversaDTO } from "@cerebro/core/publico";
 import { useSyncExternalStore } from "react";
 import { api } from "../../api/cliente";
 
 /**
  * A conversa com o Argos, compartilhada entre o painel de voz e a tela Perguntar.
- * Fica guardada nesta aba do navegador (some ao fechar a aba) e é o que dá contexto
- * para perguntas de continuação: "e ontem?", "e o pior motoboy?", "manda isso pro Marcos".
+ * Fica nesta aba do navegador (para continuar de onde parou) e é gravada no servidor
+ * depois de cada troca, para aparecer na lista "Conversas" em qualquer aparelho.
+ * É o que dá contexto para perguntas de continuação: "e ontem?", "e o pior motoboy?".
  */
 export interface TurnoConversa {
   id: number;
@@ -20,12 +21,21 @@ export interface TurnoConversa {
 }
 
 const CHAVE = "cerebro:conversa";
-const MAX_TURNOS = 30;
+const CHAVE_ID = "cerebro:conversa-id";
+const MAX_TURNOS = 60;
 /** Depois de 30 minutos parado, o histórico deixa de ir para o Argos (a tela continua mostrando). */
 const VALIDADE_CONTEXTO_MS = 30 * 60_000;
 
 let turnos: TurnoConversa[] = carregar();
 const ouvintes = new Set<() => void>();
+const novoId = () => (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (Number(c) ^ (Math.random() * 16) >> (Number(c) / 4)).toString(16)));
+let idAtual: string = (() => {
+  try {
+    return sessionStorage.getItem(CHAVE_ID) || novoId();
+  } catch {
+    return novoId();
+  }
+})();
 
 function carregar(): TurnoConversa[] {
   try {
@@ -40,14 +50,34 @@ function carregar(): TurnoConversa[] {
 function salvar() {
   try {
     sessionStorage.setItem(CHAVE, JSON.stringify(turnos.filter((t) => t.resposta || t.erro).slice(-MAX_TURNOS)));
+    sessionStorage.setItem(CHAVE_ID, idAtual);
   } catch {
     /* sem armazenamento: a conversa fica só na memória */
   }
 }
 
-function mudar(nova: TurnoConversa[]) {
+// Grava no servidor pouco depois da última mudança (várias mudanças seguidas = uma gravação).
+let gravacao: number | undefined;
+function agendarGravacao() {
+  window.clearTimeout(gravacao);
+  const id = idAtual;
+  gravacao = window.setTimeout(() => {
+    const prontos = turnos.filter((t) => t.resposta || t.erro);
+    if (!prontos.length || id !== idAtual) return;
+    void api<ResumoConversaDTO>(`/conversas/${id}`, {
+      metodo: "PUT",
+      corpo: { turnos: prontos.map((t) => ({ pergunta: t.pergunta, resposta: t.resposta, erro: t.erro, em: t.em, guardadas: t.guardadas })) },
+    }).then(
+      () => window.dispatchEvent(new Event("conversas:mudou")),
+      () => undefined, // sem servidor agora: fica na aba e grava na próxima troca
+    );
+  }, 700);
+}
+
+function mudar(nova: TurnoConversa[], gravar = true) {
   turnos = nova.slice(-MAX_TURNOS);
   salvar();
+  if (gravar) agendarGravacao();
   for (const fn of ouvintes) fn();
 }
 
@@ -94,9 +124,33 @@ export const conversa = {
     mudar(turnos.filter((t) => t.id !== id));
   },
 
+  /** Nova conversa: a atual continua salva na lista. */
   limpar() {
-    mudar([]);
+    window.clearTimeout(gravacao);
+    idAtual = novoId();
+    mudar([], false);
     anexo.definir(null);
+  },
+
+  idAtual: () => idAtual,
+
+  /** Abre uma conversa salva (da lista) e continua nela. */
+  async abrir(id: string) {
+    const c = await api<ConversaDTO>(`/conversas/${id}`);
+    window.clearTimeout(gravacao);
+    idAtual = c.id;
+    mudar(
+      c.turnos.map((t) => ({ id: ++proximo, pergunta: t.pergunta, resposta: t.resposta, erro: t.erro, em: t.em, guardadas: t.guardadas })),
+      false,
+    );
+    anexo.definir(null);
+  },
+
+  /** Apaga uma conversa salva; se for a aberta, começa uma nova. */
+  async apagar(id: string) {
+    await api(`/conversas/${id}`, { metodo: "DELETE" });
+    if (id === idAtual) conversa.limpar();
+    window.dispatchEvent(new Event("conversas:mudou"));
   },
 
   /** O que vai para o Argos como contexto: as últimas trocas recentes, com o resumo das tabelas. */

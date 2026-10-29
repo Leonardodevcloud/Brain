@@ -21,6 +21,10 @@ import {
   prepararFala,
   lerGrafico,
   memorizar,
+  listarConversas,
+  obterConversa,
+  gravarConversa,
+  apagarConversa,
   guardarPlanilha,
   consultarPlanilha,
   lerAnexo,
@@ -999,5 +1003,22 @@ describe("memória do Argos", () => {
     expect(contexto).toContain('Planilha anexada "outubro.xlsx"');
     expect(contexto).not.toContain("Carla Dias Neves");
     expect(r.dados).toMatchObject({ origem: "planilha", titulo: "Total de entregas", linhas: [{ total: 42 }] });
+  });
+});
+
+describe("conversas do Argos", () => {
+  it("cada pessoa grava, lista, busca e apaga só as suas", async () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    const turno = { pergunta: "Como está a disponibilidade em Salvador agora?", resposta: { texto: "x", intencao: "dados", fala: "São 35 vagas titulares.", detalhe: null, fontes: [], acao: null }, erro: null, em: Date.now() };
+    const r = await gravarConversa(ctx, atorAdmin, id, [turno as never, { pergunta: "sem resposta", resposta: null, erro: null, em: 1 } as never]);
+    expect(r).toMatchObject({ id, titulo: "Como está a disponibilidade em Salvador agora?", trocas: 1 });
+    expect((await listarConversas(ctx, atorAdmin, "35 vagas")).map((c) => c.id)).toEqual([id]);
+    expect(await listarConversas(ctx, atorAdmin, "faturamento")).toEqual([]);
+    expect(await listarConversas(ctx, atorMembro)).toEqual([]);
+    await expect(obterConversa(ctx, atorMembro, id)).rejects.toMatchObject({ status: 404 });
+    await expect(gravarConversa(ctx, atorMembro, id, [turno as never])).rejects.toMatchObject({ status: 403 });
+    expect((await obterConversa(ctx, atorAdmin, id)).turnos).toHaveLength(1);
+    await apagarConversa(ctx, atorAdmin, id);
+    expect(await listarConversas(ctx, atorAdmin)).toEqual([]);
   });
 });

@@ -2,6 +2,7 @@ import m001 from "./001_inicial.js";
 import m002 from "./002_tarefas.js";
 import m003 from "./003_documentos.js";
 import m004 from "./004_emails.js";
+import m005 from "./005_conversas.js";
 
 /**
  * Migrations em ordem. Ficam em TypeScript para irem junto no bundle de cada app.
@@ -12,4 +13,5 @@ export const MIGRACOES: { nome: string; sql: string }[] = [
   { nome: "002_tarefas", sql: m002 },
   { nome: "003_documentos", sql: m003 },
   { nome: "004_emails", sql: m004 },
+  { nome: "005_conversas", sql: m005 },
 ];

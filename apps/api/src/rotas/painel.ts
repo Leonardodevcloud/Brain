@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { AppError } from "@cerebro/core";
-import { LIMITE_AUDIO_BYTES, LIMITE_PLANILHA_BYTES, acesso, atenderFala, guardarPlanilha, memorizar, configVoz, falaEmCurso, fontes, gerarFala, montarMapa, painel, prepararFala, salvarVoz, transcreverFala } from "@cerebro/servicos";
+import { LIMITE_AUDIO_BYTES, LIMITE_PLANILHA_BYTES, acesso, apagarConversa, gravarConversa, listarConversas, obterConversa, atenderFala, guardarPlanilha, memorizar, configVoz, falaEmCurso, fontes, gerarFala, montarMapa, painel, prepararFala, salvarVoz, transcreverFala } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, exigirAdmin, validar, type Deps } from "../http/base.js";
 
@@ -57,6 +57,42 @@ export function rotasPainel({ ctx }: Deps) {
       req.body,
     );
     res.json(await atenderFala(ctx, ator(req), texto, historico, { falar, anexo }));
+  });
+
+  // ── Conversas do Argos (lista da tela Perguntar): cada pessoa só vê as suas ──
+  r.get("/conversas", async (req, res) => {
+    const { busca } = validar(z.object({ busca: z.string().trim().max(120).optional() }), req.query);
+    res.json(await listarConversas(ctx, ator(req), busca));
+  });
+  r.get("/conversas/:id", async (req, res) => {
+    const { id } = validar(z.object({ id: z.uuid() }), req.params);
+    res.json(await obterConversa(ctx, ator(req), id));
+  });
+  r.put("/conversas/:id", async (req, res) => {
+    const { id } = validar(z.object({ id: z.uuid() }), req.params);
+    const { turnos } = validar(
+      z.object({
+        turnos: z
+          .array(
+            z.object({
+              pergunta: z.string().max(1000),
+              resposta: z.record(z.string(), z.unknown()).nullable(),
+              erro: z.string().max(1000).nullable(),
+              em: z.number(),
+              guardadas: z.array(z.record(z.string(), z.unknown())).max(10).optional(),
+            }),
+          )
+          .min(1)
+          .max(60),
+      }),
+      req.body,
+    );
+    res.json(await gravarConversa(ctx, ator(req), id, turnos as never));
+  });
+  r.delete("/conversas/:id", async (req, res) => {
+    const { id } = validar(z.object({ id: z.uuid() }), req.params);
+    await apagarConversa(ctx, ator(req), id);
+    res.status(204).end();
   });
 
   // Depois de cada resposta, a interface pede para o Argos guardar o que valer (memória automática).

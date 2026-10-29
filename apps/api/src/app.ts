@@ -35,7 +35,7 @@ export function criarApp(deps: Deps) {
   const api = Router();
   // Rotas com corpo bruto (webhook) vêm antes do parser de JSON.
   api.use(rotasPublicas(deps));
-  api.use(express.json({ limit: "1mb" }));
+  api.use(express.json({ limit: "3mb" })); // conversas do Argos levam as tabelas mostradas
   api.use(cookieParser());
   api.use(rotasAuth(deps));
   api.use(rotasFala(deps));

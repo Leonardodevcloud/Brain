@@ -28,3 +28,4 @@ export { agenteArgos, lerGrafico, type TurnoAnterior } from "./agente.js";
 export { memorizar, VIA_MEMORIA } from "./memoria.js";
 export { guardarPlanilha, consultarPlanilha, lerAnexo, LIMITE_PLANILHA_BYTES } from "./planilhas.js";
 export { consultarCentral, planoRapido } from "./central.js";
+export { listarConversas, obterConversa, gravarConversa, apagarConversa } from "./conversas.js";
