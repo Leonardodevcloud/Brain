@@ -162,14 +162,35 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
       }
     })(),
     (() => {
-      const c = codigoCentral?.config as { ultimaEm?: string; registros?: number; arquivos?: number; restantes?: number; erros?: number } | undefined;
+      const c = codigoCentral?.config as
+        | { ultimaEm?: string; registros?: number; arquivos?: number; restantes?: number; erros?: number; ultimoErro?: string | null; erroEm?: string; lendoDesde?: string | null; feitos?: number; lote?: number | null; agendadoEm?: string }
+        | undefined;
+      const nome = "codigo_central" as const;
       if (!ctx.ambiente.CENTRAL_GITHUB_TOKEN)
-        return { nome: "codigo_central", estado: "desligado", detalhe: "Defina CENTRAL_GITHUB_TOKEN (token do GitHub só leitura do tutts-backend) para o Cérebro aprender as regras do BI e do Financeiro direto do código." } satisfies StatusIntegracaoDTO;
-      if (!c?.ultimaEm) return { nome: "codigo_central", estado: "incompleto", detalhe: "Ainda não leu o código. Clique em “Ler as regras agora” ou espere a leitura das 05:10." } satisfies StatusIntegracaoDTO;
+        return { nome, estado: "desligado", detalhe: "Defina CENTRAL_GITHUB_TOKEN (token do GitHub só leitura do tutts-backend) na api e no worker para o Cérebro aprender as regras do BI e do Financeiro direto do código." } satisfies StatusIntegracaoDTO;
+      const agora = ctx.agora().getTime();
+      const ms = (d?: string | null) => (d ? new Date(d).getTime() : 0);
+      // Lendo agora (o worker atualiza a cada arquivo; parado há mais de 10 min = caiu no meio).
+      if (c?.lendoDesde && agora - ms(c.lendoDesde) < 30 * 60_000)
+        return { nome, estado: "incompleto", detalhe: `Lendo o código agora${c.lote ? `: ${c.feitos ?? 0} de ${c.lote} arquivos` : " (listando os arquivos no GitHub)"}. Cada arquivo leva uns segundos na IA.` } satisfies StatusIntegracaoDTO;
+      if (c?.ultimoErro && ms(c.erroEm) >= ms(c.ultimaEm))
+        return { nome, estado: "erro", detalhe: `A última leitura falhou (${quando(c.erroEm)}): ${c.ultimoErro}` } satisfies StatusIntegracaoDTO;
+      if (c?.agendadoEm && ms(c.agendadoEm) > Math.max(ms(c.ultimaEm), ms(c.erroEm), ms(c.lendoDesde))) {
+        const minutos = Math.floor((agora - ms(c.agendadoEm)) / 60_000);
+        return {
+          nome,
+          estado: "incompleto",
+          detalhe:
+            minutos < 3
+              ? "Na fila: o worker começa em instantes."
+              : `Na fila há ${minutos} min e o worker não pegou. Confira se o serviço worker está no ar com a versão nova e com CENTRAL_GITHUB_TOKEN nas variáveis.`,
+        } satisfies StatusIntegracaoDTO;
+      }
+      if (!c?.ultimaEm) return { nome, estado: "incompleto", detalhe: "Ainda não leu o código. Clique em “Ler as regras agora” ou espere a leitura das 05:10." } satisfies StatusIntegracaoDTO;
       return {
-        nome: "codigo_central",
+        nome,
         estado: c.erros ? "incompleto" : "ativo",
-        detalhe: `${c.registros ?? 0} registros de regras, de ${c.arquivos ?? 0} arquivos (${ctx.ambiente.CENTRAL_GITHUB_PASTAS.replace(/,/g, ", ")}). Última leitura: ${quando(c.ultimaEm)}.${c.restantes ? ` Faltam ${c.restantes} arquivos (continua sozinho).` : ""}${c.erros ? ` ${c.erros} arquivo(s) com erro na última leitura.` : ""}`,
+        detalhe: `${c.registros ?? 0} registros de regras, de ${c.arquivos ?? 0} arquivos (${ctx.ambiente.CENTRAL_GITHUB_PASTAS.replace(/,/g, ", ")}). Última leitura: ${quando(c.ultimaEm)}.${c.restantes ? ` Faltam ${c.restantes} arquivos (continua sozinho).` : ""}${c.erros ? ` ${c.erros} arquivo(s) com erro: ${c.ultimoErro ?? ""}` : ""}`,
       } satisfies StatusIntegracaoDTO;
     })(),
     {

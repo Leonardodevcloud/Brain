@@ -318,8 +318,8 @@ export default function Integracoes() {
   const lerRegras = useMutation({
     mutationFn: () => api<{ agendado: boolean }>("/integracoes/codigo-central/ler", { metodo: "POST", corpo: {} }),
     onSuccess: () => {
-      avisar("Leitura agendada. Em alguns minutos as regras aparecem na Biblioteca (tipo Sistema).");
-      window.setTimeout(() => void qc.invalidateQueries({ queryKey: chaves.integracoes }), 20_000);
+      avisar("Leitura agendada. O cartão mostra o andamento; as regras aparecem na Biblioteca (tipo Sistema).");
+      void qc.invalidateQueries({ queryKey: chaves.integracoes });
     },
     onError: (e) => avisar(textoDoErro(e), "erro"),
   });
@@ -339,6 +339,14 @@ export default function Integracoes() {
     onError: (e) => avisar(textoDoErro(e), "erro"),
   });
   const [confirmandoGoogle, setConfirmandoGoogle] = useState(false);
+
+  // Enquanto o código está sendo lido (ou na fila), o cartão se atualiza sozinho.
+  const lendoCodigo = Boolean(status.data?.some((s) => s.nome === "codigo_central" && /^(Lendo|Na fila)/.test(s.detalhe)));
+  useEffect(() => {
+    if (!lendoCodigo) return;
+    const id = window.setInterval(() => void qc.invalidateQueries({ queryKey: chaves.integracoes }), 8000);
+    return () => window.clearInterval(id);
+  }, [lendoCodigo, qc]);
 
   const alternar = (nome: string) => setAberto((a) => (a === nome ? null : nome));
   const porNome = (nome: StatusIntegracaoDTO["nome"]) => status.data?.find((s) => s.nome === nome);

@@ -123,10 +123,27 @@ export function montarConteudoRegras(x: RegrasDoCodigo, a: { caminho: string; sh
  * Uma rodada: lê até 25 arquivos novos ou alterados e grava as regras. Se sobrar arquivo,
  * agenda a próxima rodada (assim uma primeira leitura grande não trava o worker).
  */
+/** Andamento da leitura, para o cartão em Integrações mostrar o que está acontecendo (e o erro, se houver). */
+async function registrarEstado(ctx: Contexto, parcial: Record<string, unknown>) {
+  const atual = (await integracoes.obter(ctx.pool, VIA_CODIGO).catch(() => null))?.config ?? {};
+  await integracoes.salvar(ctx.pool, VIA_CODIGO, { config: { ...atual, ...parcial } }).catch(() => undefined);
+}
+
 export async function sincronizarRegrasDoCodigo(
   ctx: Contexto,
   opcoes: { forcar?: boolean; fonte?: FonteCodigo; porRodada?: number } = {},
 ): Promise<ResultadoRegras> {
+  try {
+    return await sincronizar(ctx, opcoes);
+  } catch (erro) {
+    // Sem isso o cartão ficaria parado em "ainda não leu" sem dizer por quê.
+    await registrarEstado(ctx, { lendoDesde: null, ultimoErro: (erro as Error).message.slice(0, 300), erroEm: ctx.agora().toISOString() });
+    throw erro;
+  }
+}
+
+async function sincronizar(ctx: Contexto, opcoes: { forcar?: boolean; fonte?: FonteCodigo; porRodada?: number }): Promise<ResultadoRegras> {
+  await registrarEstado(ctx, { lendoDesde: ctx.agora().toISOString(), ultimoErro: null, feitos: 0, lote: null });
   const ia = ctx.iaRestrita ?? ctx.ia;
   const amb = ctx.ambiente;
   const fonte =
@@ -148,9 +165,11 @@ export async function sincronizarRegrasDoCodigo(
   const pendentes = todos.filter((a) => !feitos.has(chave(a)));
   const lote = pendentes.slice(0, opcoes.porRodada ?? POR_RODADA);
   const res: ResultadoRegras = { arquivos: todos.length, lidos: 0, criados: 0, atualizados: 0, semRegras: 0, obsoletos: 0, restantes: pendentes.length - lote.length, erros: [] };
+  await registrarEstado(ctx, { lote: lote.length, feitos: 0, arquivos: todos.length });
   const lidoEm = ctx.agora().toLocaleDateString("pt-BR", { timeZone: "America/Bahia" });
 
-  for (const a of lote) {
+  for (const [i, a] of lote.entries()) {
+    if (i) await registrarEstado(ctx, { feitos: i });
     try {
       const codigo = await fonte.ler(a.caminho);
       res.lidos++;
@@ -251,8 +270,14 @@ export async function sincronizarRegrasDoCodigo(
   }
 
   const total = (await registros.listarPorVia(ctx.pool, VIA_CODIGO)).length;
-  await integracoes.salvar(ctx.pool, VIA_CODIGO, {
-    config: { ultimaEm: ctx.agora().toISOString(), arquivos: res.arquivos, registros: total, restantes: res.restantes, erros: res.erros.length },
+  await registrarEstado(ctx, {
+    ultimaEm: ctx.agora().toISOString(),
+    lendoDesde: null,
+    ultimoErro: res.erros.length ? res.erros[0] : null,
+    arquivos: res.arquivos,
+    registros: total,
+    restantes: res.restantes,
+    erros: res.erros.length,
   });
   if (res.restantes > 0) await jobs.enfileirar(ctx.pool, JOB.regrasCodigo, {}, { chave: "regras-codigo", maxTentativas: 2 });
   return res;
@@ -260,5 +285,6 @@ export async function sincronizarRegrasDoCodigo(
 
 /** Botão "Ler as regras agora" (e o cron diário): enfileira para o worker. */
 export async function agendarRegrasDoCodigo(ctx: Contexto, forcar = false) {
+  await registrarEstado(ctx, { agendadoEm: ctx.agora().toISOString() });
   await jobs.enfileirar(ctx.pool, JOB.regrasCodigo, { forcar }, { chave: "regras-codigo", maxTentativas: 2 });
 }
