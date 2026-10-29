@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cosseno, dividirEmTrechos, fusaoRRF } from "./texto.js";
 import { mascarar, restaurar } from "./mascara.js";
-import { ProvedorCompativelOpenAI, lerJson } from "./provedores.js";
+import { lerJson } from "./provedores.js";
 import { embrulharDados } from "./prompts.js";
 
 describe("mascara", () => {
@@ -119,31 +119,5 @@ describe("e-mail ditado", () => {
     expect(normalizarEmailFalado("convida contato @ tutts.com.br amanhã")).toBe("convida contato@tutts.com.br amanhã");
     expect(normalizarEmailFalado("o e-mail é Contato@Tutts.com.br.")).toBe("o e-mail é contato@tutts.com.br.");
     expect(normalizarEmailFalado("ponto de entrega da loja")).toBe("ponto de entrega da loja");
-  });
-});
-
-describe("raciocínio do modelo", () => {
-  it("desliga o raciocínio no DeepSeek e tenta de novo sem ele se o modelo recusar", async () => {
-    const corpos: Record<string, unknown>[] = [];
-    const original = globalThis.fetch;
-    let vez = 0;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      corpos.push(JSON.parse(String(init.body)));
-      vez++;
-      if (vez === 1) return new Response("parâmetro desconhecido", { status: 400 });
-      return new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), { status: 200 });
-    }) as typeof fetch;
-    try {
-      const ia = new ProvedorCompativelOpenAI({ baseUrl: "https://api.deepseek.com", chave: "x", modelo: "deepseek-flash" });
-      expect(await ia.gerar({ sistema: "s", mensagens: [], raciocinio: "desligado" })).toBe("{}");
-      expect(corpos[0]).toMatchObject({ thinking: { type: "disabled" } });
-      expect(corpos[1]).not.toHaveProperty("thinking");
-      // Outro provedor compatível não recebe o campo.
-      const outro = new ProvedorCompativelOpenAI({ baseUrl: "https://outro.exemplo/v1", chave: "x", modelo: "m" });
-      await outro.gerar({ sistema: "s", mensagens: [], raciocinio: "desligado" });
-      expect(corpos[2]).not.toHaveProperty("thinking");
-    } finally {
-      globalThis.fetch = original;
-    }
   });
 });

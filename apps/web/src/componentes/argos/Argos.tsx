@@ -1,24 +1,23 @@
 import type { RespostaAssistenteDTO } from "@cerebro/core/publico";
-import { Keyboard, Maximize2, Mic, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowRight, ChevronDown, Keyboard, Mic, Volume2, VolumeX, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ErroApi, api } from "../../api/cliente";
 import { desbloquearFala, falar, nivelFala, pararFala } from "./fala";
 import { Escuta, Gravador } from "./gravador";
-import { anexo, conversa as fio, memorizarDepois, useConversa } from "./conversa";
-import { controleArgos, publicarEstadoArgos } from "./estado";
-import { BotaoAnexar, ChipAnexo } from "./Memoria";
-import { TurnoArgos } from "./TurnoArgos";
+import { DadosCentral } from "./DadosCentral";
 import { Orbe, type EstadoOrbe } from "./Orbe";
 import css from "./Argos.module.css";
+
+const Conteudo = lazy(() => import("../Conteudo").then((m) => ({ default: m.Conteudo })));
 
 type Fase = "fechado" | "ouvindo" | "transcrevendo" | "pensando" | "falando" | "pronto" | "erro";
 type Modo = "segurando" | "continuo";
 
 // Segurar o espaço por mais que isso = "aperte e fale"; menos = toque, ouve até o silêncio.
 const LIMIAR_SEGURAR_MS = 320;
-const SILENCIO_FIM_MS = 1000;
+const SILENCIO_FIM_MS = 1600;
 const MAX_GRAVACAO_MS = 45_000;
 const SEM_FALA_MS = 7000;
 // No modo conversa, se a pessoa não disser nada depois da resposta, o Argos para de ouvir sem alarde.
@@ -66,15 +65,14 @@ const ALUCINACAO = /^(obrigad[oa]( por assistir)?|tchau|legendas?\b.*|inscreva-s
 
 export function Argos() {
   const navegar = useNavigate();
-  // Na tela Perguntar o Argos fica embutido: o motor de voz é este, mas quem desenha é a página.
-  const { pathname } = useLocation();
-  const embutido = pathname.startsWith("/perguntar");
   const qc = useQueryClient();
   const [fase, setFase] = useState<Fase>("fechado");
   const [modo, setModo] = useState<Modo>("segurando");
   const [texto, setTexto] = useState("");
+  const [resposta, setResposta] = useState<RespostaAssistenteDTO | null>(null);
   const [erro, setErro] = useState<{ mensagem: string; digitar: boolean } | null>(null);
   const [mudo, setMudo] = useState(lerMudo);
+  const [completo, setCompleto] = useState(false);
   const [digitado, setDigitado] = useState("");
   const [segundos, setSegundos] = useState(0);
   const [movimento] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -91,9 +89,8 @@ export function Argos() {
   const energia = useRef(0);
   const campo = useRef<HTMLInputElement>(null);
   const geracao = useRef(0); // invalida respostas de pedidos cancelados
-  // A conversa (compartilhada com a tela Perguntar): o histórico dá contexto para "e em Salvador?".
-  const turnos = useConversa();
-  const fioRef = useRef<HTMLDivElement>(null);
+  // Conversa recente (some ao recarregar a página): deixa o Argos entender "e em Salvador?".
+  const historico = useRef<{ pergunta: string; resposta: string; em: number }[]>([]);
   // Modo conversa (como a voz do ChatGPT): depois de responder, o Argos volta a ouvir sozinho,
   // e dá para interromper falando por cima. Liga quando a pessoa fala; desliga ao digitar, fechar ou se despedir.
   const [conversa, setConversa] = useState(false);
@@ -130,18 +127,19 @@ export function Argos() {
     async (fala: string) => {
       const minha = ++geracao.current;
       setTexto(limparTranscricao(fala));
+      setResposta(null);
+      setCompleto(false);
       setFase("pensando");
-      const historico = fio.historicoParaApi();
-      const id = fio.adicionar(limparTranscricao(fala));
       try {
-        const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto: fala, historico, falar: !mudoRef.current, anexo: anexo.atual()?.id ?? null } });
-        if (minha !== geracao.current) {
-          fio.remover(id);
-          return;
-        }
-        fio.responder(id, r);
-        // Memória automática em segundo plano: a voz não espera por isso.
-        memorizarDepois(id);
+        // Depois de 15 min parado, a conversa recomeça do zero.
+        const recentes = historico.current.filter((h) => Date.now() - h.em < 15 * 60_000).slice(-4);
+        const r = await api<RespostaAssistenteDTO>("/argos", {
+          metodo: "POST",
+          corpo: { texto: fala, historico: recentes.map(({ pergunta, resposta }) => ({ pergunta, resposta })) },
+        });
+        if (minha !== geracao.current) return;
+        historico.current = [...recentes, { pergunta: limparTranscricao(fala), resposta: r.fala.slice(0, 2000), em: Date.now() }].slice(-4);
+        setResposta(r);
         // O Argos pode ter criado tarefa, reunião ou rascunho: as telas abertas se atualizam.
         void qc.invalidateQueries({ queryKey: ["tarefas"] });
         void qc.invalidateQueries({ queryKey: ["agenda"] });
@@ -170,15 +168,10 @@ export function Argos() {
           aoFim: () => {
             if (geracao.current === minha && faseRef.current === "falando") continuar();
           },
-        }, r.voz);
+        });
       } catch (e) {
-        if (minha !== geracao.current) {
-          fio.remover(id);
-          return;
-        }
-        const msg = e instanceof ErroApi ? e.message : "Não consegui responder agora. Tente de novo.";
-        fio.falhar(id, msg);
-        setFase("erro");
+        if (minha !== geracao.current) return;
+        falhar(e instanceof ErroApi ? e.message : "Não consegui responder agora. Tente de novo.");
       }
     },
     [falhar, navegar, qc, mudarConversa],
@@ -212,6 +205,7 @@ export function Argos() {
       if (falou && limpo.length < 40 && DESPEDIDA.test(limpo)) {
         mudarConversa(false);
         setTexto(limpo);
+        setResposta(null);
         setFase("pronto");
         if (!mudoRef.current) falar("De nada! Qualquer coisa, é só chamar.");
         return;
@@ -245,6 +239,7 @@ export function Argos() {
       automatico.current = auto;
       if (!auto) mudarConversa(true); // falou com o Argos = modo conversa
       setErro(null);
+      if (!auto) setResposta(null);
       setTexto("");
       setModo(m);
       setSegundos(0);
@@ -268,12 +263,6 @@ export function Argos() {
     [falhar, mudarConversa],
   );
   ouvirRef.current = ouvir;
-
-  // A conversa rola sozinha para a última mensagem.
-  useEffect(() => {
-    const el = fioRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: movimento ? "smooth" : "auto" });
-  }, [turnos, fase, movimento]);
 
   const fechar = useCallback(() => {
     geracao.current++;
@@ -327,8 +316,6 @@ export function Argos() {
   // Atalhos globais: Espaço (segurar = falar; tocar = ouvir até o silêncio) e Esc.
   useEffect(() => {
     const descer = (e: KeyboardEvent) => {
-      // Com uma janela aberta por cima (tabela ampliada), o Esc fecha só ela.
-      if (e.key === "Escape" && document.querySelector("dialog[open]")) return;
       if (e.key === "Escape" && faseRef.current !== "fechado") {
         e.preventDefault();
         fechar();
@@ -415,36 +402,8 @@ export function Argos() {
     void processar(t);
   }
 
-  // Estado e controles públicos, para a tela Perguntar usar o mesmo motor.
-  useEffect(() => {
-    publicarEstadoArgos({ fase, segundos, erro: erro?.mensagem ?? null, mudo, conversa });
-  }, [fase, segundos, erro, mudo, conversa]);
-  const alternarMudoRef = useRef(alternarMudo);
-  alternarMudoRef.current = alternarMudo;
-  useEffect(() => {
-    controleArgos.nivel = nivel;
-    controleArgos.falarOuEnviar = () => {
-      const f = faseRef.current;
-      if (f === "ouvindo") void enviar();
-      else if (f === "fechado" || f === "pronto" || f === "erro" || f === "falando") {
-        if (!mudoRef.current) desbloquearFala();
-        void ouvir("continuo");
-      }
-    };
-    controleArgos.cancelar = fechar;
-    controleArgos.alternarMudo = () => alternarMudoRef.current();
-  }, [nivel, enviar, ouvir, fechar]);
-  // Saindo da tela Perguntar com uma resposta na tela: o painel não abre sozinho na próxima tela.
-  useEffect(() => {
-    if (!embutido && (faseRef.current === "pronto" || faseRef.current === "erro")) setFase("fechado");
-  }, [embutido]);
-
   const aberto = fase !== "fechado";
-  const temTurnos = turnos.length > 0;
-  const temDados = turnos.some((t) => t.resposta?.dados);
   const podeDigitar = fase === "pronto" || fase === "erro";
-
-  if (embutido) return null;
 
   return (
     <>
@@ -459,24 +418,8 @@ export function Argos() {
 
       {aberto && (
         <div className={css.camada} onMouseDown={(e) => e.target === e.currentTarget && fase !== "ouvindo" && fechar()}>
-          <section
-            className={`${css.painel} ${temTurnos ? css.painelChat : ""} ${temDados ? css.painelLargo : ""}`}
-            role="dialog"
-            aria-modal="false"
-            aria-label="Argos, assistente de voz"
-          >
+          <section className={css.painel} role="dialog" aria-modal="false" aria-label="Argos, assistente de voz">
             <header className={css.topo}>
-              {temTurnos && (
-                <button
-                  type="button"
-                  className={css.orbeMini}
-                  onClick={() => (fase === "ouvindo" ? void enviar() : fase !== "transcrevendo" && fase !== "pensando" ? void ouvir("continuo") : undefined)}
-                  aria-label={fase === "ouvindo" ? "Enviar" : "Falar"}
-                  title={fase === "ouvindo" ? "Enviar" : "Falar"}
-                >
-                  <Orbe estado={ESTADO_ORBE[fase]} nivel={nivel} tamanho={38} movimento={movimento} />
-                </button>
-              )}
               <span className={css.marca}>
                 <span className={`${css.ponto} ${fase === "ouvindo" || conversa ? css.pontoAoVivo : ""}`} aria-hidden="true" />
                 Argos{conversa && <span className={css.modoConversa}>conversa</span>}
@@ -487,40 +430,6 @@ export function Argos() {
                 {(fase === "transcrevendo" || fase === "pensando") && <span className={css.reticencias} aria-hidden="true" />}
               </span>
               <span className={css.acoesTopo}>
-                {temTurnos && (
-                  <>
-                    <button
-                      type="button"
-                      className={css.icone}
-                      onClick={() => {
-                        geracao.current++;
-                        gravador.current.cancelar();
-                        escuta.current.parar();
-                        pararFala();
-                        mudarConversa(false);
-                        fio.limpar();
-                        setErro(null);
-                        setFase("pronto");
-                      }}
-                      title="Nova conversa"
-                      aria-label="Nova conversa"
-                    >
-                      <RotateCcw size={15} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className={css.icone}
-                      onClick={() => {
-                        navegar("/perguntar");
-                        fechar();
-                      }}
-                      title="Abrir em tela cheia"
-                      aria-label="Abrir a conversa em tela cheia"
-                    >
-                      <Maximize2 size={15} aria-hidden="true" />
-                    </button>
-                  </>
-                )}
                 <button type="button" className={css.icone} onClick={alternarMudo} aria-pressed={mudo} title={mudo ? "Ligar a voz" : "Silenciar a voz"} aria-label={mudo ? "Ligar a voz" : "Silenciar a voz"}>
                   {mudo ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
                 </button>
@@ -530,46 +439,72 @@ export function Argos() {
               </span>
             </header>
 
-            {!temTurnos ? (
-              <>
-                <button
-                  type="button"
-                  className={css.palco}
-                  onClick={() => (fase === "ouvindo" ? void enviar() : fase !== "transcrevendo" && fase !== "pensando" ? void ouvir("continuo") : undefined)}
-                  aria-label={fase === "ouvindo" ? "Enviar" : "Falar de novo"}
-                >
-                  <Orbe estado={ESTADO_ORBE[fase]} nivel={nivel} tamanho={148} movimento={movimento} />
-                </button>
-                <div className={css.conversa} aria-live="polite">
-                  {fase === "ouvindo" && <p className={css.convite}>{segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>}
-                  {fase === "transcrevendo" && <p className={css.convite}>Entendendo o que você disse…</p>}
-                  {(fase === "pronto" || fase === "erro") && !erro && <p className={css.convite}>Pergunte sobre a operação, peça uma tarefa ou marque uma reunião.</p>}
-                  {erro && <p className={css.erro}>{erro.mensagem}</p>}
+            <button
+              type="button"
+              className={css.palco}
+              onClick={() => (fase === "ouvindo" ? void enviar() : fase !== "transcrevendo" && fase !== "pensando" ? void ouvir("continuo") : undefined)}
+              aria-label={fase === "ouvindo" ? "Enviar" : "Falar de novo"}
+            >
+              <Orbe estado={ESTADO_ORBE[fase]} nivel={nivel} tamanho={148} movimento={movimento} />
+            </button>
+
+            <div className={css.conversa} aria-live="polite">
+              {fase === "ouvindo" && (
+                <p className={css.convite}>{automatico.current && segundos < 2 ? "Pode continuar…" : segundos < 1 ? "Pode falar…" : "Estou ouvindo"}</p>
+              )}
+              {fase === "transcrevendo" && <p className={css.convite}>Entendendo o que você disse…</p>}
+              {texto && fase !== "ouvindo" && fase !== "transcrevendo" && <p className={css.voce}>“{texto}”</p>}
+              {fase === "pensando" && <p className={css.convite}>Pensando e consultando os dados…</p>}
+              {erro && <p className={css.erro}>{erro.mensagem}</p>}
+
+              {resposta && (fase === "falando" || fase === "pronto" || (fase === "ouvindo" && automatico.current)) && (
+                <div className={css.resposta}>
+                  <p className={css.fala}>{resposta.fala}</p>
+                  {resposta.dados && <DadosCentral dados={resposta.dados} />}
+                  {resposta.fontes.length > 0 && (
+                    <div className={css.fontes}>
+                      {resposta.fontes.slice(0, 4).map((f) => (
+                        <Link key={f.registroId} to={`/registros/${f.codigo}`} className={css.fonte} onClick={fechar}>
+                          <span className={css.fonteCodigo}>{f.codigo}</span> {f.titulo}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                  {resposta.detalhe && (
+                    <>
+                      <button type="button" className={css.verMais} onClick={() => setCompleto((v) => !v)} aria-expanded={completo}>
+                        {completo ? "Esconder resposta completa" : "Ver resposta completa"}
+                        <ChevronDown size={14} aria-hidden="true" style={{ transform: completo ? "rotate(180deg)" : undefined }} />
+                      </button>
+                      {completo && (
+                        <div className={css.completo}>
+                          <Suspense fallback={null}>
+                            <Conteudo
+                              texto={resposta.detalhe.replace(/\[(\d+)\]/g, (marca, n: string) => {
+                                const f = resposta.fontes.find((x) => x.indice === Number(n));
+                                return f ? `[[${n}]](/registros/${f.codigo})` : marca;
+                              })}
+                            />
+                          </Suspense>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {resposta.acao && !resposta.acao.automatica && (
+                    <button
+                      type="button"
+                      className={`botao botao-primario ${css.acao}`}
+                      onClick={() => {
+                        navegar(resposta.acao!.destino);
+                        fechar();
+                      }}
+                    >
+                      {resposta.acao.rotulo} <ArrowRight size={15} aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
-              </>
-            ) : (
-              <div ref={fioRef} className={css.fio} aria-live="polite">
-                {turnos.map((t) => (
-                  <TurnoArgos
-                    key={t.id}
-                    t={t}
-                    irPara={(destino) => {
-                      navegar(destino);
-                      fechar();
-                    }}
-                    fechar={fechar}
-                  />
-                ))}
-                {fase === "ouvindo" && (
-                  <p className={css.statusFio}>
-                    <span className={css.pontoOuvindo} aria-hidden="true" />
-                    {automatico.current && segundos < 2 ? "Pode continuar…" : "Estou ouvindo…"}
-                  </p>
-                )}
-                {fase === "transcrevendo" && <p className={css.statusFio}>Entendendo o que você disse…</p>}
-                {erro && <p className={css.erro}>{erro.mensagem}</p>}
-              </div>
-            )}
+              )}
+            </div>
 
             <footer className={css.rodape}>
               {conversa && (fase === "falando" || fase === "ouvindo") ? (
@@ -593,8 +528,6 @@ export function Argos() {
                   · <kbd>Esc</kbd> cancela
                 </p>
               ) : podeDigitar ? (
-                <>
-                <ChipAnexo />
                 <form className={css.digitar} onSubmit={enviarDigitado}>
                   <Keyboard size={15} aria-hidden="true" className={css.iconeDigitar} />
                   <label htmlFor="argos-texto" className="so-leitor">
@@ -609,12 +542,10 @@ export function Argos() {
                     placeholder="Ou escreva aqui…"
                     autoComplete="off"
                   />
-                  <BotaoAnexar className={css.anexar} />
                   <button type="button" className={css.microfone} onClick={() => void ouvir("continuo")} aria-label="Falar" title="Falar (segure Espaço)">
                     <Mic size={15} aria-hidden="true" />
                   </button>
                 </form>
-                </>
               ) : (
                 <p className={css.dica}>{toque ? "Toque fora para fechar" : <><kbd>Esc</kbd> cancela</>}</p>
               )}

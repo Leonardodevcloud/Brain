@@ -15,11 +15,6 @@ export interface PedidoTexto {
   json?: boolean;
   temperatura?: number;
   maxTokens?: number;
-  /**
-   * Raciocínio antes de responder (DeepSeek liga por padrão, em esforço alto, e isso custa segundos).
-   * "desligado" para respostas rápidas (Argos); "baixo"/"alto" para análises que podem esperar.
-   */
-  raciocinio?: "desligado" | "baixo" | "alto";
 }
 
 export interface ProvedorTexto {
@@ -41,45 +36,29 @@ export class ProvedorCompativelOpenAI implements ProvedorTexto {
   }
 
   async gerar(p: PedidoTexto): Promise<string> {
-    const deepseek = /deepseek/i.test(this.cfg.baseUrl);
-    const corpo: Record<string, unknown> = {
-      model: this.cfg.modelo,
-      messages: [
-        { role: "system", content: p.sistema },
-        ...p.mensagens.map((m) => ({ role: m.papel, content: m.conteudo })),
-      ],
-      temperature: p.temperatura ?? 0.2,
-      max_tokens: p.maxTokens ?? 2000,
-      ...(p.json ? { response_format: { type: "json_object" } } : {}),
-    };
-    // Só a API do DeepSeek conhece esses campos; outro provedor compatível recusaria.
-    if (deepseek && p.raciocinio === "desligado") corpo.thinking = { type: "disabled" };
-    else if (deepseek && p.raciocinio) Object.assign(corpo, { thinking: { type: "enabled" }, reasoning_effort: p.raciocinio === "baixo" ? "low" : "high" });
-
-    let resposta = await this.pedir(corpo);
-    if (resposta.status === 400 && ("thinking" in corpo || "reasoning_effort" in corpo)) {
-      // Modelo sem esse controle: tenta de novo do jeito padrão.
-      delete corpo.thinking;
-      delete corpo.reasoning_effort;
-      resposta = await this.pedir(corpo);
-    }
+    const resposta = await fetch(`${this.cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${this.cfg.chave}` },
+      body: JSON.stringify({
+        model: this.cfg.modelo,
+        messages: [
+          { role: "system", content: p.sistema },
+          ...p.mensagens.map((m) => ({ role: m.papel, content: m.conteudo })),
+        ],
+        temperature: p.temperatura ?? 0.2,
+        max_tokens: p.maxTokens ?? 2000,
+        ...(p.json ? { response_format: { type: "json_object" } } : {}),
+      }),
+      signal: AbortSignal.timeout(this.cfg.timeoutMs ?? 90_000),
+    });
     if (!resposta.ok) {
-      const texto = (await resposta.text()).slice(0, 300);
-      throw AppError.indisponivel(`A IA de análise respondeu ${resposta.status}: ${texto}`);
+      const corpo = (await resposta.text()).slice(0, 300);
+      throw AppError.indisponivel(`A IA de análise respondeu ${resposta.status}: ${corpo}`);
     }
     const dados = (await resposta.json()) as { choices?: { message?: { content?: string } }[] };
     const texto = dados.choices?.[0]?.message?.content;
     if (!texto) throw AppError.indisponivel("A IA de análise devolveu uma resposta vazia.");
     return texto;
-  }
-
-  private pedir(corpo: Record<string, unknown>) {
-    return fetch(`${this.cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${this.cfg.chave}` },
-      body: JSON.stringify(corpo),
-      signal: AbortSignal.timeout(this.cfg.timeoutMs ?? 90_000),
-    });
   }
 }
 

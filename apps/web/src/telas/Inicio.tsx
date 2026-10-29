@@ -1,6 +1,6 @@
 import type { ItemAgendaDTO } from "@cerebro/core/publico";
 import { AlertTriangle, ArrowRight, CalendarDays, Mic, Search, Video } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAgenda } from "../api/agenda";
 import { useInicio, useRegistros } from "../api/consultas";
@@ -17,17 +17,6 @@ function rotuloPrazo(prazo: string | null, atrasada: boolean) {
   const d = diasAte(prazo);
   const dia = d === 0 ? "Hoje" : d === 1 ? "Amanhã" : d === -1 ? "Ontem" : new Date(`${prazo}T12:00:00Z`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" });
   return atrasada ? `Atrasada · ${dia.toLowerCase()}` : dia;
-}
-
-/** "Hoje", "Amanhã" ou "qua, 28/10" — no horário da Bahia. */
-function diaDaReuniao(iso: string) {
-  const dia = new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Bahia" });
-  const d = diasAte(dia);
-  if (d === 0) return "Hoje";
-  if (d === 1) return "Amanhã";
-  return new Date(iso)
-    .toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "America/Bahia" })
-    .replace(".", "");
 }
 
 function emQuanto(iso: string) {
@@ -58,7 +47,6 @@ function ProximaReuniao({ itens, carregando, google }: { itens: ItemAgendaDTO[];
       ) : proxima ? (
         <div className={css.reuniao}>
           <div className={css.hora}>
-            <span className={css.diaReuniao}>{diaDaReuniao(proxima.inicio)}</span>
             <strong>{hora(proxima.inicio)}</strong>
             <span>{emQuanto(proxima.inicio)}</span>
           </div>
@@ -143,11 +131,6 @@ export function Inicio() {
   const rascunhos = useRegistros({ status: "rascunho", porPagina: 1 });
   const emRevisao = useRegistros({ status: "revisar", porPagina: 1 });
   const [pergunta, setPergunta] = useState("");
-  const [agora, setAgora] = useState(() => new Date());
-  useEffect(() => {
-    const id = window.setInterval(() => setAgora(new Date()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
   const campo = useRef<HTMLInputElement>(null);
   useAtalho("/", useCallback(() => campo.current?.focus(), []));
 
@@ -159,7 +142,7 @@ export function Inicio() {
   const abertas = (tarefas.data ?? []).filter((t) => t.status !== "feita");
   const paraHoje = abertas.filter((t) => t.prazo && t.prazo <= hoje).length;
   const atrasadas = abertas.filter((t) => t.atrasada).length;
-  const reunioesHoje = (agenda.data?.itens ?? []).filter((i) => i.tipo === "evento" && (i.diaInteiro ? i.inicio.slice(0, 10) : new Date(i.inicio).toLocaleDateString("en-CA", { timeZone: "America/Bahia" })) === hoje).length;
+  const reunioesHoje = (agenda.data?.itens ?? []).filter((i) => i.tipo === "evento" && i.inicio.slice(0, 10) === hoje).length;
   const paraRevisar = (rascunhos.data?.total ?? 0) + (emRevisao.data?.total ?? 0);
   const vencidos = inicio.data?.vencidos.length ?? 0;
 
@@ -175,9 +158,7 @@ export function Inicio() {
         <h1>
           {saudacao()}, {usuario.nome.split(" ")[0]}
         </h1>
-        <span className="suave">
-          {dataLonga(agora)} · <span className={css.relogio}>{agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bahia" })}</span>
-        </span>
+        <span className="suave">{dataLonga()}</span>
       </header>
 
       <form role="search" onSubmit={perguntar} className={css.busca}>

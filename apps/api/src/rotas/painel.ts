@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { AppError } from "@cerebro/core";
-import { LIMITE_AUDIO_BYTES, LIMITE_PLANILHA_BYTES, acesso, apagarConversa, gravarConversa, listarConversas, obterConversa, atenderFala, guardarPlanilha, memorizar, configVoz, falaEmCurso, fontes, gerarFala, montarMapa, painel, prepararFala, salvarVoz, transcreverFala } from "@cerebro/servicos";
+import { LIMITE_AUDIO_BYTES, acesso, atenderFala, configVoz, fontes, gerarFala, montarMapa, painel, salvarVoz, transcreverFala } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, exigirAdmin, validar, type Deps } from "../http/base.js";
 
@@ -41,81 +41,18 @@ export function rotasPainel({ ctx }: Deps) {
   );
 
   r.post("/argos", async (req, res) => {
-    const { texto, historico, falar, anexo } = validar(
+    const { texto, historico } = validar(
       z.object({
         texto: z.string().trim().min(2).max(1000),
         // Últimas trocas da conversa, para perguntas de continuação ("e em Salvador?").
         historico: z
-          .array(z.object({ pergunta: z.string().max(1000), resposta: z.string().max(4000) }))
-          .max(10)
-          .default([]),
-        // A interface vai falar a resposta: o servidor já adianta a voz do 1º trecho.
-        falar: z.boolean().default(false),
-        // Planilha anexada na conversa (id devolvido por POST /argos/anexos).
-        anexo: z.uuid().nullish(),
-      }),
-      req.body,
-    );
-    res.json(await atenderFala(ctx, ator(req), texto, historico, { falar, anexo }));
-  });
-
-  // ── Conversas do Argos (lista da tela Perguntar): cada pessoa só vê as suas ──
-  r.get("/conversas", async (req, res) => {
-    const { busca } = validar(z.object({ busca: z.string().trim().max(120).optional() }), req.query);
-    res.json(await listarConversas(ctx, ator(req), busca));
-  });
-  r.get("/conversas/:id", async (req, res) => {
-    const { id } = validar(z.object({ id: z.uuid() }), req.params);
-    res.json(await obterConversa(ctx, ator(req), id));
-  });
-  r.put("/conversas/:id", async (req, res) => {
-    const { id } = validar(z.object({ id: z.uuid() }), req.params);
-    const { turnos } = validar(
-      z.object({
-        turnos: z
-          .array(
-            z.object({
-              pergunta: z.string().max(1000),
-              resposta: z.record(z.string(), z.unknown()).nullable(),
-              erro: z.string().max(1000).nullable(),
-              em: z.number(),
-              guardadas: z.array(z.record(z.string(), z.unknown())).max(10).optional(),
-            }),
-          )
-          .min(1)
-          .max(60),
-      }),
-      req.body,
-    );
-    res.json(await gravarConversa(ctx, ator(req), id, turnos as never));
-  });
-  r.delete("/conversas/:id", async (req, res) => {
-    const { id } = validar(z.object({ id: z.uuid() }), req.params);
-    await apagarConversa(ctx, ator(req), id);
-    res.status(204).end();
-  });
-
-  // Depois de cada resposta, a interface pede para o Argos guardar o que valer (memória automática).
-  r.post("/argos/memorizar", async (req, res) => {
-    const troca = validar(
-      z.object({
-        pergunta: z.string().trim().min(1).max(1000),
-        resposta: z.string().max(6000),
-        historico: z
-          .array(z.object({ pergunta: z.string().max(1000), resposta: z.string().max(4000) }))
-          .max(10)
+          .array(z.object({ pergunta: z.string().max(1000), resposta: z.string().max(2000) }))
+          .max(6)
           .default([]),
       }),
       req.body,
     );
-    res.json({ guardadas: await memorizar(ctx, ator(req), troca) });
-  });
-
-  // Planilha para analisar na conversa (.xlsx ou .csv). O nome vem na URL; o arquivo, no corpo.
-  r.post("/argos/anexos", express.raw({ type: () => true, limit: LIMITE_PLANILHA_BYTES }), async (req, res) => {
-    const { nome } = validar(z.object({ nome: z.string().trim().min(3).max(200) }), req.query);
-    if (!Buffer.isBuffer(req.body) || !req.body.length) throw AppError.requisicaoInvalida("Envie a planilha.");
-    res.status(201).json(guardarPlanilha(ator(req), nome, new Uint8Array(req.body)));
+    res.json(await atenderFala(ctx, ator(req), texto, historico));
   });
 
   // Voz do Argos: gerada no servidor, a mesma em qualquer aparelho.
@@ -136,11 +73,6 @@ export function rotasPainel({ ctx }: Deps) {
     const audio = await gerarFala(ctx, texto, teste);
     res.set({ "content-type": "audio/mpeg", "cache-control": "private, max-age=3600" });
     res.send(Buffer.from(audio));
-  });
-  // Começa a gerar a voz e devolve o id; o áudio sai em fluxo em GET /argos/falar/:id (rota sem login, ver rotasFala).
-  r.post("/argos/falar/preparar", async (req, res) => {
-    const { texto } = validar(z.object({ texto: z.string().trim().min(1).max(1200) }), req.body);
-    res.json({ id: await prepararFala(ctx, texto) });
   });
 
   r.get("/mapa", async (_req, res) => {
@@ -222,34 +154,5 @@ export function rotasPainel({ ctx }: Deps) {
     },
   );
 
-  return r;
-}
-
-/**
- * GET /argos/falar/:id — o áudio de uma fala preparada, entregue enquanto é gerado.
- * Fica fora do login porque o <audio> do navegador não manda o token; quem protege é o id
- * (aleatório, de uso curto, que só sai para quem está logado) e a validade de 3 minutos.
- */
-export function rotasFala(_deps: Deps) {
-  const r = Router();
-  r.get("/argos/falar/:id", (req, res) => {
-    const { id } = validar(z.object({ id: z.uuid() }), req.params);
-    const f = falaEmCurso(id);
-    if (!f) throw AppError.naoEncontrado("Essa fala");
-    if (f.falhou && !f.pedacos.length) throw AppError.indisponivel("Não consegui gerar a voz agora.");
-    res.status(200).set({ "content-type": "audio/mpeg", "cache-control": "no-store", "x-accel-buffering": "no" });
-    res.flushHeaders();
-    let enviados = 0;
-    const enviar = () => {
-      while (enviados < f.pedacos.length) res.write(Buffer.from(f.pedacos[enviados++]!));
-      if (f.terminou) {
-        f.avisar.delete(enviar);
-        res.end();
-      }
-    };
-    f.avisar.add(enviar);
-    req.on("close", () => f.avisar.delete(enviar));
-    enviar();
-  });
   return r;
 }

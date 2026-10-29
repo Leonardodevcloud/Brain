@@ -316,14 +316,8 @@ export async function confirmarRevisao(ctx: Contexto, ator: Ator, id: string) {
     if (!r) throw AppError.naoEncontrado("O registro");
     if (r.status !== "vigente" && r.status !== "revisar") throw AppError.conflito("Só registros publicados são revisados.");
     if (!podeEditar(ator, r)) throw AppError.semPermissao();
-    // Conta o novo prazo a partir do vencimento atual, se ele ainda não chegou
-    // (confirmar antes da hora não pode deixar a data igual nem encurtar o prazo).
-    const hoje = hojeLocal(ctx.agora());
-    const atual = r.revisarEm ? String(r.revisarEm).slice(0, 10) : null;
-    const base = atual && atual > hoje ? new Date(`${atual}T12:00:00Z`) : new Date(`${hoje}T12:00:00Z`);
-    const revisarEm = calcularRevisarEm(r.tipo, base);
-    await registros.atualizar(db, id, { status: "vigente", revisarEm });
-    await auditar(db, ator, "registro.revisado", { entidade: "registro", id }, { codigo: r.codigo, antes: atual, depois: revisarEm });
+    await registros.atualizar(db, id, { status: "vigente", revisarEm: calcularRevisarEm(r.tipo, ctx.agora()) });
+    await auditar(db, ator, "registro.revisado", { entidade: "registro", id }, { codigo: r.codigo });
   });
   return obterRegistro(ctx, id);
 }

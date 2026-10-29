@@ -3,7 +3,6 @@
  * 1º: voz natural gerada no servidor (OpenAI) — a mesma em qualquer aparelho.
  * 2º (sem a chave, ou se falhar): a síntese de fala do próprio navegador.
  */
-import { dividirFala } from "@cerebro/core/publico";
 import { api } from "../../api/cliente";
 
 interface ConfigVoz {
@@ -124,24 +123,24 @@ export function desbloquearFala() {
   }
 }
 
-const dividir = dividirFala;
-
-/**
- * Onde existe MediaSource para MP3 (Chrome, Edge, Firefox, Android), o áudio toca enquanto chega:
- * o 1º pedaço já sai em ~50 ms. No iPhone/Safari, o trecho é baixado inteiro (o servidor já o adiantou).
- */
-const tocaEmFluxo = () => {
-  try {
-    return typeof MediaSource !== "undefined" && MediaSource.isTypeSupported("audio/mpeg");
-  } catch {
-    return false;
+/** Frases curtas: a primeira sai rápido e o resto vem enquanto ela toca. */
+function dividir(texto: string, primeiro = 110, demais = 260): string[] {
+  const frases = texto.replace(/\s+/g, " ").match(/[^.!?;]+[.!?;]*/g) ?? [texto];
+  const partes: string[] = [];
+  let atual = "";
+  for (const f of frases) {
+    const limite = partes.length === 0 ? primeiro : demais;
+    if ((atual + f).length > limite && atual) {
+      partes.push(atual.trim());
+      atual = "";
+    }
+    atual += f;
   }
-};
+  if (atual.trim()) partes.push(atual.trim());
+  return partes;
+}
 
-/** 1º trecho já em geração no servidor (veio junto com a resposta do Argos). */
-export type VozPreparada = { id: string; texto: string } | null | undefined;
-
-export function falar(texto: string, eventos: Eventos = {}, preparada?: VozPreparada) {
+export function falar(texto: string, eventos: Eventos = {}) {
   pararFala();
   const minha = sessao;
   if (!texto.trim()) {
@@ -154,7 +153,7 @@ export function falar(texto: string, eventos: Eventos = {}, preparada?: VozPrepa
       falarNavegador(texto, eventos, minha);
       return;
     }
-    falarServidor(texto, eventos, minha, preparada).catch((erro: { comecou?: boolean }) => {
+    falarServidor(texto, eventos, minha).catch((erro: { comecou?: boolean }) => {
       if (minha !== sessao) return;
       console.warn("[Argos] voz do servidor falhou", erro);
       // Só troca para a voz do navegador se nada tiver tocado ainda: nunca duas vozes na mesma resposta.
@@ -164,152 +163,49 @@ export function falar(texto: string, eventos: Eventos = {}, preparada?: VozPrepa
   });
 }
 
-const esperar = (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms));
-
-/** Pede para o servidor começar a gerar um trecho; devolve o id do áudio. */
-async function preparar(texto: string, sinal: AbortSignal): Promise<string> {
+/** Pede um trecho; se falhar (rede, limite da API), tenta mais uma vez. */
+async function pedirTrecho(texto: string, sinal: AbortSignal): Promise<Blob> {
   try {
-    return (await api<{ id: string }>("/argos/falar/preparar", { metodo: "POST", corpo: { texto }, sinal })).id;
+    return await api<Blob>("/argos/falar", { metodo: "POST", corpo: { texto }, sinal, bruto: true });
   } catch (erro) {
     if (sinal.aborted) throw erro;
-    await new Promise((r) => setTimeout(r, 300));
-    return (await api<{ id: string }>("/argos/falar/preparar", { metodo: "POST", corpo: { texto }, sinal })).id;
+    await new Promise((r) => setTimeout(r, 400));
+    return api<Blob>("/argos/falar", { metodo: "POST", corpo: { texto }, sinal, bruto: true });
   }
 }
 
-/** O áudio inteiro de um trecho já preparado (para o Safari, ou se o fluxo falhar). */
-async function baixar(id: string, sinal: AbortSignal): Promise<string> {
-  const r = await fetch(`/api/argos/falar/${id}`, { signal: sinal, credentials: "same-origin" });
-  if (!r.ok) throw new Error(`voz ${r.status}`);
-  const url = URL.createObjectURL(await r.blob());
-  urls.push(url);
-  return url;
-}
-
-async function falarServidor(texto: string, eventos: Eventos, minha: number, preparada?: VozPreparada) {
+async function falarServidor(texto: string, eventos: Eventos, minha: number) {
   cancelarPedidos = new AbortController();
   const sinal = cancelarPedidos.signal;
   const partes = dividir(texto);
-  // Todos os trechos começam a ser gerados já (o 1º normalmente já veio adiantado com a resposta).
-  const ids = partes.map((p, i) => (i === 0 && preparada?.texto === p ? Promise.resolve(preparada.id) : preparar(p, sinal)));
-  for (const p of ids) p.catch(() => undefined); // evita "unhandled rejection" dos que ainda não chegaram a vez
-  const emFluxo = tocaEmFluxo();
-  // No modo de download, o próximo trecho já vai baixando enquanto o atual toca.
-  const arquivos = emFluxo ? [] : ids.map((p) => p.then((id) => baixar(id, sinal)));
-  for (const p of arquivos) p.catch(() => undefined);
+  // O primeiro trecho é pedido na hora; os outros logo em seguida, para já estarem prontos quando chegar a vez.
+  const trechos: Promise<Blob>[] = [];
+  trechos[0] = pedirTrecho(partes[0]!, sinal);
+  for (let i = 1; i < partes.length; i++) trechos[i] = pedirTrecho(partes[i]!, sinal);
+  for (const p of trechos) p.catch(() => undefined); // evita "unhandled rejection" dos que ainda não chegaram a vez
 
   tocador ??= new Audio();
   const t = tocador;
   let pulso: number | undefined;
   let comecou = false;
-
-  const comecar = () => {
-    comecou = true;
-    medirTocador(t);
-    // A esfera acompanha a fala (o áudio não expõe as palavras; um ritmo de fala serve).
-    window.clearInterval(pulso);
-    pulso = window.setInterval(() => eventos.aoPalavra?.(), 190);
-  };
-
-  const tocar = (src: string) =>
-    new Promise<void>((ok, falha) => {
-      t.onended = () => ok();
-      t.onerror = () => falha(new Error("áudio inválido"));
-      t.src = src;
-      t.play().then(comecar, falha);
-    });
-
-  /** Toca o trecho enquanto ele chega do servidor (MediaSource). */
-  const tocarEmFluxo = async (id: string) => {
-    const resposta = await fetch(`/api/argos/falar/${id}`, { signal: sinal, credentials: "same-origin" });
-    if (!resposta.ok || !resposta.body) throw new Error(`voz ${resposta.status}`);
-    const fonte = new MediaSource();
-    const url = URL.createObjectURL(fonte);
-    urls.push(url);
-    const terminou = new Promise<void>((ok, falha) => {
-      t.onended = () => ok();
-      t.onerror = () => falha(new Error("áudio inválido"));
-    });
-    terminou.catch(() => undefined);
-    t.preload = "auto";
-    t.src = url;
-    const abriu = new Promise((ok) => fonte.addEventListener("sourceopen", ok, { once: true }));
-    await Promise.race([abriu, esperar(3000)]);
-    if (fonte.readyState !== "open") throw new Error("o fluxo não abriu");
-    const buffer = fonte.addSourceBuffer("audio/mpeg");
-    const anexar = (pedaco: Uint8Array) =>
-      new Promise<void>((ok, falha) => {
-        buffer.addEventListener("updateend", () => ok(), { once: true });
-        buffer.addEventListener("error", () => falha(new Error("áudio inválido")), { once: true });
-        buffer.appendBuffer(pedaco as Uint8Array<ArrayBuffer>);
-      });
-    const leitor = resposta.body.getReader();
-    // O play() só termina quando há áudio suficiente: por isso NÃO esperamos por ele aqui —
-    // a leitura continua entregando pedaços enquanto o navegador junta o bastante para começar.
-    let tocando: Promise<void> | null = null;
-    let desistiu = false;
-    // Sem som em 6 s: desiste do fluxo (o trecho é baixado inteiro em seguida).
-    const vigia = window.setTimeout(() => {
-      if (comecou) return;
-      desistiu = true;
-      leitor.cancel().catch(() => undefined);
-    }, 6000);
-    try {
-      for (;;) {
-        const { done, value } = await leitor.read();
-        if (minha !== sessao) return;
-        if (done) break;
-        if (!value?.byteLength) continue;
-        await anexar(value);
-        tocando ??= t.play().then(comecar);
-        tocando.catch(() => undefined);
-      }
-    } finally {
-      window.clearTimeout(vigia);
-    }
-    if (fonte.readyState === "open") fonte.endOfStream();
-    if (desistiu) throw new Error("o fluxo não começou a tocar");
-    if (!tocando) return; // veio vazio: nada a tocar
-    await Promise.race([tocando, esperar(4000)]);
-    if (!comecou) throw new Error("o fluxo não começou a tocar");
-    // Se o "ended" não vier (alguns navegadores com MediaSource), sai quando o áudio parar no fim.
-    await Promise.race([
-      terminou,
-      new Promise<void>((ok) => {
-        let parado = 0;
-        const id = window.setInterval(() => {
-          if (minha !== sessao) return (window.clearInterval(id), ok());
-          const fim = t.buffered.length ? t.buffered.end(t.buffered.length - 1) : 0;
-          parado = t.currentTime >= fim - 0.15 ? parado + 1 : 0;
-          if (parado >= 6) {
-            window.clearInterval(id);
-            ok();
-          }
-        }, 250);
-        void terminou.finally(() => window.clearInterval(id));
-      }),
-    ]);
-  };
-
   try {
-    for (let i = 0; i < partes.length; i++) {
-      if (emFluxo) {
-        const id = await ids[i]!;
-        if (minha !== sessao) return;
-        try {
-          await tocarEmFluxo(id);
-        } catch (erro) {
-          if (minha !== sessao || sinal.aborted) return;
-          if (comecou) throw erro;
-          // O fluxo não tocou neste navegador: baixa o arquivo do mesmo trecho e tenta de novo.
-          console.warn("[Argos] fluxo de voz falhou; baixando o trecho", erro);
-          await tocar(await baixar(id, sinal));
-        }
-      } else {
-        const url = await arquivos[i]!;
-        if (minha !== sessao) return;
-        await tocar(url);
-      }
+    for (let i = 0; i < trechos.length; i++) {
+      const audio = await trechos[i]!;
+      if (minha !== sessao) return;
+      const url = URL.createObjectURL(audio);
+      urls.push(url);
+      await new Promise<void>((ok, falha) => {
+        t.onended = () => ok();
+        t.onerror = () => falha(new Error("áudio inválido"));
+        t.src = url;
+        t.play().then(() => {
+          comecou = true;
+          medirTocador(t);
+          // A esfera acompanha a fala (o áudio não expõe as palavras; um ritmo de fala serve).
+          window.clearInterval(pulso);
+          pulso = window.setInterval(() => eventos.aoPalavra?.(), 190);
+        }, falha);
+      });
     }
   } catch (erro) {
     throw Object.assign(erro instanceof Error ? erro : new Error(String(erro)), { comecou });

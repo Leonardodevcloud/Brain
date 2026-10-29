@@ -147,16 +147,6 @@
 .hora span {
   font-size: 11px;
 }
-.hora .diaReuniao {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-.relogio {
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: var(--texto-2);
-}
 .reuniaoTexto {
   flex: 1 1 auto;
   min-width: 0;

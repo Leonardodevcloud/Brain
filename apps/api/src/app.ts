@@ -5,7 +5,7 @@ import helmet from "helmet";
 import { exigirLogin, tratarErros, type Deps } from "./http/base.js";
 import { rotasAgenda } from "./rotas/agenda.js";
 import { rotasAuth } from "./rotas/auth.js";
-import { rotasFala, rotasPainel } from "./rotas/painel.js";
+import { rotasPainel } from "./rotas/painel.js";
 import { rotasPublicas } from "./rotas/publicas.js";
 import { rotasRegistros } from "./rotas/registros.js";
 import { rotasTarefas } from "./rotas/tarefas.js";
@@ -35,10 +35,9 @@ export function criarApp(deps: Deps) {
   const api = Router();
   // Rotas com corpo bruto (webhook) vêm antes do parser de JSON.
   api.use(rotasPublicas(deps));
-  api.use(express.json({ limit: "3mb" })); // conversas do Argos levam as tabelas mostradas
+  api.use(express.json({ limit: "1mb" }));
   api.use(cookieParser());
   api.use(rotasAuth(deps));
-  api.use(rotasFala(deps));
 
   const protegida = Router();
   protegida.use(exigirLogin(deps));

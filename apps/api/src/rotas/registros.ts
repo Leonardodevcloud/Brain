@@ -87,9 +87,9 @@ export function rotasRegistros({ ctx }: Deps) {
     res.status(204).end();
   });
 
-  // Devolve o registro atualizado: a tela mostra a nova data de revisão.
   r.post("/registros/:id/revisado", async (req, res) => {
-    res.json(await conhecimento.confirmarRevisao(ctx, ator(req), validar(esquemaId, req.params).id));
+    await conhecimento.confirmarRevisao(ctx, ator(req), validar(esquemaId, req.params).id);
+    res.status(204).end();
   });
 
   r.post("/registros/:id/obsoleto", async (req, res) => {

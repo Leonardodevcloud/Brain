@@ -27,17 +27,6 @@ beforeAll(async () => {
     CONFIAR_PROXY: "0",
   });
   const ctx = criarContexto(pool, ambiente, silencioso);
-  // Voz falsa que entrega o áudio em dois pedaços, com um intervalo entre eles.
-  ctx.fala = {
-    nome: "falsa",
-    falar: async () => new Uint8Array([7]),
-    falarFluxo: async () =>
-      (async function* () {
-        yield new Uint8Array([1, 2, 3]);
-        await new Promise((r) => setTimeout(r, 30));
-        yield new Uint8Array([4, 5]);
-      })(),
-  };
   await acesso.criarUsuario(ctx, null, { nome: "Admin", email: "admin@tutts.com.br", senha: "senhaForte123", papel: "admin" });
   servidor = criarApp({ ctx, emissor: new EmissorTokens(ambiente.JWT_SEGREDO!) }).listen(0);
   base = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}/api`;
@@ -83,17 +72,6 @@ describe("API", () => {
     const renovado = await chamar("/auth/renovar", { method: "POST", headers: { cookie } });
     expect(renovado.status).toBe(200);
     expect(renovado.corpo.usuario.email).toBe("admin@tutts.com.br");
-  });
-
-  it("voz em fluxo: prepara com login e o áudio sai pelo id, sem login", async () => {
-    expect((await chamar("/argos/falar/preparar", { method: "POST", json: { texto: "Oi" } })).status).toBe(401);
-    const { corpo } = await chamar("/argos/falar/preparar", { method: "POST", token, json: { texto: "Bom dia, tudo certo." } });
-    const res = await fetch(`${base}/argos/falar/${corpo.id}`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("audio/mpeg");
-    expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([1, 2, 3, 4, 5]);
-    expect((await fetch(`${base}/argos/falar/00000000-0000-4000-8000-000000000000`)).status).toBe(404);
-    expect((await fetch(`${base}/argos/falar/nao-e-id`)).status).toBe(400);
   });
 
   it("recusa renovar a partir de outra origem", async () => {

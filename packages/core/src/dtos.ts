@@ -154,44 +154,13 @@ export interface RespostaAssistenteDTO {
   dados?: DadosCentralDTO | null;
   /** O Argos fez uma pergunta de volta (não teve certeza): a interface já volta a ouvir. */
   aguardaResposta?: boolean;
-  /** O 1º trecho da fala, já sendo gerado no servidor: a interface toca direto de /argos/falar/:id. */
-  voz?: { id: string; texto: string } | null;
-  /** Quanto cada etapa levou (ms), para acompanhar a velocidade. */
-  tempos?: Record<string, number>;
-  /** Memórias do Cérebro que o Argos aplicou nesta resposta. */
-  memorias?: MemoriaUsadaDTO[];
-}
-
-export interface MemoriaUsadaDTO {
-  registroId: string;
-  codigo: string;
-  titulo: string;
-  /** Guardada de uma conversa e ainda sem aprovação. */
-  naoRevisada: boolean;
-}
-
-/** O que o Argos guardou sozinho depois de uma troca. */
-export interface MemoriaGuardadaDTO {
-  registroId: string;
-  codigo: string;
-  titulo: string;
-  acao: "nova" | "atualizada";
-}
-
-/** Planilha anexada na conversa (fica no servidor por algumas horas). */
-export interface AnexoDTO {
-  id: string;
-  nome: string;
-  abas: { nome: string; colunas: string[]; linhas: number }[];
-  /** Colunas sensíveis tiradas do arquivo (CPF, PIX, banco…). */
-  colunasOcultas: string[];
 }
 
 /** Resultado de uma consulta do Argos ao banco da Central. */
 export interface DadosCentralDTO {
   titulo: string;
   /** "pronta" = consulta escrita à mão e testada; "livre" = SQL gerado pela IA para a pergunta. */
-  origem: "pronta" | "livre" | "planilha";
+  origem: "pronta" | "livre";
   colunas: string[];
   linhas: Record<string, unknown>[];
   cortado: boolean;
@@ -203,20 +172,6 @@ export interface DadosCentralDTO {
   explicacao: string | null;
   tabelas: string[];
   ms: number;
-  /** Como desenhar os dados (a IA escolhe o tipo e as colunas; os números são sempre os da consulta). */
-  grafico?: GraficoDTO | null;
-}
-
-export interface GraficoDTO {
-  /** linha = ao longo do tempo; barras = comparar; pizza = partes de um todo. */
-  tipo: "linha" | "barras" | "pizza";
-  /** Coluna das categorias ou datas. */
-  x: string;
-  /** Colunas numéricas (até 3; pizza usa só a primeira). */
-  y: string[];
-  titulo: string | null;
-  /** O gráfico abre primeiro (a pessoa pediu) ou fica como opção ao lado da tabela. */
-  principal: boolean;
 }
 
 /** Tarefa do Cérebro (o que ficou combinado em reuniões, registros e com o Argos). */
@@ -297,24 +252,4 @@ export interface CaixaEmailDTO {
   ultimaLeituraEm: string | null;
   pendentes: number;
   emails: EmailDTO[];
-}
-
-/** Uma troca guardada numa conversa (o que a tela mostra). */
-export interface TurnoSalvoDTO {
-  pergunta: string;
-  resposta: RespostaAssistenteDTO | null;
-  erro: string | null;
-  em: number;
-  guardadas?: MemoriaGuardadaDTO[];
-}
-
-export interface ResumoConversaDTO {
-  id: string;
-  titulo: string;
-  trocas: number;
-  atualizadoEm: string;
-}
-
-export interface ConversaDTO extends ResumoConversaDTO {
-  turnos: TurnoSalvoDTO[];
 }
