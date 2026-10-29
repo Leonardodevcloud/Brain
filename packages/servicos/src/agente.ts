@@ -9,7 +9,7 @@ import {
   validarSql,
   type TabelaCatalogo,
 } from "@cerebro/central";
-import { NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type DadosCentralDTO, type FonteDTO, type GraficoDTO, type TipoRegistro } from "@cerebro/core";
+import { NOME_TIPO, TIPOS_REGISTRO, esquemaCriarRegistro, type DadosCentralDTO, type FonteDTO, type GraficoDTO, type MemoriaUsadaDTO, type TipoRegistro } from "@cerebro/core";
 import { registros, usuarios } from "@cerebro/db";
 import {
   SISTEMA_AGENTE,
@@ -28,6 +28,7 @@ import { criarReuniao } from "./agenda.js";
 import { criarTarefa, listarTarefas } from "./tarefas.js";
 import { criarRegistro } from "./registros.js";
 import { planoRapido } from "./central.js";
+import { consultarPlanilha, contextoPlanilha, lerAnexo } from "./planilhas.js";
 
 /** Uma troca anterior da conversa, para o Argos entender "e em Salvador?". */
 export interface TurnoAnterior {
@@ -48,7 +49,12 @@ export interface RespostaAgente {
   tempos: Record<string, number>;
   /** A fala é uma pergunta de volta: a interface já fica ouvindo a resposta. */
   confirmar: boolean;
+  /** Memórias do Cérebro que a IA disse ter aplicado. */
+  memorias: MemoriaUsadaDTO[];
 }
+
+/** Quantas memórias do Cérebro acompanham cada pergunta. */
+const MEMORIAS_POR_PERGUNTA = 5;
 
 const MAX_PASSOS = 8;
 const LINHAS_PARA_IA = 40;
@@ -62,7 +68,7 @@ const TABELA_DE_PESSOA = /(profission|motoboy|usuario|users|colaborador|funciona
 interface Resultado {
   id: string;
   titulo: string;
-  origem: "pronta" | "livre";
+  origem: "pronta" | "livre" | "planilha";
   sql: string;
   colunas: string[];
   linhas: Record<string, unknown>[];
@@ -93,21 +99,37 @@ async function rodarPronta(ctx: Contexto, nome: string, parametros: Record<strin
 const json = (v: unknown) => JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? Number(x) : x));
 
 /** Agente do Argos: entende a pergunta, consulta o que precisar (em etapas) e responde. */
-export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, historico: TurnoAnterior[] = []): Promise<RespostaAgente> {
+export async function agenteArgos(
+  ctx: Contexto,
+  ator: Ator,
+  pergunta: string,
+  historico: TurnoAnterior[] = [],
+  opcoes: { anexo?: string | null } = {},
+): Promise<RespostaAgente> {
   const ia = ctx.ia!;
   const inicio = Date.now();
   const tempos: Record<string, number> = {};
   const plano = ctx.central ? preBuscaProvavel(pergunta) : null;
   const processo = PERGUNTA_DE_PROCESSO.test(pergunta.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
 
-  // Tudo o que não depende da IA sai junto: quem pergunta, o catálogo e, se der para prever, os dados.
-  const [usuario, leitura, preBusca, preConhecimento] = await Promise.all([
+  // A memória do Cérebro acompanha TODA pergunta. Perguntas curtas de continuação ("e ontem?")
+  // buscam também pelo assunto da pergunta anterior. Rascunhos entram (são as memórias recém-guardadas);
+  // conteúdo restrito nunca vai para a IA externa.
+  const anterior = historico.at(-1)?.pergunta ?? "";
+  const consultaMemoria = pergunta.length < 60 && anterior ? `${pergunta} ${anterior}`.slice(0, 900) : pergunta;
+  const anexo = opcoes.anexo ? lerAnexo(ator, opcoes.anexo) : null;
+
+  // Tudo o que não depende da IA sai junto: quem pergunta, o catálogo, a memória e, se der para prever, os dados.
+  const [usuario, leitura, preBusca, memoria] = await Promise.all([
     ator.usuarioId ? usuarios.buscarPorId(ctx.pool, ator.usuarioId).catch(() => null) : null,
     ctx.central ? carregarCatalogo(ctx.central).then((c) => ({ c, erro: null }), (erro: Error) => ({ c: [] as TabelaCatalogo[], erro })) : null,
     plano ? rodarPronta(ctx, plano.ferramenta, plano.parametros).catch(() => null) : null,
-    // "Como fazemos X?": já procura nos POPs e regras (só conteúdo não restrito vai para a IA).
-    processo ? buscar(ctx, { pergunta, incluirRascunhos: false, incluirRestritos: false }).catch(() => null) : null,
+    buscar(ctx, { pergunta: consultaMemoria, incluirRascunhos: true, incluirRestritos: false }).catch((erro: Error) => {
+      ctx.log.warn({ erro: erro.message }, "argos: memória indisponível");
+      return [] as FonteDTO[];
+    }),
   ]);
+  const memorias = memoria.slice(0, MEMORIAS_POR_PERGUNTA);
   tempos.preparo = Date.now() - inicio;
   const pessoa = usuario?.nome?.trim() || "um gestor da Central";
 
@@ -145,9 +167,20 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
     mensagens.push({ papel: "assistant", conteudo: json({ acao: "responder", fala: esconder(t.resposta, nomes) }) });
   }
   const hora = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bahia" });
+  const textoMemoria = memorias.length
+    ? memorias.map((m) => `[${m.codigo}]${m.status === "rascunho" ? " [não revisada]" : ""} ${m.titulo}\n${m.trecho}`).join("\n\n")
+    : "";
+  const planilha = anexo ? contextoPlanilha(anexo) : null;
+  const nomesPlanilha = planilha ? [...nomesDePessoas(planilha.linhasAmostra, []), ...nomesNoTexto(planilha.texto)] : [];
   mensagens.push({
     papel: "user",
-    conteudo: esconder(`Agora são ${hora} de ${hojeLocal(agora)}.${avisoCentral ? ` ${avisoCentral}` : ""}\nPergunta:\n${embrulharDados(pergunta)}`),
+    conteudo: esconder(
+      `Agora são ${hora} de ${hojeLocal(agora)}.${avisoCentral ? ` ${avisoCentral}` : ""}\n` +
+        `Memória do Cérebro (regras e notas já guardadas que podem valer aqui):\n${textoMemoria ? embrulharDados(textoMemoria) : "(nada guardado sobre isso)"}\n` +
+        (planilha ? `${embrulharDados(planilha.texto)}\n` : opcoes.anexo ? "A planilha anexada expirou: peça para enviar de novo.\n" : "") +
+        `Pergunta:\n${embrulharDados(pergunta)}`,
+      [...nomesNoTexto(textoMemoria), ...nomesPlanilha],
+    ),
   });
 
   const resultados: Resultado[] = [];
@@ -159,7 +192,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
   const observar = (texto: string, nomes: string[] = []) => mensagens.push({ papel: "user", conteudo: esconder(texto, nomes) });
 
   /** Guarda o resultado, registra na auditoria e mostra para a IA (com os nomes mascarados). */
-  const registrarResultado = async (r: Resultado, origem: string, extra = "") => {
+  const registrarResultado = async (r: Resultado, origem: string, extra = "", nomesExtra: string[] = []) => {
     resultados.push(r);
     await auditar(ctx.pool, ator, "argos.consulta_central", undefined, { pergunta: pergunta.slice(0, 300), origem, linhas: r.linhas.length, ms: r.ms });
     const amostra = r.linhas.slice(0, LINHAS_PARA_IA);
@@ -169,7 +202,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         `Colunas: ${r.colunas.join(", ")}\n` +
         embrulharDados(json(amostra)) +
         (r.linhas.length > LINHAS_PARA_IA ? `\n(mostrando ${LINHAS_PARA_IA} de ${r.linhas.length}; agregue no SQL se precisar do todo)` : ""),
-      nomesDePessoas(amostra, r.tabelas),
+      [...nomesDePessoas(amostra, r.tabelas), ...nomesExtra],
     );
   };
 
@@ -182,10 +215,8 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
     );
   };
 
-  if (preConhecimento) {
-    mensagens.push({ papel: "assistant", conteudo: json({ acao: "conhecimento", busca: pergunta.slice(0, 200), pensamento: "procurar no Cérebro" }) });
-    mostrarConhecimento(preConhecimento);
-  }
+  // "Como fazemos X?": a memória achada já é a resposta (vira fonte citada).
+  if (processo) for (const f of memorias) if (!fontes.some((x) => x.registroId === f.registroId)) fontes.push({ ...f, indice: fontes.length + 1 });
 
   // A consulta prevista já voltou: entra na conversa como se fosse a 1ª etapa, e a IA costuma responder de primeira.
   if (plano && preBusca) {
@@ -220,6 +251,10 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         (final.mostrar && resultados.find((r) => r.id === final.mostrar)) || [...resultados].reverse().find((r) => r.linhas.length) || resultados.at(-1) || null;
       const confirmar = final.confirmar === true;
       tempos.total = Date.now() - inicio;
+      const usou = new Set((Array.isArray(final.usou) ? final.usou : []).map((c) => String(c).trim().toUpperCase()));
+      const memoriasUsadas: MemoriaUsadaDTO[] = memorias
+        .filter((m) => usou.has(m.codigo.toUpperCase()))
+        .map((m) => ({ registroId: m.registroId, codigo: m.codigo, titulo: m.titulo, naoRevisada: m.status === "rascunho" }));
       ctx.log.info({ tempos, passos: passo }, "argos: respondeu");
       return {
         fala: (final.fala ?? "").trim() || "Pronto.",
@@ -232,6 +267,7 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
         passos: passo,
         tempos,
         confirmar,
+        memorias: memoriasUsadas,
       };
     }
 
@@ -275,6 +311,33 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
           const msg = (erro as Error).message.slice(0, 500);
           ctx.log.warn({ erro: msg }, "argos: consulta falhou");
           observar(`Erro na consulta: ${msg}\nConfira as colunas (acao "colunas") e tente de novo.`);
+        }
+        break;
+      }
+
+      case "planilha": {
+        if (!anexo) {
+          observar(opcoes.anexo ? "A planilha anexada expirou. Peça para a pessoa enviar de novo." : "Não há planilha anexada nesta conversa.");
+          break;
+        }
+        const id = `r${resultados.length + 1}`;
+        try {
+          const x = consultarPlanilha(anexo, p);
+          const r: Resultado = {
+            id,
+            titulo: p.titulo?.trim() || `${anexo.nome} · ${x.aba}`,
+            origem: "planilha",
+            sql: `-- planilha "${anexo.nome}", aba "${x.aba}" (${x.total} linhas no resultado)\n${json({ filtros: p.filtros ?? [], agrupar: p.agrupar ?? [], metricas: p.metricas ?? [], ordenar: p.ordenar ?? null })}`,
+            colunas: x.colunas,
+            linhas: x.linhas,
+            cortado: x.cortado,
+            totais: {},
+            tabelas: [],
+            ms: x.ms,
+          };
+          await registrarResultado(r, "planilha", "", nomesNoTexto(json(x.linhas.slice(0, LINHAS_PARA_IA))));
+        } catch (erro) {
+          observar(`Erro no cálculo da planilha: ${(erro as Error).message.slice(0, 400)}`);
         }
         break;
       }
@@ -378,10 +441,10 @@ export async function agenteArgos(ctx: Contexto, ator: Ator, pergunta: string, h
       }
 
       default:
-        observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, conhecimento, pendencias, tarefas, criar_tarefa, agendar_reuniao, rascunho ou responder.`);
+        observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, planilha, conhecimento, pendencias, tarefas, criar_tarefa, agendar_reuniao, rascunho ou responder.`);
     }
   }
-  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS, tempos: { ...tempos, total: Date.now() - inicio }, confirmar: false };
+  return { fala: "Não consegui concluir agora. Tente perguntar de outro jeito.", analise: null, dados: null, fontes, abrir: null, rascunho, tarefa: tarefaCriada, passos: MAX_PASSOS, tempos: { ...tempos, total: Date.now() - inicio }, confirmar: false, memorias: [] };
 }
 
 /**

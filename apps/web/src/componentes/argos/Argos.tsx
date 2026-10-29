@@ -7,7 +7,8 @@ import { ErroApi, api } from "../../api/cliente";
 import { desbloquearFala, falar, nivelFala, pararFala } from "./fala";
 import { Escuta, Gravador } from "./gravador";
 import { DadosCentral } from "./DadosCentral";
-import { conversa as fio, useConversa, type TurnoConversa } from "./conversa";
+import { anexo, conversa as fio, memorizarDepois, useConversa, type TurnoConversa } from "./conversa";
+import { BotaoAnexar, ChipAnexo, MemoriaDaResposta } from "./Memoria";
 import { Orbe, type EstadoOrbe } from "./Orbe";
 import css from "./Argos.module.css";
 
@@ -131,12 +132,14 @@ export function Argos() {
       const historico = fio.historicoParaApi();
       const id = fio.adicionar(limparTranscricao(fala));
       try {
-        const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto: fala, historico, falar: !mudoRef.current } });
+        const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto: fala, historico, falar: !mudoRef.current, anexo: anexo.atual()?.id ?? null } });
         if (minha !== geracao.current) {
           fio.remover(id);
           return;
         }
         fio.responder(id, r);
+        // Memória automática em segundo plano: a voz não espera por isso.
+        memorizarDepois(id);
         // O Argos pode ter criado tarefa, reunião ou rascunho: as telas abertas se atualizam.
         void qc.invalidateQueries({ queryKey: ["tarefas"] });
         void qc.invalidateQueries({ queryKey: ["agenda"] });
@@ -562,6 +565,8 @@ export function Argos() {
                   · <kbd>Esc</kbd> cancela
                 </p>
               ) : podeDigitar ? (
+                <>
+                <ChipAnexo />
                 <form className={css.digitar} onSubmit={enviarDigitado}>
                   <Keyboard size={15} aria-hidden="true" className={css.iconeDigitar} />
                   <label htmlFor="argos-texto" className="so-leitor">
@@ -576,10 +581,12 @@ export function Argos() {
                     placeholder="Ou escreva aqui…"
                     autoComplete="off"
                   />
+                  <BotaoAnexar className={css.anexar} />
                   <button type="button" className={css.microfone} onClick={() => void ouvir("continuo")} aria-label="Falar" title="Falar (segure Espaço)">
                     <Mic size={15} aria-hidden="true" />
                   </button>
                 </form>
+                </>
               ) : (
                 <p className={css.dica}>{toque ? "Toque fora para fechar" : <><kbd>Esc</kbd> cancela</>}</p>
               )}
@@ -608,6 +615,7 @@ function TurnoArgos({ t, irPara, fechar }: { t: TurnoConversa; irPara: (destino:
         <div className={css.bolhaArgos}>
           <p className={css.falaTurno}>{r.fala}</p>
           {r.dados && <DadosCentral dados={r.dados} compacto />}
+          <MemoriaDaResposta t={t} aoAbrir={fechar} />
           {r.fontes.length > 0 && (
             <div className={css.fontesTurno}>
               {r.fontes.slice(0, 4).map((f) => (

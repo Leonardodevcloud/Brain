@@ -20,6 +20,10 @@ import {
   gerarFala,
   prepararFala,
   lerGrafico,
+  memorizar,
+  guardarPlanilha,
+  consultarPlanilha,
+  lerAnexo,
   falaEmCurso,
   montarMapa,
   painel,
@@ -898,5 +902,102 @@ describe("Argos consultando a Central", () => {
     expect(r.fala).toMatch(/só consigo ler/);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM public.bi_entregas");
     expect(rows[0].n).toBe(3);
+  });
+});
+
+
+describe("memória do Argos", () => {
+  it("toda resposta leva a memória junto (até rascunho recém-guardado) e diz quais usou", async () => {
+    const nota = await conhecimento.criarRegistro(
+      ctx,
+      atorAdmin,
+      novo({ tipo: "nota", titulo: "Margem por motoboy na BR AutoParts", conteudo: "Margem = R$ 250 menos o valor pago ao motoboy menos R$ 80 de diária. O valor cobrado do cliente não entra." }),
+      { origem: "manual", sempreRascunho: true },
+    );
+    await rodarIndexacao();
+    let vista = "";
+    const iaRot = roteiro([
+      (p) => {
+        vista = ultimaMensagem(p);
+        return { acao: "responder", fala: "Pela regra que você me passou, a margem é 250 menos o pago menos 80.", usou: [nota.codigo, "XYZ-999"] };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia: iaRot }, atorAdmin, "como eu calculo a margem por motoboy da BR AutoParts?");
+    expect(vista).toContain("Memória do Cérebro");
+    expect(vista).toContain(`[${nota.codigo}] [não revisada]`);
+    expect(r.memorias).toEqual([{ registroId: nota.id, codigo: nota.codigo, titulo: nota.titulo, naoRevisada: true }]);
+  });
+
+  it("guarda sozinho o que a pessoa ensinou, atualiza em vez de duplicar e recusa dado pessoal", async () => {
+    let chamada = 0;
+    let primeira = "";
+    const iaMem = new IaFalsa((p) => {
+      if (!p.sistema.includes("memória de longo prazo")) return { resposta: "x" };
+      chamada++;
+      if (chamada === 1) {
+        primeira = p.mensagens[0]!.conteudo;
+        return { memorias: [{ titulo: "Pellegrino é o grupo Comollati", conteudo: "Quando falarem Pellegrino, é o grupo Comollati (código 767). SLA de 120 minutos.", area: "comercial" }, { titulo: "PIX do Fulano", conteudo: "Chave pix 123.456.789-09" }] };
+      }
+      return { memorias: [{ titulo: "Pellegrino é o grupo Comollati", conteudo: "Pellegrino = Comollati (767). SLA de 90 minutos a partir de novembro.", atualiza: codigo }] };
+    });
+    let codigo = "";
+    const c = { ...ctx, ia: iaMem };
+    const g1 = await memorizar(c, atorAdmin, { pergunta: "anota aí: Pellegrino é o grupo Comollati, código 767, e o SLA deles é 120 minutos", resposta: "Entendido." });
+    expect(g1).toHaveLength(1); // o PIX foi recusado
+    expect(g1[0]).toMatchObject({ titulo: "Pellegrino é o grupo Comollati", acao: "nova" });
+    codigo = g1[0]!.codigo;
+    const salvo = await conhecimento.obterRegistro(ctx, g1[0]!.registroId);
+    expect(salvo.status).toBe("rascunho");
+    // Já encontrável pela busca, sem esperar o worker.
+    const achados = await responder(ctx, atorAdmin, esquemaPergunta.parse({ pergunta: "quem é o Pellegrino?", incluirRascunhos: true }));
+    expect(achados.fontes.map((f) => f.codigo)).toContain(codigo);
+    const g2 = await memorizar(c, atorAdmin, { pergunta: "corrigindo: o SLA do Pellegrino passa a ser 90 minutos em novembro", resposta: "Ok." });
+    expect(g2).toEqual([expect.objectContaining({ codigo, acao: "atualizada" })]);
+    expect((await conhecimento.obterRegistro(ctx, g2[0]!.registroId)).conteudo).toContain("90 minutos");
+    expect(primeira).toContain("Última troca");
+    // Cumprimento nem chama a IA.
+    const antes = chamada;
+    expect(await memorizar(c, atorAdmin, { pergunta: "bom dia, tudo bem?", resposta: "Bom dia!" })).toEqual([]);
+    expect(chamada).toBe(antes);
+  });
+
+  it("planilha: tira colunas sensíveis, entende CSV brasileiro e calcula agrupando", () => {
+    const csv = "Motoboy;CPF;Loja;Valor pago;Data\nAna Souza;111.222.333-44;Centro;1.250,50;2026-10-01\nBeto Lima;222.333.444-55;Centro;300;2026-10-02\nAna Souza;111.222.333-44;Farol;100,00;2026-10-03\n";
+    const a = guardarPlanilha(atorAdmin, "pagamentos.csv", new TextEncoder().encode(csv));
+    expect(a.colunasOcultas).toEqual(["CPF"]);
+    expect(a.abas[0]).toMatchObject({ colunas: ["Motoboy", "Loja", "Valor pago", "Data"], linhas: 3 });
+    expect(lerAnexo(atorMembro, a.id)).toBeNull(); // só quem enviou
+    const anexo = lerAnexo(atorAdmin, a.id)!;
+    const x = consultarPlanilha(anexo, { agrupar: ["motoboy"], metricas: [{ fn: "soma", coluna: "valor pago", nome: "total" }, { fn: "contagem" }], ordenar: { coluna: "total", desc: true } });
+    expect(x.linhas).toEqual([
+      { Motoboy: "Ana Souza", total: 1350.5, contagem: 2 },
+      { Motoboy: "Beto Lima", total: 300, contagem: 1 },
+    ]);
+    expect(consultarPlanilha(anexo, { filtros: [{ coluna: "Data", op: ">=", valor: "2026-10-02" }] }).total).toBe(2);
+    expect(() => consultarPlanilha(anexo, { agrupar: ["Inventada"] })).toThrow(/não existe/);
+  });
+
+  it("planilha no agente: os números vêm do cálculo, e os nomes vão mascarados", async () => {
+    const xlsx = zipSync({
+      "xl/workbook.xml": strToU8('<workbook><sheets><sheet name="Outubro" sheetId="1"/></sheets></workbook>'),
+      "xl/sharedStrings.xml": strToU8("<sst><si><t>Motoboy</t></si><si><t>Entregas</t></si><si><t>Carla Dias Neves</t></si><si><t>Davi Rocha Leal</t></si></sst>"),
+      "xl/worksheets/sheet1.xml": strToU8('<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2"><v>12</v></c></row><row r="3"><c r="A3" t="s"><v>3</v></c><c r="B3"><v>30</v></c></row></sheetData></worksheet>'),
+    });
+    const a = guardarPlanilha(atorAdmin, "outubro.xlsx", xlsx);
+    let contexto = "";
+    const iaRot = roteiro([
+      (p) => {
+        contexto = ultimaMensagem(p);
+        return { acao: "planilha", metricas: [{ fn: "soma", coluna: "Entregas", nome: "total" }], titulo: "Total de entregas" };
+      },
+      (p) => {
+        expect(ultimaMensagem(p)).toContain('"total":42');
+        return { acao: "responder", fala: "Foram 42 entregas em outubro.", mostrar: "r1", usou: [] };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia: iaRot }, atorAdmin, "quantas entregas tem nessa planilha?", [], { anexo: a.id });
+    expect(contexto).toContain('Planilha anexada "outubro.xlsx"');
+    expect(contexto).not.toContain("Carla Dias Neves");
+    expect(r.dados).toMatchObject({ origem: "planilha", titulo: "Total de entregas", linhas: [{ total: 42 }] });
   });
 });

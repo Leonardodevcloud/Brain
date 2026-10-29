@@ -158,13 +158,40 @@ export interface RespostaAssistenteDTO {
   voz?: { id: string; texto: string } | null;
   /** Quanto cada etapa levou (ms), para acompanhar a velocidade. */
   tempos?: Record<string, number>;
+  /** Memórias do Cérebro que o Argos aplicou nesta resposta. */
+  memorias?: MemoriaUsadaDTO[];
+}
+
+export interface MemoriaUsadaDTO {
+  registroId: string;
+  codigo: string;
+  titulo: string;
+  /** Guardada de uma conversa e ainda sem aprovação. */
+  naoRevisada: boolean;
+}
+
+/** O que o Argos guardou sozinho depois de uma troca. */
+export interface MemoriaGuardadaDTO {
+  registroId: string;
+  codigo: string;
+  titulo: string;
+  acao: "nova" | "atualizada";
+}
+
+/** Planilha anexada na conversa (fica no servidor por algumas horas). */
+export interface AnexoDTO {
+  id: string;
+  nome: string;
+  abas: { nome: string; colunas: string[]; linhas: number }[];
+  /** Colunas sensíveis tiradas do arquivo (CPF, PIX, banco…). */
+  colunasOcultas: string[];
 }
 
 /** Resultado de uma consulta do Argos ao banco da Central. */
 export interface DadosCentralDTO {
   titulo: string;
   /** "pronta" = consulta escrita à mão e testada; "livre" = SQL gerado pela IA para a pergunta. */
-  origem: "pronta" | "livre";
+  origem: "pronta" | "livre" | "planilha";
   colunas: string[];
   linhas: Record<string, unknown>[];
   cortado: boolean;

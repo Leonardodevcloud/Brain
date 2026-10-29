@@ -203,7 +203,10 @@ export function DadosCentral({ dados, compacto = false }: { dados: DadosCentralD
       {bastidor && (
         <div className={css.bastidor}>
           <p>
-            {dados.origem === "pronta" ? "Consulta pronta e testada" : "Consulta escrita pela IA para esta pergunta"} · banco da Central, só leitura ·{" "}
+            {dados.origem === "planilha"
+              ? "Cálculo feito no servidor sobre a planilha anexada"
+              : `${dados.origem === "pronta" ? "Consulta pronta e testada" : "Consulta escrita pela IA para esta pergunta"} · banco da Central, só leitura`}{" "}
+            ·{" "}
             {dados.ms} ms
             {dados.tabelas.length > 0 && ` · tabelas: ${dados.tabelas.join(", ")}`}
           </p>

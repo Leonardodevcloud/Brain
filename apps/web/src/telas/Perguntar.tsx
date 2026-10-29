@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/cliente";
 import { DadosCentral } from "../componentes/argos/DadosCentral";
-import { conversa, useConversa } from "../componentes/argos/conversa";
+import { anexo, conversa, memorizarDepois, useConversa, type TurnoConversa } from "../componentes/argos/conversa";
+import { BotaoAnexar, ChipAnexo, MemoriaDaResposta } from "../componentes/argos/Memoria";
 import { useAvisar } from "../componentes/comum";
 import { Conteudo } from "../componentes/Conteudo";
 import { nomeTipo } from "../util/formato";
@@ -33,7 +34,7 @@ function comCitacoes(texto: string, fontes: FonteDTO[]) {
   });
 }
 
-function Resposta({ r }: { r: RespostaAssistenteDTO }) {
+function Resposta({ r, t }: { r: RespostaAssistenteDTO; t: TurnoConversa }) {
   const avisar = useAvisar();
   const navegar = useNavigate();
   const texto = r.detalhe ?? r.fala;
@@ -45,6 +46,7 @@ function Resposta({ r }: { r: RespostaAssistenteDTO }) {
           <DadosCentral dados={r.dados} />
         </div>
       )}
+      <MemoriaDaResposta t={t} claro />
       {r.fontes.length > 0 && (
         <div className={css.fontes}>
           <span className="suave pequeno">Fontes</span>
@@ -111,8 +113,9 @@ export default function Perguntar() {
     setRascunho("");
     setPensando(true);
     try {
-      const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto, historico } });
+      const r = await api<RespostaAssistenteDTO>("/argos", { metodo: "POST", corpo: { texto, historico, anexo: anexo.atual()?.id ?? null } });
       conversa.responder(id, r);
+      memorizarDepois(id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Não deu certo agora. Tente de novo.";
       conversa.falhar(id, msg);
@@ -174,7 +177,7 @@ export default function Perguntar() {
           {turnos.map((t) => (
             <article key={t.id} className={css.turno}>
               <p className={css.voce}>{t.pergunta}</p>
-              {t.resposta && <Resposta r={t.resposta} />}
+              {t.resposta && <Resposta r={t.resposta} t={t} />}
               {t.erro && (
                 <div className="aviso aviso-erro">
                   {t.erro}{" "}
@@ -193,6 +196,7 @@ export default function Perguntar() {
           <div ref={fim} />
         </div>
 
+        <ChipAnexo claro />
         <form onSubmit={enviar} className={css.compositor}>
           <label htmlFor="nova" className="so-leitor">
             Sua pergunta
@@ -208,6 +212,7 @@ export default function Perguntar() {
             placeholder="Pergunte qualquer coisa sobre a operação…"
             autoComplete="off"
           />
+          <BotaoAnexar className={`botao ${css.enviar}`} desabilitado={pensando} />
           <button
             type="submit"
             className={`botao botao-primario ${css.enviar}`}
@@ -219,7 +224,7 @@ export default function Perguntar() {
           </button>
         </form>
         <p className="suave pequeno" style={{ marginTop: -8 }}>
-          Enter envia · Shift+Enter quebra linha · consulta a Central só para leitura, sem dados pessoais.
+          Enter envia · Shift+Enter quebra linha · o clipe anexa uma planilha · consulta a Central só para leitura, sem dados pessoais.
         </p>
       </div>
     </div>

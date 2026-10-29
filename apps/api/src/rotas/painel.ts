@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { AppError } from "@cerebro/core";
-import { LIMITE_AUDIO_BYTES, acesso, atenderFala, configVoz, falaEmCurso, fontes, gerarFala, montarMapa, painel, prepararFala, salvarVoz, transcreverFala } from "@cerebro/servicos";
+import { LIMITE_AUDIO_BYTES, LIMITE_PLANILHA_BYTES, acesso, atenderFala, guardarPlanilha, memorizar, configVoz, falaEmCurso, fontes, gerarFala, montarMapa, painel, prepararFala, salvarVoz, transcreverFala } from "@cerebro/servicos";
 import { z } from "zod";
 import { ator, esquemaId, exigirAdmin, validar, type Deps } from "../http/base.js";
 
@@ -41,7 +41,7 @@ export function rotasPainel({ ctx }: Deps) {
   );
 
   r.post("/argos", async (req, res) => {
-    const { texto, historico, falar } = validar(
+    const { texto, historico, falar, anexo } = validar(
       z.object({
         texto: z.string().trim().min(2).max(1000),
         // Últimas trocas da conversa, para perguntas de continuação ("e em Salvador?").
@@ -51,10 +51,35 @@ export function rotasPainel({ ctx }: Deps) {
           .default([]),
         // A interface vai falar a resposta: o servidor já adianta a voz do 1º trecho.
         falar: z.boolean().default(false),
+        // Planilha anexada na conversa (id devolvido por POST /argos/anexos).
+        anexo: z.uuid().nullish(),
       }),
       req.body,
     );
-    res.json(await atenderFala(ctx, ator(req), texto, historico, { falar }));
+    res.json(await atenderFala(ctx, ator(req), texto, historico, { falar, anexo }));
+  });
+
+  // Depois de cada resposta, a interface pede para o Argos guardar o que valer (memória automática).
+  r.post("/argos/memorizar", async (req, res) => {
+    const troca = validar(
+      z.object({
+        pergunta: z.string().trim().min(1).max(1000),
+        resposta: z.string().max(6000),
+        historico: z
+          .array(z.object({ pergunta: z.string().max(1000), resposta: z.string().max(4000) }))
+          .max(10)
+          .default([]),
+      }),
+      req.body,
+    );
+    res.json({ guardadas: await memorizar(ctx, ator(req), troca) });
+  });
+
+  // Planilha para analisar na conversa (.xlsx ou .csv). O nome vem na URL; o arquivo, no corpo.
+  r.post("/argos/anexos", express.raw({ type: () => true, limit: LIMITE_PLANILHA_BYTES }), async (req, res) => {
+    const { nome } = validar(z.object({ nome: z.string().trim().min(3).max(200) }), req.query);
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw AppError.requisicaoInvalida("Envie a planilha.");
+    res.status(201).json(guardarPlanilha(ator(req), nome, new Uint8Array(req.body)));
   });
 
   // Voz do Argos: gerada no servidor, a mesma em qualquer aparelho.

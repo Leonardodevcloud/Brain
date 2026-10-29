@@ -149,9 +149,9 @@ export async function atenderFala(
   ator: Ator,
   falaBruta: string,
   historico: TurnoAnterior[] = [],
-  opcoes: { falar?: boolean } = {},
+  opcoes: { falar?: boolean; anexo?: string | null } = {},
 ): Promise<RespostaAssistenteDTO> {
-  const r = await responderFala(ctx, ator, falaBruta, historico);
+  const r = await responderFala(ctx, ator, falaBruta, historico, opcoes.anexo ?? null);
   if (!opcoes.falar || !ctx.fala || !r.fala.trim()) return r;
   const primeiro = dividirFala(r.fala)[0];
   if (!primeiro) return r;
@@ -159,7 +159,7 @@ export async function atenderFala(
   return id ? { ...r, voz: { id, texto: primeiro } } : r;
 }
 
-async function responderFala(ctx: Contexto, ator: Ator, falaBruta: string, historico: TurnoAnterior[]): Promise<RespostaAssistenteDTO> {
+async function responderFala(ctx: Contexto, ator: Ator, falaBruta: string, historico: TurnoAnterior[], anexo: string | null): Promise<RespostaAssistenteDTO> {
   const fala = falaBruta.trim().slice(0, 1000);
   if (fala.length < 2) throw AppError.requisicaoInvalida("Não ouvi nada. Segure o espaço e fale de novo.");
 
@@ -168,7 +168,7 @@ async function responderFala(ctx: Contexto, ator: Ator, falaBruta: string, histo
   const rapido = interpretarRapido(fala);
   if (ctx.ia && rapido?.intencao !== "navegar") {
     try {
-      return await viaAgente(ctx, ator, fala, historico);
+      return await viaAgente(ctx, ator, fala, historico, anexo);
     } catch (erro) {
       ctx.log.warn({ erro: (erro as Error).message }, "agente do Argos falhou; usando as regras simples");
     }
@@ -285,8 +285,8 @@ async function responderFala(ctx: Contexto, ator: Ator, falaBruta: string, histo
 }
 
 /** Resposta do agente no formato da interface: fala, números, fontes e para onde ir. */
-async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: TurnoAnterior[]): Promise<RespostaAssistenteDTO> {
-  const r = await agenteArgos(ctx, ator, fala, historico);
+async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: TurnoAnterior[], anexo: string | null): Promise<RespostaAssistenteDTO> {
+  const r = await agenteArgos(ctx, ator, fala, historico, { anexo });
   let acao: RespostaAssistenteDTO["acao"] = null;
   if (r.abrir) {
     const [tipo, alvo] = r.abrir.includes(":") ? (r.abrir.split(":", 2) as [string, string]) : [null, r.abrir];
@@ -331,6 +331,7 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
     dados: r.dados,
     aguardaResposta: r.confirmar,
     tempos: r.tempos,
+    memorias: r.memorias,
   };
 }
 
