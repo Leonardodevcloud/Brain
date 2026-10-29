@@ -163,6 +163,9 @@
 .principal:focus {
   outline: none;
 }
+.principalCheio {
+  padding: 16px 16px 16px 14px;
+}
 
 /* Elementos só do celular ficam escondidos no computador. */
 .topoCelular,
@@ -180,6 +183,9 @@
   }
   .principal {
     padding: 8px 16px calc(104px + env(safe-area-inset-bottom));
+  }
+  .principalCheio {
+    padding: 6px 10px calc(104px + env(safe-area-inset-bottom));
   }
 
   .topoCelular {

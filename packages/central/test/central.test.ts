@@ -8,6 +8,10 @@ import {
   ehColunaPessoal,
   sincronizarAcesso,
   validarSql,
+  ClienteApiCentral,
+  ENDPOINTS_CENTRAL,
+  lerRespostaCentral,
+  limparSensiveis,
   type PoolLeitura,
 } from "../src/index.js";
 
@@ -26,7 +30,9 @@ CREATE TABLE disponibilidade_lojas (id serial PRIMARY KEY, regiao_id int REFEREN
 CREATE TABLE disponibilidade_linhas (id serial PRIMARY KEY, loja_id int REFERENCES disponibilidade_lojas(id), cod_profissional varchar(50),
   nome_profissional varchar(200), status varchar(20) DEFAULT 'A CONFIRMAR', is_excedente boolean DEFAULT false, is_reposicao boolean DEFAULT false);
 CREATE TABLE bi_entregas (id serial PRIMARY KEY, os int, ponto int, cod_cliente int, nome_fantasia varchar, centro_custo varchar, cod_prof int,
-  nome_prof varchar, data_solicitado date, valor numeric, valor_prof numeric, dentro_prazo boolean, tempo_execucao_minutos int, ocorrencia varchar);
+  nome_prof varchar, data_solicitado date, valor numeric, valor_prof numeric, dentro_prazo boolean, tempo_execucao_minutos int, ocorrencia varchar,
+  os_concluida boolean, finalizado timestamp, data_hora timestamp, data_hora_alocado timestamp, data_chegada date, hora_chegada varchar,
+  dentro_prazo_prof boolean, tempo_entrega_prof_minutos int);
 CREATE TABLE withdrawal_requests (id serial PRIMARY KEY, user_cod varchar, user_name varchar, cpf varchar, pix_key varchar,
   requested_amount numeric, fee_amount numeric, final_amount numeric, status varchar, created_at timestamp DEFAULT now(), approved_at timestamp);
 CREATE TABLE user_financial_data (id serial PRIMARY KEY, user_cod varchar, full_name varchar, cpf varchar, pix_key varchar);
@@ -43,7 +49,25 @@ INSERT INTO bi_entregas (os, ponto, cod_cliente, nome_fantasia, data_solicitado,
   (1, 1, 7, 'Autopeças Alfa', (now() AT TIME ZONE 'America/Bahia')::date, 30, 18, null, null, null),
   (1, 2, 7, 'Autopeças Alfa', (now() AT TIME ZONE 'America/Bahia')::date, 30, 18, true, 40, null),
   (1, 3, 7, 'Autopeças Alfa', (now() AT TIME ZONE 'America/Bahia')::date, 30, 18, false, 95, 'Retorno - cliente ausente'),
-  (2, 2, 8, 'Rede Beta', (now() AT TIME ZONE 'America/Bahia')::date, 50, 30, true, 30, null);
+  (2, 2, 8, 'Rede Beta', (now() AT TIME ZONE 'America/Bahia')::date, 50, 30, true, 30, null),
+  -- OS 3 ainda em andamento: o BI da Central não conta
+  (3, 2, 8, 'Rede Beta', (now() AT TIME ZONE 'America/Bahia')::date, 99, 60, null, null, null);
+UPDATE bi_entregas SET os_concluida = (os <> 3), finalizado = CASE WHEN os <> 3 THEN data_solicitado + time '10:00' END,
+  data_hora = data_solicitado + time '09:00', cod_prof = CASE WHEN os = 1 THEN 10 ELSE 11 END, nome_prof = CASE WHEN os = 1 THEN 'Ana' ELSE 'Beto' END,
+  dentro_prazo_prof = CASE WHEN ponto >= 2 AND os <> 3 THEN (ponto <> 3) END, tempo_entrega_prof_minutos = CASE WHEN ponto >= 2 AND os <> 3 THEN 20 END;
+-- Coleta da OS 1: pedido às 09:00, alocado 09:10, chegou na loja 09:30
+UPDATE bi_entregas SET data_hora_alocado = data_solicitado + time '09:10', data_chegada = data_solicitado, hora_chegada = '09:30' WHERE os = 1 AND ponto = 1;
+-- OS 4 antiga: pedido às 18:00 de sexta, finalizada às 08:40 do dia seguinte → 40 min pela regra das 17h
+INSERT INTO bi_entregas (os, ponto, cod_cliente, nome_fantasia, data_solicitado, dentro_prazo, os_concluida, data_hora, finalizado) VALUES
+  (4, 2, 9, 'Loja Gama', '2020-01-10', true, true, '2020-01-10 18:00', '2020-01-11 08:40');
+-- Cliente 767 em 03/02/2020: Rui (BR Auto Parts Brasília) fez 2 OS, Lia (Comollati Brasília) 1, Goiânia fica fora
+INSERT INTO bi_entregas (os, ponto, cod_cliente, nome_fantasia, centro_custo, cod_prof, nome_prof, data_solicitado, valor_prof, os_concluida, finalizado) VALUES
+  (10, 2, 767, 'Grupo Comollati', 'BR AUTO PARTS BRASILIA', 21, 'Rui', '2020-02-03', 30, true, '2020-02-03 10:00'),
+  (10, 3, 767, 'Grupo Comollati', 'BR AUTO PARTS BRASILIA', 21, 'Rui', '2020-02-03', 30, true, '2020-02-03 10:30'),
+  (11, 2, 767, 'Grupo Comollati', 'BR AUTO PARTS BRASILIA', 21, 'Rui', '2020-02-03', 42.70, true, '2020-02-03 12:00'),
+  (12, 2, 767, 'Grupo Comollati', 'COMOLLATI BRASÍLIA', 22, 'Lia', '2020-02-03', 180, true, '2020-02-03 12:00'),
+  (13, 2, 767, 'Grupo Comollati', 'COMOLLATI GOIANIA', 23, 'Teo', '2020-02-03', 50, true, '2020-02-03 12:00'),
+  (14, 2, 767, 'Grupo Comollati', 'BR AUTO PARTS BRASILIA', 21, 'Rui', '2020-02-03', 99, false, null);
 INSERT INTO withdrawal_requests (user_cod, user_name, cpf, pix_key, requested_amount, fee_amount, final_amount, status) VALUES
   ('10', 'Ana', '123.456.789-09', 'ana@pix', 200, 5, 195, 'aguardando_aprovacao'),
   ('11', 'Beto', '987.654.321-00', 'beto@pix', 100, 5, 95, 'pago'),
@@ -135,7 +159,32 @@ describe("consultas prontas", () => {
 
   it("entregas de hoje ignoram a coleta e calculam o SLA", async () => {
     const r = await consultaPronta("entregas")!.executar(leitura, {});
-    expect(r.totais).toMatchObject({ entregas: 3, os: 2, fora_prazo: 1, retornos: 1 });
+    expect(r.totais).toMatchObject({ entregas: 3, os: 2, no_prazo: 2, fora_prazo: 1, sla_pct: 66.7, os_com_retorno: 1 });
+  });
+
+  it("tempos usam a regra das 17h da Central", async () => {
+    const hoje = await consultaPronta("tempos")!.executar(leitura, { cliente: "alfa" });
+    expect(hoje.linhas[0]).toMatchObject({ alocacao_min: "10.0", coleta_min: "20.0", entrega_min: "60.0" });
+    const ontem = await consultaPronta("tempos")!.executar(leitura, { cliente: "gama", inicio: "2020-01-01", fim: "2020-01-31" });
+    expect(Number(ontem.linhas[0]!.entrega_min)).toBe(40);
+  });
+
+  it("profissionais usam o prazo do motoboy (da coleta à finalização)", async () => {
+    const r = await consultaPronta("profissionais")!.executar(leitura, { ordem: "piores" });
+    expect(r.linhas[0]).toMatchObject({ profissional: "Ana", entregas: 2, fora_prazo_prof: 1 });
+    expect(r.totais).toMatchObject({ motoboys: 2, entregas: 3, prazo_prof_pct: 66.7 });
+  });
+
+  it("margem por motoboy: cada motoboy conta uma vez no dia, só nos centros da regra", async () => {
+    const r = await consultaPronta("margem_por_motoboy")!.executar(leitura, {
+      cod_cliente: 767, centros: ["br auto brasilia", "comollati brasilia"], receita_dia: 250, custo_dia: 80, inicio: "2020-02-03",
+    });
+    expect(r.linhas.map((l) => [l.profissional, l.os, Number(l.valor_motoboy), Number(l.lucro)])).toEqual([
+      ["Rui", 2, 72.7, 97.3],
+      ["Lia", 1, 180, -10],
+    ]);
+    expect(r.totais).toMatchObject({ motoboys_dia: 2, os: 3, receita: 500, custo_moto: 160, pago_motoboys: 252.7, lucro: 87.3, margem_pct: 17.5, motoboys_negativos: 1 });
+    await expect(consultaPronta("margem_por_motoboy")!.executar(leitura, { receita_dia: 250 })).rejects.toThrow(/cod_cliente/);
   });
 
   it("faturamento não duplica os valores repetidos por ponto", async () => {
@@ -158,5 +207,76 @@ describe("catálogo", () => {
     const saques = c.find((t) => t.nome === "withdrawal_requests")!;
     expect(saques.modulo).toBe("financial");
     expect(saques.colunas.map((x) => x.nome)).not.toContain("cpf");
+  });
+});
+
+describe("API da Central (só leitura)", () => {
+  let servidor: import("node:http").Server;
+  let url = "";
+  const pedidos: { metodo: string; caminho: string; segredo: string | undefined }[] = [];
+
+  beforeAll(async () => {
+    const http = await import("node:http");
+    servidor = http.createServer((req, res) => {
+      pedidos.push({ metodo: req.method ?? "", caminho: req.url ?? "", segredo: req.headers["x-internal-secret"] as string | undefined });
+      if (req.headers["x-internal-secret"] !== "segredo-de-teste-123") {
+        res.writeHead(401).end("{}");
+        return;
+      }
+      res.setHeader("content-type", "application/json");
+      if (req.url?.startsWith("/api/bi/dashboard-completo")) {
+        res.end(
+          JSON.stringify({
+            metricas: { total_entregas: 120, taxa_prazo: 91.5, valor_total: 4500.5 },
+            porCliente: [{ cod_cliente: 7, nome_cliente: "Autopeças Alfa", entregas: 80, taxa_prazo: 95, contato: { telefone: "71999990000", cidade: "Salvador" } }],
+            porProfissional: [{ cod_prof: 10, nome_prof: "Ana", cpf: "123.456.789-09", chave_pix: "ana@pix", entregas: 50 }],
+          }),
+        );
+        return;
+      }
+      res.end(JSON.stringify([{ id: 1, nome: "Salvador" }]));
+    });
+    await new Promise<void>((r) => servidor.listen(0, "127.0.0.1", () => r()));
+    url = `http://127.0.0.1:${(servidor.address() as import("node:net").AddressInfo).port}`;
+  });
+
+  afterAll(() => new Promise<void>((r) => servidor.close(() => r())));
+
+  it("chama só GET, com o segredo, e tira os dados pessoais da resposta", async () => {
+    const api = new ClienteApiCentral({ url, segredo: "segredo-de-teste-123" });
+    const r = await api.consultar("bi.dashboard", { data_inicio: "2026-10-01", data_fim: "2026-10-28", inventado: "x", cod_cliente: [7, 8] });
+    const ultimo = pedidos.at(-1)!;
+    expect(ultimo).toMatchObject({ metodo: "GET", segredo: "segredo-de-teste-123" });
+    expect(ultimo.caminho).toBe("/api/bi/dashboard-completo?data_inicio=2026-10-01&data_fim=2026-10-28&cod_cliente=7%2C8");
+    const texto = JSON.stringify(r.dados);
+    expect(texto).not.toMatch(/123\.456|ana@pix|71999990000|cpf|telefone|pix/);
+    expect(texto).toContain("Salvador");
+    const lido = lerRespostaCentral(r.dados);
+    expect(lido.numeros).toMatchObject({ "metricas.taxa_prazo": 91.5 });
+    expect(lido.tabelas.map((t) => t.caminho)).toEqual(["porCliente", "porProfissional"]);
+    expect(lido.tabelas[0]!.linhas[0]).toMatchObject({ entregas: 80, contato_cidade: "Salvador" });
+    // a segunda chamada igual vem do cache
+    const antes = pedidos.length;
+    await api.consultar("bi.dashboard", { data_inicio: "2026-10-01", data_fim: "2026-10-28", cod_cliente: [7, 8] });
+    expect(pedidos.length).toBe(antes);
+  });
+
+  it("recusa rota fora da lista, parâmetro obrigatório faltando e data mal escrita", async () => {
+    const api = new ClienteApiCentral({ url, segredo: "segredo-de-teste-123" });
+    const antes = pedidos.length;
+    await expect(api.consultar("bi.apagar_tudo", {})).rejects.toThrow(/não existe/);
+    await expect(api.consultar("bi.dashboard", { data_inicio: "2026-10-01" })).rejects.toThrow(/data_fim/);
+    await expect(api.consultar("bi.dashboard", { data_inicio: "ontem", data_fim: "2026-10-28" })).rejects.toThrow(/AAAA-MM-DD/);
+    expect(pedidos.length).toBe(antes);
+    expect(ENDPOINTS_CENTRAL.every((e) => e.caminho.startsWith("/api/"))).toBe(true);
+  });
+
+  it("segredo errado vira erro claro", async () => {
+    const api = new ClienteApiCentral({ url, segredo: "outro-segredo-qualquer" });
+    await expect(api.testar()).rejects.toThrow(/401/);
+  });
+
+  it("limparSensiveis tira as chaves pessoais em qualquer nível", () => {
+    expect(limparSensiveis({ a: [{ pix_key: 1, nome: "x", dados: { agencia: "1", conta: "2", valor: 3 } }] })).toEqual({ a: [{ nome: "x", dados: { valor: 3 } }] });
   });
 });

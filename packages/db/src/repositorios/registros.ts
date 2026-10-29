@@ -126,6 +126,21 @@ export const registros = {
     return rows[0] ?? null;
   },
 
+  /** O registro que veio de uma fonte externa (dados.origemExternaId), se já existe. */
+  async buscarPorOrigemExterna(db: Executor, chave: string) {
+    const { rows } = await db.query<RegistroLinha>(`${SELECT_REGISTRO} WHERE r.dados ->> 'origemExternaId' = $1`, [chave]);
+    return rows[0] ?? null;
+  },
+
+  /** Registros marcados com dados.via (ex.: "codigo-central"), em uso. */
+  async listarPorVia(db: Executor, via: string) {
+    const { rows } = await db.query<RegistroLinha>(
+      `${SELECT_REGISTRO} WHERE r.dados ->> 'via' = $1 AND r.status NOT IN ('descartado','obsoleto') ORDER BY r.titulo`,
+      [via],
+    );
+    return rows;
+  },
+
   async buscarPorIds(db: Executor, ids: string[]) {
     if (ids.length === 0) return [];
     const { rows } = await db.query<RegistroLinha>(`${SELECT_REGISTRO} WHERE r.id = ANY($1::uuid[])`, [ids]);

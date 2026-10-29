@@ -122,6 +122,19 @@ saques) usam consultas prontas e funcionam até sem IA; as demais o DeepSeek esc
 e analisa o resultado com nomes de pessoas mascarados. Toda consulta fica na auditoria (`argos.consulta_central`).
 Requer que o usuário do `DATABASE_URL` possa criar papéis (o `postgres` padrão do Railway pode).
 
+**Argos × regras da Central (o número igual ao da tela).** Três camadas:
+1. *API da Central*: com `CENTRAL_API_URL` e `CENTRAL_API_SEGREDO` (= `INTERNAL_SECRET` do tutts-backend) na `api`,
+   o Argos chama as mesmas rotas das telas do BI e do BI Financeiro (`packages/central/src/api.ts`): só GET, só as
+   rotas da lista, parâmetros conferidos, cache de 60 s, e CPF/PIX/contas/telefones/endereços tirados da resposta.
+   Indicadores (taxa de prazo, garantido, margem, saques…) vêm daí; o SQL fica para o que não tem rota.
+2. *Regras do código*: com `CENTRAL_GITHUB_TOKEN` (fine-grained, "Contents: Read-only" no tutts-backend) no `worker`
+   e na `api`, o worker lê `src/modules/bi` e `src/modules/financial` todo dia às 05:10 e grava um registro
+   "Sistema" por arquivo com as regras de cálculo em português (SIS-…), atualizando só o que mudou e marcando como
+   obsoleto o que saiu. Em Integrações, "Ler as regras agora" força uma leitura. O código vai para a IA de análise
+   (ou a restrita, se configurada) sem segredos: chaves, URLs de banco, e-mails e CPFs são tirados antes.
+3. *Consultas prontas com as regras do BI*: `entregas`, `tempos` e `profissionais` usam as mesmas regras do
+   tutts-backend (só OS concluídas, regra das 17h, prazo do profissional a partir da coleta, retornos do dashboard).
+
 **Voz natural do Argos.** Crie uma chave em platform.openai.com e coloque `OPENAI_CHAVE` na `api`. A voz passa a ser
 gerada no servidor (gpt-4o-mini-tts), igual em qualquer aparelho; o administrador escolhe a voz e o ritmo em
 Integrações › Argos (voz). Sem a chave, o Argos usa a voz do navegador.

@@ -33,6 +33,46 @@ async function rodar(pool: PoolLeitura, titulo: string, sql: string, params: unk
 const soma = (linhas: Record<string, unknown>[], col: string) => linhas.reduce((s, l) => s + Number(l[col] ?? 0), 0);
 const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : null);
 
+// ── Regras do BI da Central (portadas do tutts-backend: os-concluida.js e shared/prazo-regra.js) ──
+
+/** BI só conta corrida concluída: todos os pontos da OS finalizados (coluna os_concluida; sem ela, a linha finalizada). */
+export const FILTRO_CONCLUIDA = "COALESCE(os_concluida, finalizado IS NOT NULL)";
+
+/**
+ * Minutos entre dois momentos com a regra das 17h: começou às 17h ou depois e terminou em outro dia →
+ * conta a partir das 08:00 do dia em que terminou (antes das 08:00 = 0). Senão, tempo corrido. Invertido = NULL.
+ */
+export function regra17h(inicio: string, fim: string) {
+  return `(CASE WHEN ${fim} IS NOT NULL AND ${inicio} IS NOT NULL THEN
+    CASE WHEN DATE(${fim}) > DATE(${inicio}) AND EXTRACT(HOUR FROM ${inicio}) >= 17
+         THEN GREATEST(0, EXTRACT(EPOCH FROM (${fim} - (DATE(${fim}) + TIME '08:00:00'))) / 60.0)
+         WHEN ${fim} >= ${inicio} THEN EXTRACT(EPOCH FROM (${fim} - ${inicio})) / 60.0
+         ELSE NULL END
+  ELSE NULL END)`;
+}
+
+/** Prazo da loja (cliente): criação do pedido → finalização. */
+const TEMPO_LOJA = regra17h("data_hora", "finalizado");
+
+/** Retorno, como o dashboard conta (isRetorno do dashboard-completo). */
+export const RETORNO = `(LOWER(COALESCE(ocorrencia, '')) LIKE ANY (ARRAY['%cliente fechado%','%clienteaus%','%cliente ausente%','%loja fechada%','%produto incorreto%']))`;
+
+/** Filtro padrão das consultas do BI: período (padrão hoje), cliente por nome ou código, só OS concluídas. */
+function filtroBi(p: Record<string, unknown>, params: unknown[]) {
+  const inicio = data(p.inicio);
+  const fim = data(p.fim) ?? inicio;
+  const partes = [FILTRO_CONCLUIDA];
+  partes.push(inicio ? `data_solicitado BETWEEN $${params.push(inicio)} AND $${params.push(fim)}` : `data_solicitado = ${HOJE}`);
+  const cliente = texto(p.cliente);
+  if (cliente) partes.push(`translate(lower(nome_fantasia), '${COM_ACENTO}', '${SEM_ACENTO}') LIKE '%' || $${params.push(semAcento(cliente))} || '%'`);
+  const cod = Number(p.cod_cliente);
+  if (Number.isInteger(cod) && cod > 0) partes.push(`cod_cliente = $${params.push(cod)}`);
+  return { onde: partes.join(" AND "), inicio, fim };
+}
+
+const tituloPeriodo = (o: string, inicio: string | null, fim: string | null) =>
+  inicio ? `${o} de ${inicio}${fim && fim !== inicio ? ` a ${fim}` : ""}` : `${o} de hoje`;
+
 export const CONSULTAS_PRONTAS: ConsultaPronta[] = [
   {
     nome: "disponibilidade",
@@ -83,32 +123,163 @@ export const CONSULTAS_PRONTAS: ConsultaPronta[] = [
   },
   {
     nome: "entregas",
-    descricao: "Entregas e SLA num período (padrão: hoje), por cliente: entregas, OS, % no prazo, fora do prazo, tempo médio, retornos.",
-    parametros: { inicio: "AAAA-MM-DD (padrão hoje)", fim: "AAAA-MM-DD (padrão = inicio)", cliente: "nome (ou parte) do cliente, opcional" },
+    descricao:
+      "Entregas e SLA do cliente num período (padrão: hoje), por cliente, com as regras do BI da Central: só OS concluídas, prazo da loja (criação → finalização, regra das 17h), retornos como no dashboard.",
+    parametros: { inicio: "AAAA-MM-DD (padrão hoje)", fim: "AAAA-MM-DD (padrão = inicio)", cliente: "nome (ou parte) do cliente, opcional", cod_cliente: "código do cliente, opcional" },
     async executar(pool, p) {
-      const inicio = data(p.inicio);
-      const fim = data(p.fim) ?? inicio;
-      const cliente = texto(p.cliente);
       const params: unknown[] = [];
-      const periodo = inicio ? `data_solicitado BETWEEN $${params.push(inicio)} AND $${params.push(fim)}` : `data_solicitado = ${HOJE}`;
-      const filtroCliente = cliente ? `AND nome_fantasia ILIKE '%' || $${params.push(cliente)} || '%'` : "";
+      const { onde, inicio, fim } = filtroBi(p, params);
       const sql = `
-        SELECT nome_fantasia AS cliente,
+        SELECT cod_cliente, nome_fantasia AS cliente,
                COUNT(*) AS entregas,
                COUNT(DISTINCT os) AS os,
-               ROUND(100.0 * COUNT(*) FILTER (WHERE dentro_prazo = true) / NULLIF(COUNT(*) FILTER (WHERE dentro_prazo IS NOT NULL), 0), 1) AS sla_pct,
+               COUNT(*) FILTER (WHERE dentro_prazo = true) AS no_prazo,
                COUNT(*) FILTER (WHERE dentro_prazo = false) AS fora_prazo,
-               ROUND(AVG(tempo_execucao_minutos) FILTER (WHERE tempo_execucao_minutos > 0 AND tempo_execucao_minutos < 480), 0) AS tempo_medio_min,
-               COUNT(*) FILTER (WHERE LOWER(ocorrencia) LIKE '%retorno%' OR LOWER(ocorrencia) LIKE '%cliente fechado%'
-                                   OR LOWER(ocorrencia) LIKE '%cliente ausente%' OR LOWER(ocorrencia) LIKE '%loja fechada%') AS retornos
+               ROUND(100.0 * COUNT(*) FILTER (WHERE dentro_prazo = true) / NULLIF(COUNT(*) FILTER (WHERE dentro_prazo IS NOT NULL), 0), 1) AS sla_pct,
+               ROUND(AVG(${TEMPO_LOJA}), 1) AS tempo_medio_min,
+               COUNT(DISTINCT os) FILTER (WHERE ${RETORNO}) AS os_com_retorno
           FROM bi_entregas
-         WHERE COALESCE(ponto, 1) >= 2 AND ${periodo} ${filtroCliente}
-         GROUP BY nome_fantasia
+         WHERE ${onde} AND COALESCE(ponto, 1) >= 2
+         GROUP BY cod_cliente, nome_fantasia
          ORDER BY entregas DESC`;
-      return rodar(pool, inicio ? `Entregas de ${inicio}${fim !== inicio ? ` a ${fim}` : ""}` : "Entregas de hoje", sql, params, (r) => {
+      return rodar(pool, tituloPeriodo("Entregas", inicio, fim), sql, params, (r) => {
         const entregas = soma(r.linhas, "entregas");
+        const no = soma(r.linhas, "no_prazo");
         const fora = soma(r.linhas, "fora_prazo");
-        return { entregas, os: soma(r.linhas, "os"), fora_prazo: fora, sla_pct: pct(entregas - fora, entregas), clientes: r.linhas.length, retornos: soma(r.linhas, "retornos") };
+        return { entregas, os: soma(r.linhas, "os"), no_prazo: no, fora_prazo: fora, sla_pct: pct(no, no + fora), clientes: r.linhas.length, os_com_retorno: soma(r.linhas, "os_com_retorno") };
+      });
+    },
+  },
+  {
+    nome: "tempos",
+    descricao:
+      "Tempos médios do BI num período (padrão: hoje), por cliente ou por dia: alocação (pedido → motoboy alocado), coleta (alocado → chegada na loja) e entrega (pedido → finalização), todos com a regra das 17h da Central.",
+    parametros: { inicio: "AAAA-MM-DD (padrão hoje)", fim: "AAAA-MM-DD (padrão = inicio)", cliente: "nome (ou parte), opcional", cod_cliente: "código, opcional", por: "cliente | dia (padrão cliente)" },
+    async executar(pool, p) {
+      const params: unknown[] = [];
+      const { onde, inicio, fim } = filtroBi(p, params);
+      const porDia = p.por === "dia";
+      const chave = porDia ? "data_solicitado AS dia" : "nome_fantasia AS cliente";
+      const grupo = porDia ? "data_solicitado" : "nome_fantasia";
+      const sql = `
+        SELECT ${chave},
+               COUNT(DISTINCT os) AS os,
+               ROUND(AVG(CASE WHEN COALESCE(ponto, 1) = 1 THEN ${regra17h("data_hora", "data_hora_alocado")} END), 1) AS alocacao_min,
+               ROUND(AVG(CASE WHEN COALESCE(ponto, 1) = 1 THEN ${regra17h("data_hora_alocado", "(data_chegada + hora_chegada::time)")} END), 1) AS coleta_min,
+               ROUND(AVG(CASE WHEN COALESCE(ponto, 1) >= 2 THEN ${TEMPO_LOJA} END), 1) AS entrega_min
+          FROM bi_entregas
+         WHERE ${onde}
+         GROUP BY ${grupo}
+         ORDER BY ${porDia ? "dia" : "os DESC"}`;
+      return rodar(pool, tituloPeriodo("Tempos médios", inicio, fim), sql, params, (r) => {
+        const os = soma(r.linhas, "os");
+        const media = (col: string) =>
+          os ? Math.round((r.linhas.reduce((s, l) => s + Number(l[col] ?? 0) * Number(l.os ?? 0), 0) / os) * 10) / 10 : null;
+        return { os, alocacao_min: media("alocacao_min"), coleta_min: media("coleta_min"), entrega_min: media("entrega_min") };
+      });
+    },
+  },
+  {
+    nome: "profissionais",
+    descricao:
+      "Ranking dos motoboys num período (padrão: hoje), com o prazo do PROFISSIONAL da Central (da coleta na loja até a finalização; ele não é cobrado pelo deslocamento até a loja): entregas, % no prazo dele, tempo médio, retornos, valor recebido.",
+    parametros: { inicio: "AAAA-MM-DD (padrão hoje)", fim: "AAAA-MM-DD (padrão = inicio)", cliente: "nome (ou parte), opcional", cod_cliente: "código, opcional", ordem: "entregas | prazo | piores (padrão entregas)" },
+    async executar(pool, p) {
+      const params: unknown[] = [];
+      const { onde, inicio, fim } = filtroBi(p, params);
+      const ordem =
+        p.ordem === "piores" ? "prazo_prof_pct ASC NULLS LAST, entregas DESC" : p.ordem === "prazo" ? "prazo_prof_pct DESC NULLS LAST, entregas DESC" : "entregas DESC";
+      const sql = `
+        SELECT cod_prof, nome_prof AS profissional,
+               COUNT(*) AS entregas,
+               COUNT(DISTINCT os) AS os,
+               COUNT(*) FILTER (WHERE dentro_prazo_prof = true) AS no_prazo_prof,
+               COUNT(*) FILTER (WHERE dentro_prazo_prof = false) AS fora_prazo_prof,
+               ROUND(100.0 * COUNT(*) FILTER (WHERE dentro_prazo_prof = true) / NULLIF(COUNT(*) FILTER (WHERE dentro_prazo_prof IS NOT NULL), 0), 1) AS prazo_prof_pct,
+               ROUND(AVG(tempo_entrega_prof_minutos) FILTER (WHERE tempo_entrega_prof_minutos >= 0), 1) AS tempo_prof_min,
+               COUNT(DISTINCT os) FILTER (WHERE ${RETORNO}) AS os_com_retorno,
+               ROUND(SUM(valor_prof)::numeric, 2) AS valor_prof
+          FROM bi_entregas
+         WHERE ${onde} AND COALESCE(ponto, 1) >= 2 AND cod_prof IS NOT NULL
+         GROUP BY cod_prof, nome_prof
+         HAVING COUNT(*) > 0
+         ORDER BY ${ordem}`;
+      return rodar(pool, tituloPeriodo("Motoboys", inicio, fim), sql, params, (r) => {
+        const no = soma(r.linhas, "no_prazo_prof");
+        const fora = soma(r.linhas, "fora_prazo_prof");
+        return { motoboys: r.linhas.length, entregas: soma(r.linhas, "entregas"), prazo_prof_pct: pct(no, no + fora), fora_prazo_prof: fora };
+      });
+    },
+  },
+  {
+    nome: "margem_por_motoboy",
+    descricao:
+      "Margem por motoboy no dia, para clientes que pagam um valor FIXO por motoboy (ex.: POL-002, cliente 767 em BR Auto Parts Brasília e Comollati Brasília): lucro de cada motoboy = receita_dia − custo_dia − o que ele produziu (valor_prof, uma vez por OS). Cada motoboy conta UMA vez por dia, com quantas OS fizer. Devolve uma linha por motoboy e dia e o total.",
+    parametros: {
+      cod_cliente: "código do cliente (obrigatório)",
+      centros: "lista de trechos do centro de custo, ex.: [\"br auto brasilia\", \"comollati brasilia\"] (todas as palavras de um trecho precisam aparecer)",
+      receita_dia: "quanto a loja paga por motoboy no dia (R$)",
+      custo_dia: "custo da moto por motoboy no dia (R$)",
+      inicio: "AAAA-MM-DD (padrão hoje)",
+      fim: "AAAA-MM-DD (padrão = inicio)",
+    },
+    async executar(pool, p) {
+      const cod = Number(p.cod_cliente);
+      const receita = Number(p.receita_dia);
+      const custo = Number(p.custo_dia ?? 0);
+      if (!Number.isInteger(cod) || cod <= 0) throw new Error("Informe cod_cliente.");
+      if (!(receita > 0) || !(custo >= 0)) throw new Error("Informe receita_dia (> 0) e custo_dia (>= 0) em reais.");
+      const params: unknown[] = [];
+      const inicio = data(p.inicio);
+      const fim = data(p.fim) ?? inicio;
+      const periodo = inicio ? `data_solicitado BETWEEN $${params.push(inicio)} AND $${params.push(fim)}` : `data_solicitado = ${HOJE}`;
+      const centros = (Array.isArray(p.centros) ? p.centros : typeof p.centros === "string" ? p.centros.split(/[,;]/) : [])
+        .map((c) => semAcento(String(c)).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length >= 2).slice(0, 5))
+        .filter((ws) => ws.length)
+        .slice(0, 6);
+      const texto = `translate(lower(COALESCE(centro_custo, '') || ' ' || COALESCE(nome_fantasia, '')), '${COM_ACENTO}', '${SEM_ACENTO}')`;
+      const filtroCentros = centros.length
+        ? `AND (${centros.map((ws) => `(${ws.map((w) => `${texto} LIKE '%' || $${params.push(w)} || '%'`).join(" AND ")})`).join(" OR ")})`
+        : "";
+      const pReceita = `$${params.push(receita)}::numeric`;
+      const pCusto = `$${params.push(custo)}::numeric`;
+      const sql = `
+        WITH os_do_dia AS (
+          -- uma linha por OS: o valor do motoboy se repete em cada ponto
+          SELECT DISTINCT ON (os) os, data_solicitado AS dia, cod_prof, nome_prof, centro_custo, valor_prof
+            FROM bi_entregas
+           WHERE ${FILTRO_CONCLUIDA} AND COALESCE(ponto, 1) >= 2 AND cod_prof IS NOT NULL
+             AND cod_cliente = $${params.push(cod)} AND ${periodo} ${filtroCentros}
+           ORDER BY os, ponto ASC
+        ), por_motoboy AS (
+          SELECT dia, cod_prof, MAX(nome_prof) AS profissional,
+                 string_agg(DISTINCT centro_custo, ', ') AS centro_custo,
+                 COUNT(*) AS os,
+                 ROUND(SUM(COALESCE(valor_prof, 0))::numeric, 2) AS valor_motoboy
+            FROM os_do_dia GROUP BY dia, cod_prof
+        )
+        SELECT dia, profissional, centro_custo, os, valor_motoboy,
+               ${pReceita} AS receita, ${pCusto} AS custo_moto,
+               ROUND(${pReceita} - ${pCusto} - valor_motoboy, 2) AS lucro,
+               ROUND(100 * (${pReceita} - ${pCusto} - valor_motoboy) / ${pReceita}, 1) AS margem_pct
+          FROM por_motoboy
+         ORDER BY dia, lucro DESC`;
+      return rodar(pool, tituloPeriodo("Margem por motoboy", inicio, fim), sql, params, (r) => {
+        const motoboysDia = r.linhas.length;
+        const pago = soma(r.linhas, "valor_motoboy");
+        const lucro = Math.round(soma(r.linhas, "lucro") * 100) / 100;
+        const receitaTotal = motoboysDia * receita;
+        return {
+          motoboys_dia: motoboysDia,
+          os: soma(r.linhas, "os"),
+          receita: receitaTotal,
+          custo_moto: motoboysDia * custo,
+          pago_motoboys: Math.round(pago * 100) / 100,
+          lucro,
+          margem_pct: pct(lucro, receitaTotal),
+          motoboys_negativos: r.linhas.filter((l) => Number(l.lucro) < 0).length,
+          centros: [...new Set(r.linhas.flatMap((l) => String(l.centro_custo ?? "").split(", ")).filter(Boolean))].join(", ") || null,
+        };
       });
     },
   },
@@ -128,7 +299,7 @@ export const CONSULTAS_PRONTAS: ConsultaPronta[] = [
         WITH fat AS (
           SELECT DISTINCT ON (os) os, nome_fantasia, valor, valor_prof
             FROM bi_entregas
-           WHERE COALESCE(ponto, 1) >= 2 AND data_solicitado BETWEEN ${de} AND ${ate} ${filtroCliente}
+           WHERE ${FILTRO_CONCLUIDA} AND COALESCE(ponto, 1) >= 2 AND data_solicitado BETWEEN ${de} AND ${ate} ${filtroCliente}
            ORDER BY os, ponto ASC
         )
         SELECT nome_fantasia AS cliente, COUNT(*) AS os,

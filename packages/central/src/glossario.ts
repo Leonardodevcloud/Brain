@@ -52,11 +52,14 @@ Datas relativas ("hoje", "ontem", "essa semana", "este mês") são em America/Ba
 ENTREGAS (bi_entregas):
 - Cada OS tem vários pontos. ponto 1 = coleta; ponto >= 2 = entrega. Para contar ENTREGAS: WHERE COALESCE(ponto, 1) >= 2.
 - Período: filtre por data_solicitado (DATE).
+- O BI da Central SÓ CONTA OS CONCLUÍDAS: sempre inclua COALESCE(os_concluida, finalizado IS NOT NULL) no WHERE (OS em andamento não entram nem como no prazo).
 - Clientes: use nome_fantasia (e cod_cliente). Motoboys: nome_prof (e cod_prof). centro_custo = filial/loja do cliente.
 - SLA (taxa de prazo): ROUND(100.0 * COUNT(*) FILTER (WHERE dentro_prazo = true) / NULLIF(COUNT(*) FILTER (WHERE dentro_prazo IS NOT NULL), 0), 2).
 - Fora do prazo: COUNT(*) FILTER (WHERE dentro_prazo = false).
-- Tempo médio: ROUND(AVG(tempo_execucao_minutos) FILTER (WHERE tempo_execucao_minutos > 0 AND tempo_execucao_minutos < 480), 0).
-- Retornos: ocorrencia contendo 'retorno', 'cliente fechado', 'cliente ausente' ou 'loja fechada' (LOWER + LIKE).
+- Prazo da LOJA (dentro_prazo, tempo_execucao_minutos): da criação do pedido (data_hora) até a finalização. Prazo do PROFISSIONAL (dentro_prazo_prof, tempo_entrega_prof_minutos): da coleta (saída do ponto 1) até a finalização — o motoboy não é cobrado pelo deslocamento até a loja.
+- Regra das 17h (vale para os dois prazos e para alocação/coleta): começou às 17h ou depois e terminou em outro dia → conta a partir das 08:00 do dia em que terminou. As consultas prontas "entregas", "tempos" e "profissionais" já aplicam isso.
+- Tempo médio: ROUND(AVG(tempo_execucao_minutos) FILTER (WHERE tempo_execucao_minutos >= 0), 1).
+- Retornos (como o dashboard conta): ocorrencia contendo 'cliente fechado', 'clienteaus', 'cliente ausente', 'loja fechada' ou 'produto incorreto' (LOWER + LIKE). Conte por OS: COUNT(DISTINCT os).
 - Entregas x OS: COUNT(*) = entregas; COUNT(DISTINCT os) = OS.
 - Meta geral de SLA: 85%. Cliente 767 (Grupo Comollati): prazo fixo de 120 min, SLA por tempo_execucao_minutos <= 120, meta 95%.
 - Clientes 949, 1165, 1151, 1178, 1188, 35, 794, 249, 1206, 1222: consolidar todos os centros de custo numa linha.
@@ -64,9 +67,10 @@ ENTREGAS (bi_entregas):
 
 FATURAMENTO (bi_entregas):
 - NUNCA some valor direto: há uma linha por ponto e os valores se repetem. Use:
-  WITH fat AS (SELECT DISTINCT ON (os) os, valor, valor_prof FROM bi_entregas WHERE COALESCE(ponto,1) >= 2 AND <filtros> ORDER BY os, ponto ASC)
+  WITH fat AS (SELECT DISTINCT ON (os) os, valor, valor_prof FROM bi_entregas WHERE COALESCE(os_concluida, finalizado IS NOT NULL) AND COALESCE(ponto,1) >= 2 AND <filtros> ORDER BY os, ponto ASC)
   SELECT SUM(valor) AS cobrado, SUM(valor_prof) AS pago_motoboys, SUM(valor) - SUM(valor_prof) AS faturamento FROM fat
 - Faturamento (margem) = valor (cliente) - valor_prof (profissional).
+- Para o número EXATO da tela do BI Financeiro (com garantido, taxas e projeção), prefira a ação "central" com fin.painel.
 
 DISPONIBILIDADE (escala do dia):
 - disponibilidade_linhas é a escala ATUAL (zera a cada dia). Liga em disponibilidade_lojas (loja_id) → disponibilidade_regioes (regiao_id).

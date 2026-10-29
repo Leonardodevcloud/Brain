@@ -305,6 +305,9 @@
 .rodape {
   padding: 12px 14px 14px;
   border-top: 1px solid var(--a-borda);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .dica {
   text-align: center;
@@ -400,4 +403,139 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* ── Modo chat: o painel cresce e mostra a conversa inteira ── */
+.painelChat {
+  height: min(760px, calc(100vh - 48px));
+}
+.painelLargo {
+  width: min(780px, 100%);
+}
+.painelChat .topo {
+  padding: 12px 12px 12px 14px;
+  border-bottom: 1px solid var(--a-borda);
+}
+.orbeMini {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.orbeMini:focus-visible {
+  box-shadow: var(--foco);
+}
+.fio {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px 20px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.turno {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: aparecer 320ms var(--curva);
+}
+.bolhaVoce {
+  align-self: flex-end;
+  max-width: 82%;
+  padding: 9px 13px;
+  border-radius: 16px 16px 4px 16px;
+  background: rgba(124, 58, 237, 0.42);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.bolhaArgos {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.falaTurno {
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: #fff;
+  text-wrap: pretty;
+}
+.fontesTurno {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bolhaArgos .verMais {
+  align-self: flex-start;
+}
+.acaoTurno {
+  align-self: flex-start;
+}
+.statusFio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--a-suave);
+  font-size: 14px;
+}
+.pontoOuvindo {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fb7185;
+  animation: aoVivo 1.4s ease-out infinite;
+}
+@media (max-width: 860px) {
+  .painelChat {
+    height: 88dvh;
+  }
+  .fio {
+    padding: 14px 14px 16px;
+  }
+  .bolhaVoce {
+    max-width: 90%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turno,
+  .pontoOuvindo {
+    animation: none;
+  }
+}
+
+.anexar {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--a-suave);
+  cursor: pointer;
+}
+.anexar:hover {
+  color: var(--a-texto);
+  background: rgba(255, 255, 255, 0.06);
+}
+.anexar:focus-visible {
+  outline: 2px solid rgba(167, 139, 250, 0.8);
+  outline-offset: 1px;
+}
+.anexar:disabled {
+  opacity: 0.5;
+  cursor: progress;
 }

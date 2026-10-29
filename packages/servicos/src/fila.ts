@@ -6,6 +6,7 @@ export const JOB = {
   gerarAta: "gerar_ata",
   extrairConversaClaude: "extrair_conversa_claude",
   extrairEmail: "extrair_email",
+  regrasCodigo: "regras_codigo_central",
 } as const;
 export type TipoJob = (typeof JOB)[keyof typeof JOB];
 

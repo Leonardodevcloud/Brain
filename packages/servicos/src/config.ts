@@ -21,6 +21,8 @@ const esquemaAmbiente = z.object({
   IA_ANALISE_BASE_URL: z.preprocess(vazioParaUndefined, z.url().default("https://api.deepseek.com")),
   IA_ANALISE_CHAVE: opcional(z.string()),
   IA_ANALISE_MODELO: z.preprocess(vazioParaUndefined, z.string().default("deepseek-flash")),
+  // Raciocínio do modelo no Argos: "desligado" responde na hora; "baixo" pensa um pouco antes (mais lento).
+  ARGOS_RACIOCINIO: z.preprocess(vazioParaUndefined, z.enum(["desligado", "baixo", "alto"]).default("desligado")),
   // Provedor opcional para conteúdo restrito (mesmo modelo hospedado fora da China).
   IA_RESTRITO_BASE_URL: opcional(z.url()),
   IA_RESTRITO_CHAVE: opcional(z.string()),
@@ -33,6 +35,14 @@ const esquemaAmbiente = z.object({
   ARGOS_DB_SENHA: opcional(z.string().min(24, "ARGOS_DB_SENHA precisa de pelo menos 24 caracteres.")),
 
   // Voz (Whisper). Padrão: Groq, compatível com a API da OpenAI.
+  // API da Central (tutts-backend), só leitura via x-internal-secret: o Argos chega no mesmo número das telas do BI.
+  CENTRAL_API_URL: opcional(z.string().url("CENTRAL_API_URL precisa ser uma URL (https://...).")),
+  CENTRAL_API_SEGREDO: opcional(z.string().min(16, "CENTRAL_API_SEGREDO precisa de pelo menos 16 caracteres.")),
+  // Leitura do código da Central para virar regras de negócio no Cérebro (token do GitHub só leitura).
+  CENTRAL_GITHUB_TOKEN: opcional(z.string()),
+  CENTRAL_GITHUB_REPO: z.preprocess(vazioParaUndefined, z.string().regex(/^[\w.-]+\/[\w.-]+$/).default("Leonardodevcloud/tutts-backend")),
+  CENTRAL_GITHUB_RAMO: z.preprocess(vazioParaUndefined, z.string().default("main")),
+  CENTRAL_GITHUB_PASTAS: z.preprocess(vazioParaUndefined, z.string().default("src/modules/bi,src/modules/financial")),
   GROQ_CHAVE: opcional(z.string()),
   VOZ_BASE_URL: z.preprocess(vazioParaUndefined, z.url().default("https://api.groq.com/openai/v1")),
   VOZ_MODELO: z.preprocess(vazioParaUndefined, z.string().default("whisper-large-v3-turbo")),

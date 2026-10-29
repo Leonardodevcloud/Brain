@@ -45,7 +45,7 @@ export async function memorizar(ctx: Contexto, ator: Ator, troca: TrocaParaMemor
   // O que já existe sobre o assunto: a IA atualiza em vez de duplicar.
   const existentes = (await buscar(ctx, { pergunta: troca.pergunta.slice(0, 900), incluirRascunhos: true, incluirRestritos: false }).catch(() => [])).slice(0, 5);
   const textoExistentes = existentes.length
-    ? existentes.map((m) => `[${m.codigo}]${m.status === "rascunho" ? " (rascunho)" : ""} ${m.titulo}\n${m.trecho}`).join("\n\n")
+    ? existentes.map((m) => `[${m.codigo}]${m.status === "rascunho" ? " (rascunho)" : m.status === "vigente" ? " (vigente)" : ""} ${m.titulo}\n${m.trecho}`).join("\n\n")
     : "(nenhuma)";
   const anteriores = (troca.historico ?? []).slice(-2).map((t) => `Pessoa: ${t.pergunta}\nArgos: ${t.resposta.slice(0, 600)}`).join("\n\n");
   const bruto =

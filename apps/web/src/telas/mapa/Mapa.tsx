@@ -29,11 +29,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api/cliente";
 import { MensagemErro, useAtalho } from "../../componentes/comum";
 import { NOME_STATUS, nomeTipo, relativo } from "../../util/formato";
-import { COR_CLIENTE, COR_REVISAR, COR_TIPO } from "./cores";
+import { COR_AREA, COR_CLIENTE, COR_REVISAR } from "./cores";
 import {
   areaDeClique,
   corDaLigacao,
   corDoNo,
+  cruzaAreas,
   desenharNo,
   ehRelacaoExplicita,
   idDe,
@@ -43,6 +44,20 @@ import {
   type No,
 } from "./desenho";
 import css from "./Mapa.module.css";
+import { Mapa3D } from "./Mapa3D";
+import type { Cena3D } from "./cena3d";
+import { webglDisponivel } from "../../componentes/particulas/nebulosa";
+
+type Vista = "3d" | "plano";
+const CHAVE_VISTA = "cerebro.mapa.vista";
+function vistaInicial(): Vista {
+  if (!webglDisponivel()) return "plano";
+  try {
+    return localStorage.getItem(CHAVE_VISTA) === "plano" ? "plano" : "3d";
+  } catch {
+    return "3d";
+  }
+}
 
 const NOME_LIGACAO: Record<string, string> = {
   referencia: "Referencia",
@@ -105,6 +120,18 @@ export default function Mapa() {
   const movimentoReduzido = useMovimentoReduzido();
   const movimento = !movimentoReduzido;
   const grafo = useRef<ForceGraphMethods<No, Ligacao> | undefined>(undefined);
+  // Vista 3D (partículas) ou plana; a escolha fica lembrada neste navegador.
+  const [vista, setVista] = useState<Vista>(vistaInicial);
+  const cena3d = useRef<Cena3D | null>(null);
+  const em3d = vista === "3d";
+  const trocarVista = useCallback((v: Vista) => {
+    setVista(v);
+    try {
+      localStorage.setItem(CHAVE_VISTA, v);
+    } catch {
+      /* sem armazenamento: vale só agora */
+    }
+  }, []);
   const [moldura, tamanho] = useTamanho<HTMLDivElement>();
   const campoBusca = useRef<HTMLInputElement>(null);
 
@@ -201,12 +228,19 @@ export default function Mapa() {
   }, [foco, vizinhos]);
 
   // O desenho lê um ref: muda a cada quadro sem recriar as funções do grafo.
+  const contagemArea = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of todos?.nos ?? []) if (n.categoria === "registro" && n.area) m.set(n.area, (m.get(n.area) ?? 0) + 1);
+    return m;
+  }, [todos]);
   const estado = useRef<EstadoDesenho>({
     destaque,
     selecionado,
     tempo: 0,
     movimento,
+    contagemArea,
   });
+  estado.current.contagemArea = contagemArea;
   estado.current.destaque = destaque;
   estado.current.selecionado = selecionado;
   estado.current.movimento = movimento;
@@ -261,6 +295,12 @@ export default function Mapa() {
 
   const irPara = useCallback(
     (id: string, zoom = 2.8) => {
+      if (em3d) {
+        if (!cacheNos.current.has(id)) return;
+        setSelecionado(id);
+        cena3d.current?.focar(id);
+        return;
+      }
       const no = cacheNos.current.get(id);
       if (!no || no.x === undefined || no.y === undefined) return;
       setSelecionado(id);
@@ -273,7 +313,7 @@ export default function Mapa() {
       grafo.current?.centerAt(no.x + dx, no.y + dy, movimento ? 700 : 0);
       grafo.current?.zoom(alvo, movimento ? 700 : 0);
     },
-    [movimento],
+    [movimento, em3d],
   );
 
   // Chegando com ?foco=<id> (ex.: "Argos, mostra no mapa a Rede Exemplo Norte").
@@ -292,9 +332,13 @@ export default function Mapa() {
   }, [focoUrl, visiveis, irPara, setParams, movimento]);
 
   const enquadrar = useCallback(
-    () => grafo.current?.zoomToFit(movimento ? 600 : 0, margemEnquadrar()),
-    [movimento],
+    () => (em3d ? cena3d.current?.enquadrar() : grafo.current?.zoomToFit(movimento ? 600 : 0, margemEnquadrar())),
+    [movimento, em3d],
   );
+  const aproximar = (fator: number) => {
+    if (em3d) cena3d.current?.zoom(fator);
+    else grafo.current?.zoom((grafo.current.zoom() ?? 1) * fator, 250);
+  };
   useAtalho(
     "/",
     useCallback(() => campoBusca.current?.focus(), []),
@@ -355,9 +399,6 @@ export default function Mapa() {
     : undefined;
   const totalConexoes =
     d?.ligacoes.filter((l) => l.tipo !== "area").length ?? 0;
-  const contagemTipo = new Map<TipoRegistro, number>();
-  for (const n of d?.nos ?? [])
-    if (n.tipo) contagemTipo.set(n.tipo, (contagemTipo.get(n.tipo) ?? 0) + 1);
 
   return (
     <div className={css.tela}>
@@ -367,7 +408,32 @@ export default function Mapa() {
         aria-label="Mapa do conhecimento: registros ligados por área, cliente e assunto"
         role="img"
       >
-        {tamanho.largura > 0 && visiveis.nodes.length > 0 && (
+        {em3d && visiveis.nodes.length > 0 && (
+          <Mapa3D
+            nos={visiveis.nodes}
+            ligacoes={visiveis.links}
+            destaque={destaque}
+            principal={foco}
+            movimento={movimento}
+            deslocamento={
+              selecionado
+                ? ehCelular()
+                  ? { x: 0, y: Math.round(window.innerHeight * 0.22) }
+                  : { x: LARGURA_PAINEL / 2, y: 0 }
+                : { x: 0, y: 0 }
+            }
+            aoApontar={setApontado}
+            aoClicar={(id) => {
+              if (!id) setSelecionado(null);
+              else irPara(id);
+            }}
+            aoPronto={(c) => {
+              cena3d.current = c;
+            }}
+            aoFalhar={() => trocarVista("plano")}
+          />
+        )}
+        {!em3d && tamanho.largura > 0 && visiveis.nodes.length > 0 && (
           <ForceGraph2D<No, Ligacao>
             ref={grafo}
             width={tamanho.largura}
@@ -394,7 +460,7 @@ export default function Mapa() {
               ligacaoEmFoco(l) ? 1.6 : ehRelacaoExplicita(l) ? 1.1 : 0.6
             }
             linkLineDash={(l) => (l.tipo === "semelhante" ? [3, 3] : null)}
-            linkCurvature={(l) => (l.tipo === "semelhante" ? 0.18 : 0)}
+            linkCurvature={(l) => (cruzaAreas(l) ? 0.25 : l.tipo === "semelhante" ? 0.18 : 0)}
             linkDirectionalArrowLength={(l) =>
               ehRelacaoExplicita(l) ? 3.2 : 0
             }
@@ -404,7 +470,7 @@ export default function Mapa() {
             }
             linkDirectionalParticleWidth={2.2}
             linkDirectionalParticleSpeed={0.006}
-            linkDirectionalParticleColor={() => "#A78BFA"}
+            linkDirectionalParticleColor={() => "#F8FAFC"}
             onRenderFramePre={antesDoQuadro}
             onEngineStop={() => {
               if (assentou.current) return;
@@ -545,63 +611,43 @@ export default function Mapa() {
       {areasPresentes.length > 0 && (
         <div className={css.legenda}>
           <div className={css.legendaTopo}>
-            <span className={css.legendaTitulo}>Tipos</span>
+            <span className={css.legendaTitulo}>ÁREAS</span>
             <button
               type="button"
               className={css.recolher}
               aria-expanded={legendaAberta}
               onClick={() => alternarLegenda()}
             >
-              {legendaAberta ? "Recolher" : "Áreas e símbolos"}
+              {legendaAberta ? "RECOLHER" : "SÍMBOLOS"}
             </button>
           </div>
-          <div className={css.tiposLegenda}>
-            {tiposPresentes.map((t) => (
-              <span key={t} className={css.tipoLegenda}>
-                <span
-                  className={css.bolinha}
-                  style={{ background: COR_TIPO[t] }}
-                  aria-hidden="true"
-                />
-                {nomeTipo(t)} <small>{contagemTipo.get(t) ?? 0}</small>
-              </span>
-            ))}
+          <div className={css.areas} role="group" aria-label="Mostrar ou esconder áreas">
+            {areasPresentes.map((a) => {
+              const oculta = areasOcultas.has(a);
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  className={`${css.area} ${oculta ? css.areaOculta : ""}`}
+                  aria-pressed={!oculta}
+                  onClick={() =>
+                    setAreasOcultas((atual) => {
+                      const n = new Set(atual);
+                      if (n.has(a)) n.delete(a);
+                      else n.add(a);
+                      return n;
+                    })
+                  }
+                >
+                  <span className={css.bolinha} style={{ background: COR_AREA[a], boxShadow: `0 0 8px ${COR_AREA[a]}` }} aria-hidden="true" />
+                  <span className={css.areaNome}>{NOME_AREA[a]}</span>
+                  <span className={css.areaQtd}>{contagemArea.get(a) ?? 0}</span>
+                </button>
+              );
+            })}
           </div>
           {legendaAberta && (
             <>
-              <span className={css.legendaTitulo}>Áreas</span>
-              <div
-                className={css.areas}
-                role="group"
-                aria-label="Mostrar ou esconder áreas"
-              >
-                {areasPresentes.map((a) => {
-                  const oculta = areasOcultas.has(a);
-                  return (
-                    <button
-                      key={a}
-                      type="button"
-                      className={`${css.area} ${oculta ? css.areaOculta : ""}`}
-                      aria-pressed={!oculta}
-                      onClick={() =>
-                        setAreasOcultas((atual) => {
-                          const n = new Set(atual);
-                          if (n.has(a)) n.delete(a);
-                          else n.add(a);
-                          return n;
-                        })
-                      }
-                    >
-                      <span
-                        className={css.bolinha}
-                        style={{ background: "#A8A29E" }}
-                        aria-hidden="true"
-                      />
-                      {NOME_AREA[a]}
-                    </button>
-                  );
-                })}
-              </div>
               <div className={css.simbolos} aria-hidden="true">
                 <span>
                   <i className={css.simVigente} /> Vigente
@@ -635,6 +681,14 @@ export default function Mapa() {
         </div>
       )}
 
+      {em3d && visiveis.nodes.length > 0 && !noSelecionado && (
+        <p className={css.dica3d} aria-hidden="true">
+          {ehCelular()
+            ? "Um dedo gira · dois dedos movem e aproximam · toque abre"
+            : "Arraste gira · botão direito ou Shift move · roda aproxima onde está o mouse · duplo clique abre"}
+        </p>
+      )}
+
       {/* ── Zoom ── */}
       <div
         className={`${css.zoom} ${noSelecionado ? css.zoomComPainel : ""}`}
@@ -646,9 +700,7 @@ export default function Mapa() {
           className={css.botaoZoom}
           title="Aproximar"
           aria-label="Aproximar"
-          onClick={() =>
-            grafo.current?.zoom((grafo.current.zoom() ?? 1) * 1.4, 250)
-          }
+          onClick={() => aproximar(1.4)}
         >
           <Plus size={16} aria-hidden="true" />
         </button>
@@ -657,9 +709,7 @@ export default function Mapa() {
           className={css.botaoZoom}
           title="Afastar"
           aria-label="Afastar"
-          onClick={() =>
-            grafo.current?.zoom((grafo.current.zoom() ?? 1) / 1.4, 250)
-          }
+          onClick={() => aproximar(1 / 1.4)}
         >
           <Minus size={16} aria-hidden="true" />
         </button>
@@ -672,6 +722,22 @@ export default function Mapa() {
         >
           <Maximize2 size={15} aria-hidden="true" />
         </button>
+        {webglDisponivel() && (
+          <button
+            type="button"
+            className={`${css.botaoZoom} ${css.botaoVista}`}
+            title={em3d ? "Ver o mapa plano" : "Ver o mapa em 3D"}
+            aria-label={em3d ? "Ver o mapa plano" : "Ver o mapa em 3D"}
+            onClick={() => {
+              setSelecionado(null);
+              enquadrado.current = false;
+              assentou.current = false;
+              trocarVista(em3d ? "plano" : "3d");
+            }}
+          >
+            {em3d ? "2D" : "3D"}
+          </button>
+        )}
       </div>
 
       {/* ── Estados ── */}

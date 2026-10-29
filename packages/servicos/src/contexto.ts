@@ -1,5 +1,5 @@
 import { Cofre } from "@cerebro/auth";
-import { criarPoolLeitura, type PoolLeitura } from "@cerebro/central";
+import { ClienteApiCentral, criarPoolLeitura, type PoolLeitura } from "@cerebro/central";
 import type { Papel } from "@cerebro/core";
 import { auditoria, type Canal, type Executor, type Pool } from "@cerebro/db";
 import {
@@ -43,6 +43,8 @@ export interface Contexto {
   embeddings: ProvedorEmbeddings | null;
   /** Conexão somente leitura às views da Central. `null` = Argos não consulta a Central. */
   central: PoolLeitura | null;
+  /** API da Central (só GET, só os endpoints liberados). `null` = sem números "iguais à tela". */
+  centralApi: ClienteApiCentral | null;
   /** Whisper para o Argos. `null` = sem voz (o Argos ainda aceita texto digitado). */
   voz: ProvedorTranscricao | null;
   /** Voz do Argos gerada no servidor (texto → áudio). */
@@ -80,6 +82,10 @@ export function criarContexto(pool: Pool, ambiente: Ambiente, log: Log): Context
       ? new EmbeddingsGemini({ chave: ambiente.GEMINI_CHAVE, dimensoes: ambiente.EMBEDDINGS_DIMENSOES })
       : null,
     central: ambiente.ARGOS_DB_SENHA ? criarPoolLeitura(ambiente.DATABASE_URL, ambiente.ARGOS_DB_SENHA, ambiente.DATABASE_SSL) : null,
+    centralApi:
+      ambiente.CENTRAL_API_URL && ambiente.CENTRAL_API_SEGREDO
+        ? new ClienteApiCentral({ url: ambiente.CENTRAL_API_URL, segredo: ambiente.CENTRAL_API_SEGREDO })
+        : null,
     voz: ambiente.GROQ_CHAVE
       ? new TranscricaoCompativelOpenAI({ baseUrl: ambiente.VOZ_BASE_URL, chave: ambiente.GROQ_CHAVE, modelo: ambiente.VOZ_MODELO })
       : null,

@@ -27,6 +27,8 @@ const INFO: Record<StatusIntegracaoDTO["nome"], { nome: string; descricao: strin
   deepseek: { nome: "DeepSeek", descricao: "Respostas, atas e extração de conhecimento." },
   embeddings: { nome: "Gemini", descricao: "Busca por sentido, não só por palavra." },
   central: { nome: "Banco da Central", descricao: "O Argos consulta disponibilidade, entregas, financeiro e o BI, só para leitura." },
+  central_api: { nome: "API da Central", descricao: "O Argos chama as mesmas rotas das telas do BI e do BI Financeiro: o número bate com a tela." },
+  codigo_central: { nome: "Regras do código", descricao: "Lê o código do BI e do Financeiro no GitHub e guarda as regras de cálculo no Cérebro." },
   voz: { nome: "Argos (ouvido)", descricao: "Whisper pela Groq: transforma a sua fala em comando." },
   fala: { nome: "Argos (voz)", descricao: "Voz natural gerada no servidor: a mesma em qualquer aparelho." },
 };
@@ -313,6 +315,15 @@ export default function Integracoes() {
     setParams({}, { replace: true });
   }, [params, setParams, avisar]);
 
+  const lerRegras = useMutation({
+    mutationFn: () => api<{ agendado: boolean }>("/integracoes/codigo-central/ler", { metodo: "POST", corpo: {} }),
+    onSuccess: () => {
+      avisar("Leitura agendada. Em alguns minutos as regras aparecem na Biblioteca (tipo Sistema).");
+      window.setTimeout(() => void qc.invalidateQueries({ queryKey: chaves.integracoes }), 20_000);
+    },
+    onError: (e) => avisar(textoDoErro(e), "erro"),
+  });
+
   const conectarGoogle = useMutation({
     mutationFn: () => api<{ url: string }>("/integracoes/google/conectar", { metodo: "POST" }),
     onSuccess: ({ url }) => location.assign(url),
@@ -333,7 +344,7 @@ export default function Integracoes() {
   const porNome = (nome: StatusIntegracaoDTO["nome"]) => status.data?.find((s) => s.nome === nome);
   const urlWebhook = `${location.origin}/api/webhooks/fathom`;
 
-  const fontes = (["central", "claude", "fathom", "google", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
+  const fontes = (["central", "central_api", "codigo_central", "claude", "fathom", "google", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
   const ia = (["deepseek", "embeddings", "voz", "fala"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
 
   return (
@@ -433,6 +444,21 @@ export default function Integracoes() {
                               )}
                             </span>
                           ))
+                        }
+                      />
+                    );
+                  case "codigo_central":
+                    return (
+                      <Linha
+                        key={s.nome}
+                        s={s}
+                        acao={
+                          admin &&
+                          s.estado !== "desligado" && (
+                            <button type="button" className="botao botao-pequeno" disabled={lerRegras.isPending} onClick={() => lerRegras.mutate()}>
+                              {lerRegras.isPending ? "Agendando…" : "Ler as regras agora"}
+                            </button>
+                          )
                         }
                       />
                     );

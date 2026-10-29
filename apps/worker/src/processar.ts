@@ -1,5 +1,5 @@
 import { jobs, type JobLinha } from "@cerebro/db";
-import { JOB, fontes, indexarRegistro, invalidarCacheBusca, type Contexto, type TipoJob } from "@cerebro/servicos";
+import { JOB, fontes, indexarRegistro, invalidarCacheBusca, sincronizarRegrasDoCodigo, type Contexto, type TipoJob } from "@cerebro/servicos";
 
 type Tratador = (ctx: Contexto, payload: Record<string, unknown>) => Promise<unknown>;
 
@@ -28,6 +28,11 @@ export const TRATADORES: Record<TipoJob, Tratador> = {
       texto: texto(p.texto),
       fonteUrl: null,
     }),
+  [JOB.regrasCodigo]: async (ctx, p) => {
+    const r = await sincronizarRegrasDoCodigo(ctx, { forcar: p.forcar === true });
+    invalidarCacheBusca();
+    return r;
+  },
 };
 
 /** Reserva e executa um job. Devolve `false` quando a fila está vazia. */

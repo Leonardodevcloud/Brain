@@ -7,7 +7,7 @@ import {
 } from "@cerebro/core";
 import { auditoria, integracoes, jobs, lacunas, registros, reunioes, trechos, tokensConector } from "@cerebro/db";
 import { auditar, type Ator, type Contexto } from "./contexto.js";
-import { carregarCatalogo } from "@cerebro/central";
+import { ENDPOINTS_CENTRAL, carregarCatalogo } from "@cerebro/central";
 import { paraResumo } from "./registros.js";
 
 const DESCRICAO_ACAO: Record<string, string> = {
@@ -91,13 +91,14 @@ export async function proximasReunioes(ctx: Contexto, horas = 36) {
 // ───────────────────────────── Status e início ─────────────────────────────
 
 export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<StatusIntegracaoDTO[]> {
-  const [google, email, ultimaReuniao, contagemTrechos, tokens, importacao] = await Promise.all([
+  const [google, email, ultimaReuniao, contagemTrechos, tokens, importacao, codigoCentral] = await Promise.all([
     integracoes.obter(ctx.pool, "google"),
     integracoes.obter(ctx.pool, "email"),
     reunioes.ultima(ctx.pool),
     trechos.contar(ctx.pool),
     ator.usuarioId ? tokensConector.listarDoUsuario(ctx.pool, ator.usuarioId) : Promise.resolve([]),
     integracoes.obter(ctx.pool, "claude_importacao"),
+    integracoes.obter(ctx.pool, "codigo-central"),
   ]);
   const quando = (d: Date | string | null | undefined) =>
     d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Bahia", dateStyle: "short", timeStyle: "short" }) : null;
@@ -150,6 +151,26 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
       } catch (erro) {
         return { nome: "central", estado: "erro", detalhe: `Sem acesso: ${(erro as Error).message.slice(0, 120)}` };
       }
+    })(),
+    await (async (): Promise<StatusIntegracaoDTO> => {
+      if (!ctx.centralApi) return { nome: "central_api", estado: "desligado", detalhe: "Defina CENTRAL_API_URL e CENTRAL_API_SEGREDO (o INTERNAL_SECRET da Central) para o Argos usar os mesmos números das telas do BI." };
+      try {
+        await ctx.centralApi.testar();
+        return { nome: "central_api", estado: "ativo", detalhe: `Só leitura (GET) em ${ENDPOINTS_CENTRAL.length} rotas do BI e do Financeiro. CPF, PIX, contas, telefones e endereços são tirados da resposta.` };
+      } catch (erro) {
+        return { nome: "central_api", estado: "erro", detalhe: `A Central não respondeu: ${(erro as Error).message.slice(0, 140)}` };
+      }
+    })(),
+    (() => {
+      const c = codigoCentral?.config as { ultimaEm?: string; registros?: number; arquivos?: number; restantes?: number; erros?: number } | undefined;
+      if (!ctx.ambiente.CENTRAL_GITHUB_TOKEN)
+        return { nome: "codigo_central", estado: "desligado", detalhe: "Defina CENTRAL_GITHUB_TOKEN (token do GitHub só leitura do tutts-backend) para o Cérebro aprender as regras do BI e do Financeiro direto do código." } satisfies StatusIntegracaoDTO;
+      if (!c?.ultimaEm) return { nome: "codigo_central", estado: "incompleto", detalhe: "Ainda não leu o código. Clique em “Ler as regras agora” ou espere a leitura das 05:10." } satisfies StatusIntegracaoDTO;
+      return {
+        nome: "codigo_central",
+        estado: c.erros ? "incompleto" : "ativo",
+        detalhe: `${c.registros ?? 0} registros de regras, de ${c.arquivos ?? 0} arquivos (${ctx.ambiente.CENTRAL_GITHUB_PASTAS.replace(/,/g, ", ")}). Última leitura: ${quando(c.ultimaEm)}.${c.restantes ? ` Faltam ${c.restantes} arquivos (continua sozinho).` : ""}${c.erros ? ` ${c.erros} arquivo(s) com erro na última leitura.` : ""}`,
+      } satisfies StatusIntegracaoDTO;
     })(),
     {
       nome: "voz",
