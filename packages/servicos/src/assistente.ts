@@ -336,15 +336,40 @@ async function viaAgente(ctx: Contexto, ator: Ator, fala: string, historico: Tur
 }
 
 export async function transcreverFala(ctx: Contexto, audio: Uint8Array, mime: string) {
-  if (!ctx.voz) throw AppError.indisponivel("A voz ainda não está ligada. Defina GROQ_CHAVE no Railway; enquanto isso, digite para o Argos.");
+  const provedores = [ctx.voz, ctx.vozReserva].filter((p): p is NonNullable<typeof p> => Boolean(p));
+  if (!provedores.length) throw AppError.indisponivel("A voz ainda não está ligada. Defina GROQ_CHAVE no Railway; enquanto isso, digite para o Argos.");
   if (audio.byteLength < 1200) throw AppError.requisicaoInvalida("O áudio ficou curto demais. Segure o espaço enquanto fala.");
   if (audio.byteLength > LIMITE_AUDIO_BYTES) throw AppError.requisicaoInvalida("O áudio ficou longo demais. Fale em trechos de até 1 minuto.");
-  try {
-    return (await ctx.voz.transcrever(audio, mime)).trim();
-  } catch (erro) {
-    ctx.log.warn({ erro: (erro as Error).message }, "falha na transcrição");
-    throw AppError.indisponivel("Não consegui entender o áudio agora. Tente de novo.");
+  // Groq primeiro (rápida); se ela recusar, estourar o limite ou cair, a OpenAI (se houver chave) transcreve.
+  // Uma falha passageira (429/5xx/tempo) ganha uma segunda tentativa no mesmo provedor.
+  let ultimo: Error | null = null;
+  for (const p of provedores) {
+    for (let tentativa = 0; tentativa < 2; tentativa++) {
+      try {
+        return (await p.transcrever(audio, mime)).trim();
+      } catch (erro) {
+        ultimo = erro as Error;
+        // Tamanho, tipo e os primeiros bytes ajudam a ver se o arquivo chegou inteiro (webm começa com 1a45dfa3).
+        ctx.log.warn(
+          { erro: ultimo.message.slice(0, 400), provedor: p.nome, tentativa, bytes: audio.byteLength, mime, inicio: Buffer.from(audio.subarray(0, 4)).toString("hex") },
+          "falha na transcrição",
+        );
+        if (!/\((429|5\d\d)\)|timeout|aborted|fetch failed/i.test(ultimo.message)) break;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
   }
+  throw AppError.indisponivel(motivoTranscricao(ultimo?.message ?? ""));
+}
+
+/** Motivo legível para a falha da transcrição (aparece no painel do Argos). */
+export function motivoTranscricao(msg: string) {
+  const status = /\((\d{3})\)/.exec(msg)?.[1];
+  if (status === "401" || status === "403") return "A chave da transcrição (GROQ_CHAVE) foi recusada. Gere uma nova em console.groq.com e troque no Railway.";
+  if (status === "429") return "A transcrição atingiu o limite de uso agora. Espere um minuto ou digite a pergunta.";
+  if (status === "400" || status === "413" || status === "415") return "O áudio chegou num formato que a transcrição não aceitou. Tente de novo; se repetir, digite a pergunta.";
+  if (status && status.startsWith("5")) return "O serviço de transcrição está fora do ar agora. Tente em instantes ou digite a pergunta.";
+  return "Não consegui transcrever o áudio agora (sem resposta do serviço). Tente de novo ou digite a pergunta.";
 }
 
 // ───────────────────────────── Voz do Argos gerada no servidor ─────────────────────────────

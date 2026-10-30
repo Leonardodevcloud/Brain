@@ -47,6 +47,8 @@ export interface Contexto {
   centralApi: ClienteApiCentral | null;
   /** Whisper para o Argos. `null` = sem voz (o Argos ainda aceita texto digitado). */
   voz: ProvedorTranscricao | null;
+  /** Reserva da transcrição (Whisper da OpenAI, com OPENAI_CHAVE): entra se a Groq falhar ou estourar o limite. */
+  vozReserva?: ProvedorTranscricao | null;
   /** Voz do Argos gerada no servidor (texto → áudio). */
   fala: ProvedorFala | null;
   cofre: Cofre | null;
@@ -86,6 +88,9 @@ export function criarContexto(pool: Pool, ambiente: Ambiente, log: Log): Context
       ambiente.CENTRAL_API_URL && ambiente.CENTRAL_API_SEGREDO
         ? new ClienteApiCentral({ url: ambiente.CENTRAL_API_URL, segredo: ambiente.CENTRAL_API_SEGREDO })
         : null,
+    vozReserva: ambiente.OPENAI_CHAVE
+      ? new TranscricaoCompativelOpenAI({ baseUrl: ambiente.FALA_BASE_URL, chave: ambiente.OPENAI_CHAVE, modelo: "whisper-1" })
+      : null,
     voz: ambiente.GROQ_CHAVE
       ? new TranscricaoCompativelOpenAI({ baseUrl: ambiente.VOZ_BASE_URL, chave: ambiente.GROQ_CHAVE, modelo: ambiente.VOZ_MODELO })
       : null,

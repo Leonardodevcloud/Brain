@@ -764,7 +764,20 @@ describe("Argos", () => {
     const voz = { nome: "falsa", transcrever: async () => " abre o mapa " };
     expect(await transcreverFala({ ...ctx, voz }, new Uint8Array(5000), "audio/webm")).toBe("abre o mapa");
     await expect(transcreverFala({ ...ctx, voz }, new Uint8Array(10), "audio/webm")).rejects.toMatchObject({ status: 400 });
-    await expect(transcreverFala({ ...ctx, voz: null }, new Uint8Array(5000), "audio/webm")).rejects.toMatchObject({ status: 503 });
+    await expect(transcreverFala({ ...ctx, voz: null, vozReserva: null }, new Uint8Array(5000), "audio/webm")).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("transcrição: tenta de novo no limite, cai para a reserva e explica a falha", async () => {
+    let chamadas = 0;
+    const limitada = { nome: "groq", transcrever: async () => { chamadas++; throw new Error("Transcrição falhou (429): rate limit"); } };
+    const reserva = { nome: "openai", transcrever: async () => "qual a margem de ontem?" };
+    expect(await transcreverFala({ ...ctx, voz: limitada, vozReserva: reserva }, new Uint8Array(5000), "audio/webm")).toBe("qual a margem de ontem?");
+    expect(chamadas).toBe(2);
+    const recusada = { nome: "groq", transcrever: async () => { throw new Error("Transcrição falhou (401): invalid api key"); } };
+    await expect(transcreverFala({ ...ctx, voz: recusada, vozReserva: null }, new Uint8Array(5000), "audio/webm")).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringContaining("GROQ_CHAVE"),
+    });
   });
 });
 
@@ -1070,6 +1083,32 @@ describe("Argos com as regras da Central", () => {
     expect(r.fala).toBe("Taxa de prazo de 91,5%. Ana Souza fez 50 entregas.");
     expect(r.dados).toMatchObject({ origem: "central", titulo: "Motoboys em outubro", linhas: [{ nome: "Ana Souza", entregas: 50 }] });
     expect(r.dados?.sql).toContain("GET /api/bi/dashboard-completo");
+  });
+
+  it("conversa retomada no dia seguinte: mantém o recorte e não adivinha 30 dias", async () => {
+    let visto = "";
+    let historicoVisto = "";
+    const iaRot = roteiro([
+      (p) => {
+        visto = ultimaMensagem(p);
+        historicoVisto = p.mensagens.map((m) => m.conteudo).join("\n");
+        return { acao: "responder", fala: "Em 28/10 foram 12 motoboys." };
+      },
+    ]);
+    const ontem = new Date(Date.now() - 20 * 3_600_000).toISOString();
+    const r = await atenderFala({ ...ctx, ia: iaRot, central: null }, atorAdmin, "desses saques, quantos foram motoboys diferentes?", [
+      {
+        pergunta: "quantos saques emergenciais foram feitos ontem?",
+        resposta: "Ontem foram 40 saques.\n[Recorte usado: -- Saques de 2026-10-28]",
+        em: ontem,
+      },
+    ]);
+    expect(r.fala).toBe("Em 28/10 foram 12 motoboys.");
+    expect(visto).toContain("CONTINUAÇÃO DA CONVERSA");
+    expect(historicoVisto).toMatch(/Pergunta \(feita em \d{2}\/\d{2}\/\d{4}/);
+    expect(historicoVisto).toContain("Recorte usado");
+    // a consulta "padrão" de saques (30 dias) não é antecipada numa continuação
+    expect(historicoVisto).not.toContain("consulta pronta para essa pergunta");
   });
 
   it("sem a API ligada, a IA é avisada para cair no banco", async () => {

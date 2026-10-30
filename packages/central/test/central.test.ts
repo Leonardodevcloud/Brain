@@ -194,7 +194,16 @@ describe("consultas prontas", () => {
 
   it("saques em aberto excluem pagos e rejeitados", async () => {
     const r = await consultaPronta("saques")!.executar(leitura, {});
-    expect(r.totais).toMatchObject({ pedidos_em_aberto: 2, valor_em_aberto: 245, pagos: 1 });
+    expect(r.totais).toMatchObject({ pedidos_em_aberto: 2, valor_em_aberto: 245, pagos: 1, pedidos: 3, motoboys: 3 });
+  });
+
+  it("saques de um dia específico, com motoboys distintos", async () => {
+    const hoje = (await dono.query<{ d: string }>(`SELECT to_char((now() AT TIME ZONE 'America/Bahia')::date, 'YYYY-MM-DD') AS d`)).rows[0]!.d;
+    const r = await consultaPronta("saques")!.executar(leitura, { inicio: hoje });
+    expect(r.titulo).toBe(`Saques de ${hoje}`);
+    expect(r.totais).toMatchObject({ pedidos: 3, motoboys: 3 });
+    const vazio = await consultaPronta("saques")!.executar(leitura, { inicio: "2020-01-01" });
+    expect(vazio.totais).toMatchObject({ pedidos: 0, motoboys: 0 });
   });
 });
 

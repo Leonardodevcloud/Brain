@@ -23,8 +23,6 @@ export interface TurnoConversa {
 const CHAVE = "cerebro:conversa";
 const CHAVE_ID = "cerebro:conversa-id";
 const MAX_TURNOS = 60;
-/** Depois de 30 minutos parado, o histórico deixa de ir para o Argos (a tela continua mostrando). */
-const VALIDADE_CONTEXTO_MS = 30 * 60_000;
 
 let turnos: TurnoConversa[] = carregar();
 const ouvintes = new Set<() => void>();
@@ -86,12 +84,22 @@ let proximo = Date.now();
 /** Resumo de uma tabela para o Argos lembrar do que mostrou (sem mandar tudo de novo). */
 function resumoDados(d: DadosCentralDTO): string {
   const destaques = d.destaques.map((x) => `${x.rotulo}: ${x.valor}`).join("; ");
+  // O recorte usado (período, cliente, filtros): "desses saques" precisa saber DE QUAIS.
+  const recorte = d.sql
+    .split("\n\n")[0]!
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
   const colunas = d.colunas.slice(0, 8);
   const linhas = d.linhas
     .slice(0, 12)
     .map((l) => colunas.map((c) => String(l[c] ?? "")).join(" | "))
     .join("\n");
-  return `\n[Tabela mostrada: ${d.titulo}${destaques ? ` — ${destaques}` : ""}]\n${colunas.join(" | ")}\n${linhas}${d.linhas.length > 12 ? `\n(+${d.linhas.length - 12} linhas)` : ""}`;
+  const totais = Object.entries(d.totais ?? {})
+    .slice(0, 12)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("; ");
+  return `\n[Tabela mostrada: ${d.titulo}${destaques ? ` — ${destaques}` : ""}]${totais ? `\n[Totais: ${totais}]` : ""}\n[Recorte usado: ${recorte}]\n${colunas.join(" | ")}\n${linhas}${d.linhas.length > 12 ? `\n(+${d.linhas.length - 12} linhas)` : ""}`;
 }
 
 export const conversa = {
@@ -154,15 +162,16 @@ export const conversa = {
   },
 
   /** O que vai para o Argos como contexto: as últimas trocas recentes, com o resumo das tabelas. */
-  historicoParaApi(): { pergunta: string; resposta: string }[] {
-    const agora = Date.now();
+  // A conversa inteira continua valendo, mesmo reaberta no dia seguinte: cada troca vai com a data
+  // em que foi feita, para "ontem" naquela troca virar a data certa.
+  historicoParaApi(): { pergunta: string; resposta: string; em: string }[] {
     return turnos
-      .filter((t) => t.resposta && agora - t.em < VALIDADE_CONTEXTO_MS)
+      .filter((t) => t.resposta)
       .slice(-8)
       .map((t) => {
         const r = t.resposta!;
         const texto = `${r.detalhe ? `${r.fala}\n${r.detalhe}` : r.fala}${r.dados ? resumoDados(r.dados) : ""}`;
-        return { pergunta: t.pergunta.slice(0, 1000), resposta: texto.slice(0, 4000) };
+        return { pergunta: t.pergunta.slice(0, 1000), resposta: texto.slice(0, 4000), em: new Date(t.em).toISOString() };
       });
   },
 };

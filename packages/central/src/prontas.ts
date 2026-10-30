@@ -322,24 +322,46 @@ export const CONSULTAS_PRONTAS: ConsultaPronta[] = [
   },
   {
     nome: "saques",
-    descricao: "Saques dos motoboys por status (padrão: os que ainda não foram pagos nem rejeitados): quantidade e valores.",
-    parametros: { periodo_dias: "considerar pedidos dos últimos N dias (padrão 30)" },
+    descricao:
+      "Saques dos motoboys (todo saque pela Plific é o saque emergencial) por status: pedidos, motoboys distintos e valores. Período: inicio/fim (um dia = só inicio) ou os últimos N dias (padrão 30). Sem status, mostra todos; o total \"em aberto\" exclui pagos e rejeitados.",
+    parametros: {
+      inicio: "AAAA-MM-DD (opcional; um dia específico = só inicio)",
+      fim: "AAAA-MM-DD (padrão = inicio)",
+      periodo_dias: "últimos N dias, quando não houver inicio (padrão 30)",
+      status: "filtrar um status (ex.: pago, rejeitado, aguardando_aprovacao), opcional",
+    },
     async executar(pool, p) {
+      const params: unknown[] = [];
+      const inicio = data(p.inicio);
+      const fim = data(p.fim) ?? inicio;
       const dias = Math.min(365, Math.max(1, Number(p.periodo_dias) || 30));
+      const dia = `(created_at AT TIME ZONE 'America/Bahia')::date`;
+      const periodo = inicio
+        ? `${dia} BETWEEN $${params.push(inicio)}::date AND $${params.push(fim)}::date`
+        : `created_at >= now() - make_interval(days => $${params.push(dias)})`;
+      const status = texto(p.status);
+      const filtroStatus = status ? `AND status = $${params.push(status)}` : "";
       const sql = `
         SELECT status, COUNT(*) AS pedidos,
+               COUNT(DISTINCT user_cod) AS motoboys,
                ROUND(SUM(requested_amount)::numeric, 2) AS valor_pedido,
                ROUND(SUM(final_amount)::numeric, 2) AS valor_final,
                MIN(created_at) AS mais_antigo
           FROM withdrawal_requests
-         WHERE created_at >= now() - make_interval(days => $1)
+         WHERE ${periodo} ${filtroStatus}
          GROUP BY status ORDER BY pedidos DESC`;
-      return rodar(pool, `Saques dos últimos ${dias} dias`, sql, [dias], (r) => {
+      // Motoboys distintos no total (o mesmo motoboy pode ter saques em status diferentes).
+      const total = await consultar(pool, `SELECT COUNT(*) AS pedidos, COUNT(DISTINCT user_cod) AS motoboys FROM withdrawal_requests WHERE ${periodo} ${filtroStatus}`, params, { limite: 1 });
+      const titulo = inicio ? `Saques ${inicio === fim ? `de ${inicio}` : `de ${inicio} a ${fim}`}` : `Saques dos últimos ${dias} dias`;
+      return rodar(pool, titulo, sql, params, (r) => {
         const abertos = r.linhas.filter((l) => !["pago", "rejeitado"].includes(String(l.status)));
         return {
+          pedidos: Number(total.linhas[0]?.pedidos ?? 0),
+          motoboys: Number(total.linhas[0]?.motoboys ?? 0),
           pedidos_em_aberto: soma(abertos, "pedidos"),
           valor_em_aberto: Math.round(soma(abertos, "valor_final") * 100) / 100,
           pagos: soma(r.linhas.filter((l) => l.status === "pago"), "pedidos"),
+          valor_total: Math.round(soma(r.linhas, "valor_final") * 100) / 100,
         };
       });
     },

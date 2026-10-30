@@ -37,7 +37,18 @@ import { consultarPlanilha, contextoPlanilha, lerAnexo } from "./planilhas.js";
 export interface TurnoAnterior {
   pergunta: string;
   resposta: string;
+  /** Quando a troca aconteceu (ISO). Uma conversa reaberta no dia seguinte: "ontem" daquela troca é outra data. */
+  em?: string;
 }
+
+// "desses", "e ontem?", "quantos deles…": continua o assunto da troca anterior.
+const CONTINUACAO = /^(e |mas |entao |e ai|e quanto|e qual|e quem|e os|e as)|\b(desse|dessa|desses|dessas|disso|deste|destes|deles|delas|nesse|nessa|nesses|nessas|neles|nelas|daquele|daqueles|mesmo periodo|mesmo dia|esse periodo|esses|essas)\b/;
+
+const semAcentoMin = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+/** "29/10/2026 17:40" no fuso da Bahia. */
+const dataHora = (iso: string) =>
+  new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Bahia", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 export interface RespostaAgente {
   fala: string;
@@ -112,7 +123,9 @@ export async function agenteArgos(
   const ia = ctx.ia!;
   const inicio = Date.now();
   const tempos: Record<string, number> = {};
-  const plano = ctx.central ? preBuscaProvavel(pergunta) : null;
+  // Pergunta de continuação herda o recorte da conversa: não adianta adivinhar uma consulta "padrão" (ex.: 30 dias).
+  const continuacao = historico.length > 0 && CONTINUACAO.test(semAcentoMin(pergunta));
+  const plano = ctx.central && !continuacao ? preBuscaProvavel(pergunta) : null;
   const processo = PERGUNTA_DE_PROCESSO.test(pergunta.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
 
   // A memória do Cérebro acompanha TODA pergunta. Perguntas curtas de continuação ("e ontem?")
@@ -166,10 +179,14 @@ export async function agenteArgos(
   for (const t of historico.slice(-8)) {
     // O histórico pode trazer nomes de pessoas (respostas e tabelas anteriores): também vão mascarados.
     const nomes = nomesNoTexto(`${t.pergunta}\n${t.resposta}`);
-    mensagens.push({ papel: "user", conteudo: esconder(`Pergunta:\n${embrulharDados(t.pergunta)}`, nomes) });
+    const quando = t.em && !Number.isNaN(Date.parse(t.em)) ? ` (feita em ${dataHora(t.em)})` : "";
+    mensagens.push({ papel: "user", conteudo: esconder(`Pergunta${quando}:\n${embrulharDados(t.pergunta)}`, nomes) });
     // Mascara antes de virar JSON (no JSON a quebra de linha vira "\\n" e gruda no nome).
     mensagens.push({ papel: "assistant", conteudo: json({ acao: "responder", fala: esconder(t.resposta, nomes) }) });
   }
+  // Conversa reaberta em outro dia: avisa a IA explicitamente.
+  const ultima = historico.at(-1)?.em;
+  const ultimaEm = ultima && !Number.isNaN(Date.parse(ultima)) && hojeLocal(new Date(ultima)) !== hojeLocal(agora) ? ultima : null;
   const hora = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bahia" });
   // Regras com um cálculo pronto ligado (dados.calculo): a IA só escolhe o período, a conta é do servidor.
   const calculos = new Map<string, { nome: string; parametros: Record<string, unknown> }>();
@@ -198,6 +215,11 @@ export async function agenteArgos(
     papel: "user",
     conteudo: esconder(
       `Agora são ${hora} de ${hojeLocal(agora)}.${avisoCentral ? ` ${avisoCentral}` : ""}\n` +
+        (continuacao
+          ? `CONTINUAÇÃO DA CONVERSA: esta pergunta segue as trocas acima${ultimaEm ? ` (a última foi em ${dataHora(ultimaEm)})` : ""}. Mantenha o MESMO recorte da última consulta (período, cliente, loja, filtros, tipo de dado) e mude só o que a pessoa mudou agora. Datas relativas ditas nas trocas anteriores ("ontem", "hoje") valem a partir da data daquela troca.\n`
+          : ultimaEm
+            ? `Esta conversa foi retomada (a última troca foi em ${dataHora(ultimaEm)}). Se a pergunta continuar o assunto, mantenha o recorte da última consulta e converta "ontem"/"hoje" daquelas trocas para as datas certas.\n`
+            : "") +
         `Memória do Cérebro (regras e notas já guardadas que podem valer aqui):\n${textoMemoria ? embrulharDados(textoMemoria) : "(nada guardado sobre isso)"}\n` +
         (planilha ? `${embrulharDados(planilha.texto)}\n` : opcoes.anexo ? "A planilha anexada expirou: peça para enviar de novo.\n" : "") +
         `Pergunta:\n${embrulharDados(pergunta)}`,
