@@ -91,9 +91,11 @@ export const ENDPOINTS_CENTRAL: EndpointCentral[] = [
     id: "bi.comparativo_semanal_clientes",
     caminho: "/api/bi/comparativo-semanal-clientes",
     modulo: "bi",
-    descricao: "Comparativo semanal detalhado por cliente.",
+    descricao:
+      "Comparativo semanal por cliente, igual à tela: por semana (ISO, segunda a domingo) entregas, OS, taxa de prazo, retornos, valor, ticket médio (= (valor − valor_prof) / entregas) e variações. A tabela clientes.semanas traz uma linha por cliente e semana.",
     parametros: { ...PERIODO, cod_cliente: FILTROS_BI.cod_cliente, centro_custo: FILTROS_BI.centro_custo },
     obrigatorios: ["data_inicio", "data_fim"],
+    tabelaPadrao: "semanas",
   },
   {
     id: "bi.acompanhamento_clientes",
@@ -257,7 +259,21 @@ export function lerRespostaCentral(resposta: unknown): { numeros: Record<string,
   };
   const visitar = (v: unknown, caminho: string, nivel: number) => {
     if (Array.isArray(v)) {
-      if (v.length && v.every(ehLinha)) tabelas.push({ caminho: caminho || "linhas", linhas: v.map(achatar) });
+      if (v.length && v.every(ehLinha)) {
+        const nome = caminho || "linhas";
+        tabelas.push({ caminho: nome, linhas: v.map(achatar) });
+        // Listas dentro das linhas (ex.: clientes[].semanas[]) viram uma tabela "aberta":
+        // cada linha filha leva junto os campos do pai (nome do cliente + dados da semana).
+        const filhas = new Set(v.flatMap((l) => Object.entries(l).filter(([, x]) => Array.isArray(x) && x.length && x.every(ehLinha)).map(([k]) => k)));
+        for (const k of filhas) {
+          const linhas = v.flatMap((l) => {
+            const pai = Object.fromEntries(Object.entries(achatar(l)));
+            const lista = Array.isArray(l[k]) ? (l[k] as unknown[]).filter(ehLinha) : [];
+            return lista.map((f) => ({ ...pai, ...achatar(f) }));
+          });
+          if (linhas.length) tabelas.push({ caminho: `${nome}.${k}`, linhas });
+        }
+      }
       return;
     }
     if (!ehLinha(v) || nivel > 2) return;

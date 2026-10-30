@@ -22,6 +22,9 @@ import {
   lerGrafico,
   memorizar,
   sincronizarRegrasDoCodigo,
+  limparFala,
+  separarContexto,
+  endpointProvavel,
   limparCodigo,
   arquivoDeRegra,
   type FonteCodigo,
@@ -323,6 +326,33 @@ describe("reuniões e atas", () => {
 });
 
 describe("tarefas", () => {
+  it("tarefa que se repete: cria a próxima quando a data chega e ao concluir; não duplica", async () => {
+    const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Bahia" });
+    const mais = (d: string, n: number) => {
+      const x = new Date(`${d}T12:00:00Z`);
+      x.setUTCDate(x.getUTCDate() + n);
+      return x.toISOString().slice(0, 10);
+    };
+    const t = await tarefas.criarTarefa(ctx, atorAdmin, { titulo: "Conferir saques da semana", recorrencia: "semanal" });
+    expect(t).toMatchObject({ prazo: hoje, recorrencia: "semanal", venceEmBreve: true, atrasada: false });
+    const serie = async () => (await tarefas.listarTarefas(ctx, atorAdmin, { texto: "Conferir saques da semana" })).map((x) => x.prazo).sort();
+    expect(await serie()).toEqual([hoje, mais(hoje, 7)]);
+    expect(await tarefas.gerarRecorrencias(ctx)).toBe(0); // rodar de novo não duplica
+    const proxima = (await tarefas.listarTarefas(ctx, atorAdmin, { texto: "Conferir saques da semana" })).find((x) => x.prazo === mais(hoje, 7))!;
+    await tarefas.atualizarTarefa(ctx, atorAdmin, proxima.id, { status: "feita" });
+    expect(await serie()).toEqual([hoje, mais(hoje, 7), mais(hoje, 14)]);
+    // desligar a repetição na última encerra a série
+    const ultima = (await tarefas.listarTarefas(ctx, atorAdmin, { texto: "Conferir saques da semana" })).find((x) => x.prazo === mais(hoje, 14))!;
+    await tarefas.atualizarTarefa(ctx, atorAdmin, ultima.id, { recorrencia: null, status: "feita" });
+    expect((await serie()).length).toBe(3);
+  });
+
+  it("calcula a próxima data de cada repetição", () => {
+    expect(tarefas.proximaData("2026-01-31", "mensal")).toBe("2026-02-28");
+    expect(tarefas.proximaData("2026-10-30", "diaria")).toBe("2026-10-31");
+    expect(tarefas.proximaData("2026-10-30", "quinzenal")).toBe("2026-11-13");
+  });
+
   it("cria, reconhece o responsável pelo nome, move no quadro e conclui", async () => {
     const a = await tarefas.criarTarefa(ctx, atorAdmin, { titulo: "Ligar para a Rede Beta", responsavelTexto: "admin", prazo: "2020-01-01" });
     expect(a.codigo).toMatch(/^TAR-\d{3}$/);
@@ -1234,6 +1264,39 @@ describe("Argos com as regras da Central", () => {
     } finally {
       await leitura2.end();
     }
+  });
+
+  it("fala curta e sem as marcas do histórico; o resto vai para a análise", () => {
+    const longa = "O ticket do 480 não caiu de forma relevante. O que caiu foi o volume, de 151 para 94 entregas. A margem recuou de 933 para 531 reais. A leve queda do líquido vem de um custo maior.\n[Tabela mostrada: Ticket — x]\n[Recorte usado: WITH fat AS (SELECT ...)] semana | entregas";
+    const { fala, resto } = limparFala(longa, 120);
+    expect(fala).toBe("O ticket do 480 não caiu de forma relevante. O que caiu foi o volume, de 151 para 94 entregas.");
+    expect(resto).toContain("A margem recuou");
+    expect(`${fala}${resto}`).not.toMatch(/Tabela mostrada|Recorte usado|WITH fat/);
+    expect(separarContexto("Foram 40 saques.\n[Tabela mostrada: Saques]\n[Recorte usado: -- x]")).toEqual({ fala: "Foram 40 saques.", contexto: "[Tabela mostrada: Saques]\n[Recorte usado: -- x]" });
+  });
+
+  it("indicadores da tela apontam para a rota da Central", () => {
+    expect(endpointProvavel("analise pq o ticket medio da 480 caiu nas ultimas duas semanas")?.id).toBe("bi.comparativo_semanal_clientes");
+    expect(endpointProvavel("qual a taxa de prazo de outubro?")?.id).toBe("bi.dashboard");
+    expect(endpointProvavel("como está o garantido?")?.id).toBe("bi.garantido");
+    expect(endpointProvavel("quantos POPs temos?")).toBeNull();
+  });
+
+  it("a resposta anterior volta como contexto da pessoa, não como fala do assistente", async () => {
+    let msgs: { papel: string; conteudo: string }[] = [];
+    const iaRot = roteiro([
+      (p) => {
+        msgs = [...p.mensagens];
+        return { acao: "responder", fala: "Ok.\n[Tabela mostrada: vazou]" };
+      },
+    ]);
+    const r = await atenderFala({ ...ctx, ia: iaRot, central: null }, atorAdmin, "e na semana anterior?", [
+      { pergunta: "ticket da 480 por semana", resposta: "Ficou estável.\n[Tabela mostrada: Ticket 480]\n[Recorte usado: -- comparativo]", em: new Date().toISOString() },
+    ]);
+    const assistente = msgs.filter((m) => m.papel === "assistant").map((m) => m.conteudo).join();
+    expect(assistente).not.toContain("Tabela mostrada");
+    expect(msgs.at(-1)!.conteudo).toContain("Dados que você mostrou na resposta anterior");
+    expect(r.fala).toBe("Ok.");
   });
 
   it("filtra migrations e testes e esconde segredos do código", () => {

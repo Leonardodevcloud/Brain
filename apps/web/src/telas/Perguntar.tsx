@@ -261,13 +261,14 @@ export default function Perguntar() {
           </p>
           <button
             type="button"
-            className={css.botaoIcone}
+            role="switch"
+            className={css.botaoVoz}
             onClick={() => controleArgos.alternarMudo()}
-            aria-pressed={estado.mudo}
-            aria-label={estado.mudo ? "Ligar a voz do Argos" : "Silenciar a voz do Argos"}
-            title={estado.mudo ? "Ligar a voz" : "Silenciar"}
+            aria-checked={!estado.mudo}
+            title={estado.mudo ? "O Argos responde só por escrito. Clique para ele voltar a falar." : "O Argos lê as respostas em voz alta. Clique para desligar."}
           >
-            {estado.mudo ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
+            {estado.mudo ? <VolumeX size={15} aria-hidden="true" /> : <Volume2 size={15} aria-hidden="true" />}
+            <span>{estado.mudo ? "Voz desligada" : "Voz ligada"}</span>
           </button>
         </header>
 

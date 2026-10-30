@@ -15,6 +15,6 @@ export {
   type ReuniaoLinha,
 } from "./repositorios/diversos.js";
 export { mapa, type NoMapaLinha } from "./repositorios/mapa.js";
-export { tarefas, type TarefaLinha, type NovaTarefa, type CamposTarefa, type FiltroTarefas, type StatusTarefa, type OrigemTarefa, type LigacaoTarefa } from "./repositorios/tarefas.js";
+export { tarefas, type TarefaLinha, type NovaTarefa, type CamposTarefa, type FiltroTarefas, type StatusTarefa, type OrigemTarefa, type LigacaoTarefa, type Recorrencia } from "./repositorios/tarefas.js";
 export { emails, type EmailLinha, type NovoEmail, type AcaoEmail } from "./repositorios/emails.js";
 export { conversas, type ConversaLinha, type ResumoConversaLinha } from "./repositorios/conversas.js";

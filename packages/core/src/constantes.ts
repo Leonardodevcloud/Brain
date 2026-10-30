@@ -116,3 +116,7 @@ export const STATUS_CONSULTAVEIS: StatusRegistro[] = ["vigente", "revisar"];
 /** Situações de uma tarefa (as colunas do quadro). */
 export const STATUS_TAREFA = ["a_fazer", "fazendo", "feita"] as const;
 export const NOME_STATUS_TAREFA = { a_fazer: "A fazer", fazendo: "Fazendo", feita: "Feita" } as const;
+/** Repetição de tarefa: quando a data chega, o Cérebro cria a próxima. */
+export const RECORRENCIAS = ["diaria", "semanal", "quinzenal", "mensal"] as const;
+export type Recorrencia = (typeof RECORRENCIAS)[number];
+export const NOME_RECORRENCIA: Record<Recorrencia, string> = { diaria: "Todo dia", semanal: "Toda semana", quinzenal: "A cada 15 dias", mensal: "Todo mês" };

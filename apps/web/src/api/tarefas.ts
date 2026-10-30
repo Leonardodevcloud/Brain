@@ -59,6 +59,7 @@ export interface NovaTarefa {
   prazo?: string | null;
   clienteRef?: string | null;
   registros?: string[];
+  recorrencia?: "diaria" | "semanal" | "quinzenal" | "mensal" | null;
 }
 
 export function useCriarTarefa() {

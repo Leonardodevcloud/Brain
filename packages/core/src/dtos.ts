@@ -230,6 +230,10 @@ export interface TarefaDTO {
   responsavel: { id: string | null; nome: string } | null;
   prazo: string | null;
   atrasada: boolean;
+  /** Vence hoje ou amanhã (e não está feita): fica amarela. */
+  venceEmBreve: boolean;
+  /** Repete sozinha: quando a data chega, o Cérebro cria a próxima. */
+  recorrencia: "diaria" | "semanal" | "quinzenal" | "mensal" | null;
   origem: "manual" | "ata" | "argos" | "claude" | "email";
   clienteRef: string | null;
   evento: { id: string; titulo: string; inicio: string | null; url: string | null } | null;

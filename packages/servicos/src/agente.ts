@@ -176,14 +176,26 @@ export async function agenteArgos(
   const esconder = (texto: string, nomes: string[] = []) => mascarar(texto, { nomes, mapaAnterior: mapa }).texto;
 
   const mensagens: Mensagem[] = [];
+  // O que a resposta anterior MOSTROU (tabela, totais, recorte) vai na mensagem seguinte da pessoa,
+  // como contexto, e não dentro da fala do assistente: senão a IA imita e passa a "falar" a tabela.
+  let contextoAnterior = "";
+  const comContexto = (texto: string) =>
+    contextoAnterior ? `Dados que você mostrou na resposta anterior (só contexto; NÃO repita isto na fala):\n${embrulharDados(contextoAnterior)}\n\n${texto}` : texto;
   for (const t of historico.slice(-8)) {
     // O histórico pode trazer nomes de pessoas (respostas e tabelas anteriores): também vão mascarados.
     const nomes = nomesNoTexto(`${t.pergunta}\n${t.resposta}`);
     const quando = t.em && !Number.isNaN(Date.parse(t.em)) ? ` (feita em ${dataHora(t.em)})` : "";
-    mensagens.push({ papel: "user", conteudo: esconder(`Pergunta${quando}:\n${embrulharDados(t.pergunta)}`, nomes) });
+    const { fala: falaAnterior, contexto } = separarContexto(t.resposta);
+    mensagens.push({ papel: "user", conteudo: esconder(comContexto(`Pergunta${quando}:\n${embrulharDados(t.pergunta)}`), nomes) });
     // Mascara antes de virar JSON (no JSON a quebra de linha vira "\\n" e gruda no nome).
-    mensagens.push({ papel: "assistant", conteudo: json({ acao: "responder", fala: esconder(t.resposta, nomes) }) });
+    mensagens.push({ papel: "assistant", conteudo: json({ acao: "responder", fala: esconder(falaAnterior, nomes) }) });
+    contextoAnterior = esconder(contexto, nomes);
   }
+  // Indicador que tem rota na Central: a dica aponta qual usar (é o número da tela).
+  const sugerido = ctx.centralApi ? endpointProvavel(pergunta) : null;
+  const dica = sugerido
+    ? `INDICADOR DA TELA: para esta pergunta use primeiro {"acao":"central","endpoint":"${sugerido.id}"} (${sugerido.motivo}). É o mesmo cálculo que a pessoa vê no BI; SQL só se essa rota não trouxer o dado.`
+    : "";
   // Conversa reaberta em outro dia: avisa a IA explicitamente.
   const ultima = historico.at(-1)?.em;
   const ultimaEm = ultima && !Number.isNaN(Date.parse(ultima)) && hojeLocal(new Date(ultima)) !== hojeLocal(agora) ? ultima : null;
@@ -222,12 +234,14 @@ export async function agenteArgos(
             : "") +
         `Memória do Cérebro (regras e notas já guardadas que podem valer aqui):\n${textoMemoria ? embrulharDados(textoMemoria) : "(nada guardado sobre isso)"}\n` +
         (planilha ? `${embrulharDados(planilha.texto)}\n` : opcoes.anexo ? "A planilha anexada expirou: peça para enviar de novo.\n" : "") +
-        `Pergunta:\n${embrulharDados(pergunta)}`,
-      [...nomesNoTexto(textoMemoria), ...nomesPlanilha],
+        (dica ? `${dica}\n` : "") +
+        comContexto(`Pergunta:\n${embrulharDados(pergunta)}`),
+      [...nomesNoTexto(textoMemoria), ...nomesPlanilha, ...nomesNoTexto(contextoAnterior)],
     ),
   });
 
   const resultados: Resultado[] = [];
+  let avisouRota = false;
   const fontes: FonteDTO[] = [];
   let rascunho: RespostaAgente["rascunho"] = null;
   let tarefaCriada: RespostaAgente["tarefa"] = null;
@@ -302,8 +316,11 @@ export async function agenteArgos(
         .map((m) => ({ registroId: m.registroId, codigo: m.codigo, titulo: m.titulo, naoRevisada: m.status === "rascunho" }));
       ctx.log.info({ tempos, passos: passo }, "argos: respondeu");
       return {
-        fala: (final.fala ?? "").trim() || "Pronto.",
-        analise: confirmar ? null : final.analise?.trim() || null,
+        ...(() => {
+          const { fala, resto } = limparFala(final.fala ?? "");
+          const analise = confirmar ? null : [resto, final.analise?.trim()].filter(Boolean).join("\n\n") || null;
+          return { fala: fala || "Pronto.", analise: analise ? removerMarcas(analise) : null };
+        })(),
         dados: !confirmar && escolhido ? paraTela(escolhido, resultados, final, pergunta) : null,
         fontes: confirmar ? [] : fontes,
         abrir: confirmar ? null : final.abrir?.trim() || null,
@@ -349,6 +366,11 @@ export async function agenteArgos(
               ? { ...(p.parametros ?? {}), ...daRegra.parametros, inicio: p.parametros?.inicio, fim: p.parametros?.fim }
               : (p.parametros ?? {});
             r = { ...(await rodarPronta(ctx, p.nome ?? "", parametros)), id };
+          } else if (sugerido && !avisouRota && !resultados.some((x) => x.origem === "central")) {
+            // Uma vez por pergunta: lembra a IA de que esse número tem rota na Central (o SQL dela costuma divergir da tela).
+            avisouRota = true;
+            observar(`Antes do SQL: esse indicador existe na rota "${sugerido.id}" da Central (${sugerido.motivo}). Use {"acao":"central","endpoint":"${sugerido.id}",...} para chegar no mesmo número da tela. Se ela não tiver o dado, aí sim escreva o SQL.`);
+            break;
           } else {
             const sql = validarSql(p.sql ?? "");
             const x = await consultar(ctx.central, sql, [], { limite: 200 });
@@ -566,6 +588,49 @@ export function resultadoDaCentral(
     },
     outras: tabelas.filter((t) => t !== escolhida).map((t) => `${t.caminho} (${t.linhas.length})`).slice(0, 10),
   };
+}
+
+// Marcas que só existem no histórico (resumo das tabelas): nunca podem aparecer na resposta.
+const MARCA = /\n?\[(Tabela mostrada|Recorte usado|Totais)[^\]]*\][\s\S]*$/;
+
+/** Separa a fala de uma resposta anterior do resumo do que ela mostrou. */
+export function separarContexto(resposta: string): { fala: string; contexto: string } {
+  const i = resposta.search(/\n?\[(Tabela mostrada|Recorte usado|Totais)/);
+  return i < 0 ? { fala: resposta.trim(), contexto: "" } : { fala: resposta.slice(0, i).trim(), contexto: resposta.slice(i).trim() };
+}
+
+const removerMarcas = (t: string) => t.replace(MARCA, "").trim();
+
+/**
+ * A fala é lida em voz alta: sem as marcas do histórico e curta (até ~3 frases).
+ * O que passar disso não some: vai para a análise escrita.
+ */
+export function limparFala(bruta: string, limite = 380): { fala: string; resto: string } {
+  const t = removerMarcas(bruta).replace(/\s+/g, " ").trim();
+  if (t.length <= limite) return { fala: t, resto: "" };
+  const frases = t.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) ?? [t];
+  let fala = "";
+  let i = 0;
+  while (i < frases.length && (fala + frases[i]).length <= limite) fala += frases[i++];
+  if (!fala) {
+    const corte = t.lastIndexOf(" ", limite);
+    return { fala: `${t.slice(0, corte > 0 ? corte : limite).trim()}…`, resto: t };
+  }
+  return { fala: fala.trim(), resto: frases.slice(i).join("").trim() };
+}
+
+/** Pergunta de indicador que tem rota pronta na Central. */
+export function endpointProvavel(pergunta: string): { id: string; motivo: string } | null {
+  const t = pergunta.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const semanal = /semana|semanal|semanas/.test(t);
+  if (/ticket/.test(t) || (semanal && /entrega|prazo|cliente|volume|caiu|subiu|compar/.test(t)))
+    return semanal || /caiu|subiu|compar|evolu|queda/.test(t)
+      ? { id: "bi.comparativo_semanal_clientes", motivo: "comparativo semanal por cliente: entregas, ticket e variação, como a tela" }
+      : { id: "bi.dashboard", motivo: "painel do BI: ticket médio, entregas e prazo do período" };
+  if (/garantido/.test(t)) return { id: "bi.garantido", motivo: "garantido dos motoboys" };
+  if (/taxa de prazo|no prazo|fora do prazo|sla|retorno|tempo medio/.test(t)) return { id: "bi.dashboard", motivo: "painel do BI: prazo, retornos e tempos" };
+  if (/(faturamento|receita|repasse|bi financeiro|margem bruta)/.test(t) && !/motoboy/.test(t)) return { id: "fin.painel", motivo: "painel do BI Financeiro" };
+  return null;
 }
 
 // Listas de pessoas nas respostas da Central: até a coluna "nome" é de pessoa.

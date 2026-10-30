@@ -24,7 +24,7 @@ export {
   LIMITE_AUDIO_BYTES,
   type ConfigVoz,
 } from "./assistente.js";
-export { agenteArgos, lerGrafico, resultadoDaCentral, type TurnoAnterior } from "./agente.js";
+export { agenteArgos, lerGrafico, resultadoDaCentral, limparFala, separarContexto, endpointProvavel, type TurnoAnterior } from "./agente.js";
 export { sincronizarRegrasDoCodigo, agendarRegrasDoCodigo, fonteGithub, limparCodigo, arquivoDeRegra, montarConteudoRegras, VIA_CODIGO, type FonteCodigo, type ResultadoRegras } from "./regrasCodigo.js";
 export { memorizar, VIA_MEMORIA } from "./memoria.js";
 export { guardarPlanilha, consultarPlanilha, lerAnexo, LIMITE_PLANILHA_BYTES } from "./planilhas.js";

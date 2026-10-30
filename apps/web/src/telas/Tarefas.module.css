@@ -296,9 +296,107 @@
   color: var(--texto-2);
   font-variant-numeric: tabular-nums;
 }
+.prazo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.prazoPilula {
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
 .prazoAtrasado {
   color: var(--erro);
+  background: var(--erro-fundo);
   font-weight: 600;
+}
+.prazoVencendo {
+  color: var(--alerta-texto);
+  background: #fef3c7;
+  font-weight: 600;
+}
+.repete {
+  display: inline-grid;
+  color: var(--acento);
+}
+/* Faixa à esquerda: vermelha = atrasada; amarela = vence hoje ou amanhã. */
+.alertaAtrasada {
+  box-shadow: inset 3px 0 0 var(--erro);
+}
+.alertaVencendo {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.cartaoQuadro.alertaAtrasada {
+  border-color: #fca5a5;
+}
+.cartaoQuadro.alertaVencendo {
+  border-color: #fcd34d;
+}
+.entradaAtrasada {
+  border-color: var(--erro) !important;
+  color: var(--erro);
+}
+.entradaVencendo {
+  border-color: #f59e0b !important;
+}
+/* Status direto na linha. */
+.status {
+  position: relative;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+.status select {
+  appearance: none;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  background: var(--fundo);
+  color: var(--texto-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.status select:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+.status_fazendo select {
+  border-color: #c4b5fd;
+  background: var(--acento-fundo);
+  color: var(--acento-ativo);
+}
+.status_feita select {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+.rapidaCampo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  color: var(--texto-3);
+  background: var(--fundo);
+}
+.rapidaCampo input,
+.rapidaCampo select {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--texto-2);
+  outline: none;
+}
+.rapidaCampo:focus-within {
+  border-color: var(--acento);
 }
 .avatar {
   width: 28px;
@@ -754,6 +852,12 @@
   .rapidaLido {
     display: none;
   }
+  .rapida {
+    flex-wrap: wrap;
+  }
+  .rapidaEntrada {
+    flex-basis: calc(100% - 40px);
+  }
   .linhaBotao {
     flex-direction: column;
     align-items: flex-start;
@@ -769,6 +873,7 @@
   .prazo {
     min-width: 0;
     text-align: left;
+    justify-content: flex-start;
   }
   .quadro {
     grid-template-columns: repeat(3, minmax(260px, 82vw));

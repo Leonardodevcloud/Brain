@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { STATUS_TAREFA } from "./constantes.js";
+import { RECORRENCIAS, STATUS_TAREFA } from "./constantes.js";
 
 const data = z
   .string()
@@ -15,6 +15,7 @@ export const esquemaCriarTarefa = z.object({
   prazo: data,
   clienteRef: z.string().trim().max(200).nullish(),
   registros: z.array(z.uuid()).max(20).default([]),
+  recorrencia: z.enum(RECORRENCIAS).nullish(),
 });
 export type CriarTarefa = z.infer<typeof esquemaCriarTarefa>;
 
@@ -27,6 +28,7 @@ export const esquemaAtualizarTarefa = z
     responsavelTexto: z.string().trim().max(120).nullable(),
     prazo: data,
     clienteRef: z.string().trim().max(200).nullable(),
+    recorrencia: z.enum(RECORRENCIAS).nullable(),
   })
   .partial();
 export type AtualizarTarefa = z.infer<typeof esquemaAtualizarTarefa>;

@@ -25,7 +25,11 @@ export interface TarefaLinha {
   criadoEm: Date;
   atualizadoEm: Date;
   concluidaEm: Date | null;
+  recorrencia: Recorrencia | null;
+  serieId: string | null;
 }
+
+export type Recorrencia = "diaria" | "semanal" | "quinzenal" | "mensal";
 
 export interface LigacaoTarefa {
   tarefaId: string;
@@ -46,6 +50,8 @@ export interface NovaTarefa {
   origemRegistroId?: string | null;
   clienteRef?: string | null;
   criadoPor?: string | null;
+  recorrencia?: Recorrencia | null;
+  serieId?: string | null;
 }
 
 export type CamposTarefa = Partial<{
@@ -61,6 +67,8 @@ export type CamposTarefa = Partial<{
   eventoTitulo: string | null;
   eventoInicio: Date | null;
   eventoUrl: string | null;
+  recorrencia: Recorrencia | null;
+  serieId: string | null;
 }>;
 
 export interface FiltroTarefas {
@@ -80,7 +88,8 @@ const COLUNAS = `t.id, t.codigo, t.titulo, t.descricao, t.status, t.ordem,
   t.responsavel_id AS "responsavelId", u.nome AS "responsavelNome", t.responsavel_texto AS "responsavelTexto",
   to_char(t.prazo, 'YYYY-MM-DD') AS prazo, t.origem, t.origem_registro_id AS "origemRegistroId", t.cliente_ref AS "clienteRef",
   t.evento_id AS "eventoId", t.evento_titulo AS "eventoTitulo", t.evento_inicio AS "eventoInicio", t.evento_url AS "eventoUrl",
-  t.criado_por AS "criadoPor", t.criado_em AS "criadoEm", t.atualizado_em AS "atualizadoEm", t.concluida_em AS "concluidaEm"`;
+  t.criado_por AS "criadoPor", t.criado_em AS "criadoEm", t.atualizado_em AS "atualizadoEm", t.concluida_em AS "concluidaEm",
+  t.recorrencia, t.serie_id AS "serieId"`;
 
 const MAPA_CAMPOS: Record<keyof CamposTarefa, string> = {
   titulo: "titulo",
@@ -95,6 +104,8 @@ const MAPA_CAMPOS: Record<keyof CamposTarefa, string> = {
   eventoTitulo: "evento_titulo",
   eventoInicio: "evento_inicio",
   eventoUrl: "evento_url",
+  recorrencia: "recorrencia",
+  serieId: "serie_id",
 };
 
 export const tarefas = {
@@ -113,10 +124,10 @@ export const tarefas = {
     const status = t.status ?? "a_fazer";
     const { rows } = await db.query<{ id: string }>(
       `INSERT INTO cerebro.tarefas (codigo, titulo, descricao, status, ordem, responsavel_id, responsavel_texto, prazo,
-                                    origem, origem_registro_id, cliente_ref, criado_por, concluida_em)
+                                    origem, origem_registro_id, cliente_ref, criado_por, concluida_em, recorrencia, serie_id)
        VALUES ($1, $2, $3, $4,
                coalesce((SELECT min(ordem) FROM cerebro.tarefas WHERE status = $4), 1000) - 1,
-               $5, $6, $7, $8, $9, $10, $11, CASE WHEN $4 = 'feita' THEN now() END)
+               $5, $6, $7, $8, $9, $10, $11, CASE WHEN $4 = 'feita' THEN now() END, $12, $13)
        ON CONFLICT (origem_registro_id, titulo) WHERE origem = 'ata' DO NOTHING
        RETURNING id`,
       [
@@ -131,9 +142,28 @@ export const tarefas = {
         t.origemRegistroId ?? null,
         t.clienteRef ?? null,
         t.criadoPor ?? null,
+        t.recorrencia ?? null,
+        t.serieId ?? null,
       ],
     );
     return rows[0]?.id ?? null;
+  },
+
+  /** A repetição mais recente (maior prazo) de cada série; é dela que sai a próxima. */
+  async ultimasDasSeries(db: Executor, serieId?: string) {
+    const { rows } = await db.query<TarefaLinha>(
+      `SELECT DISTINCT ON (t.serie_id) ${COLUNAS}
+         FROM cerebro.tarefas t LEFT JOIN cerebro.usuarios u ON u.id = t.responsavel_id
+        WHERE t.serie_id IS NOT NULL ${serieId ? "AND t.serie_id = $1" : ""}
+        ORDER BY t.serie_id, t.prazo DESC NULLS LAST, t.criado_em DESC`,
+      serieId ? [serieId] : [],
+    );
+    return rows;
+  },
+
+  async existeNaSerie(db: Executor, serieId: string, prazo: string) {
+    const { rows } = await db.query(`SELECT 1 FROM cerebro.tarefas WHERE serie_id = $1 AND prazo = $2`, [serieId, prazo]);
+    return rows.length > 0;
   },
 
   async buscarPorId(db: Executor, id: string) {

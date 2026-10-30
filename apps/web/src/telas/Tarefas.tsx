@@ -1,5 +1,5 @@
-import type { DetalheTarefaDTO, TarefaDTO } from "@cerebro/core/publico";
-import { CalendarDays, CalendarPlus, Columns3, ExternalLink, Link2, List, Plus, Search, Trash2, X } from "lucide-react";
+import { NOME_RECORRENCIA, RECORRENCIAS, type DetalheTarefaDTO, type Recorrencia, type TarefaDTO } from "@cerebro/core/publico";
+import { CalendarDays, CalendarPlus, Columns3, ExternalLink, Link2, List, Plus, Repeat, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ErroApi } from "../api/cliente";
@@ -127,9 +127,54 @@ function Origem({ t }: { t: TarefaDTO }) {
   return null;
 }
 
+/** Vermelho = atrasada; amarelo = vence hoje ou amanhã. */
+const alertaPrazo = (t: TarefaDTO) => (t.atrasada ? css.alertaAtrasada : t.venceEmBreve ? css.alertaVencendo : "");
+
 function Prazo({ t }: { t: TarefaDTO }) {
-  if (!t.prazo) return <span className={css.prazo} />;
-  return <span className={`${css.prazo} ${t.atrasada ? css.prazoAtrasado : ""}`}>{rotuloPrazo(t.prazo)}</span>;
+  const repete = t.recorrencia ? (
+    <span className={css.repete} title={`Repete: ${NOME_RECORRENCIA[t.recorrencia]}`}>
+      <Repeat size={13} aria-label={`Repete: ${NOME_RECORRENCIA[t.recorrencia]}`} />
+    </span>
+  ) : null;
+  if (!t.prazo) return <span className={css.prazo}>{repete}</span>;
+  const aviso = t.atrasada ? "Atrasada" : t.venceEmBreve ? "Vence logo" : "";
+  return (
+    <span className={css.prazo}>
+      {repete}
+      <span className={`${css.prazoPilula} ${t.atrasada ? css.prazoAtrasado : t.venceEmBreve ? css.prazoVencendo : ""}`} title={aviso ? `${aviso}: ${t.prazo.split("-").reverse().join("/")}` : undefined}>
+        {rotuloPrazo(t.prazo)}
+      </span>
+    </span>
+  );
+}
+
+const PROXIMO_STATUS: Record<StatusTarefa, StatusTarefa> = { a_fazer: "fazendo", fazendo: "feita", feita: "a_fazer" };
+
+/** Status na própria linha: escolhe direto, sem abrir a tarefa. */
+function SeletorStatus({ t }: { t: TarefaDTO }) {
+  const atualizar = useAtualizarTarefa();
+  const avisar = useAvisar();
+  return (
+    <label className={`${css.status} ${css[`status_${t.status}`] ?? ""}`}>
+      <span className="so-leitor">Status de {t.titulo}</span>
+      <select
+        value={t.status}
+        onChange={(e) =>
+          atualizar.mutate(
+            { id: t.id, status: e.target.value as StatusTarefa },
+            { onSuccess: (n) => n.status === "feita" && avisar(`${n.codigo} concluída.`), onError: (erro) => avisar(textoDoErro(erro), "erro") },
+          )
+        }
+        title={`Mudar para ${NOME_STATUS[PROXIMO_STATUS[t.status]]}`}
+      >
+        {COLUNAS.map((c) => (
+          <option key={c.status} value={c.status}>
+            {c.titulo}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function IconeAgenda({ t }: { t: TarefaDTO }) {
@@ -148,7 +193,7 @@ function Linha({ t, ativa, aoAbrir }: { t: TarefaDTO; ativa: boolean; aoAbrir: (
   const avisar = useAvisar();
   const feita = t.status === "feita";
   return (
-    <li className={`${css.linha} ${ativa ? css.linhaAtiva : ""} ${feita ? css.linhaFeita : ""}`}>
+    <li className={`${css.linha} ${ativa ? css.linhaAtiva : ""} ${feita ? css.linhaFeita : ""} ${alertaPrazo(t)}`}>
       <input
         type="checkbox"
         className={css.marcar}
@@ -170,6 +215,7 @@ function Linha({ t, ativa, aoAbrir }: { t: TarefaDTO; ativa: boolean; aoAbrir: (
           <Avatar t={t} />
         </span>
       </button>
+      <SeletorStatus t={t} />
     </li>
   );
 }
@@ -269,7 +315,7 @@ function VistaQuadro({ lista, aberta, abrir }: { lista: TarefaDTO[]; aberta: str
               <li
                 key={t.id}
                 draggable
-                className={`${css.cartaoQuadro} ${arrastando === t.id ? css.cartaoArrastando : ""} ${alvo?.antesDe === t.id ? css.cartaoAntes : ""} ${aberta === t.id || aberta === t.codigo ? css.cartaoAtivo : ""}`}
+                className={`${css.cartaoQuadro} ${alertaPrazo(t)} ${arrastando === t.id ? css.cartaoArrastando : ""} ${alvo?.antesDe === t.id ? css.cartaoAntes : ""} ${aberta === t.id || aberta === t.codigo ? css.cartaoAtivo : ""}`}
                 onDragStart={(e) => {
                   e.dataTransfer.setData("text/plain", t.id);
                   e.dataTransfer.effectAllowed = "move";
@@ -554,7 +600,31 @@ function Detalhe({ id, aoFechar }: { id: string; aoFechar: () => void }) {
             </label>
             <label className={css.campoPequeno}>
               <span>Prazo</span>
-              <input type="date" className="entrada" value={t.prazo ?? ""} onChange={(e) => salvar({ id: t.id, prazo: e.target.value || null })} />
+              <input
+                type="date"
+                className={`entrada ${t.atrasada ? css.entradaAtrasada : t.venceEmBreve ? css.entradaVencendo : ""}`}
+                value={t.prazo ?? ""}
+                onChange={(e) => salvar({ id: t.id, prazo: e.target.value || null })}
+              />
+            </label>
+            <label className={`${css.campoPequeno} ${css.campoInteiro}`}>
+              <span>Repetir</span>
+              <select
+                className="selecao"
+                value={t.recorrencia ?? ""}
+                onChange={(e) => {
+                  const r = (e.target.value || null) as Recorrencia | null;
+                  salvar({ id: t.id, recorrencia: r });
+                  if (r) avisar(`Vai repetir ${NOME_RECORRENCIA[r].toLowerCase()}. A próxima aparece quando a data chegar ou ao concluir esta.`);
+                }}
+              >
+                <option value="">Não repete</option>
+                {RECORRENCIAS.map((r) => (
+                  <option key={r} value={r}>
+                    {NOME_RECORRENCIA[r]}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className={`${css.campoPequeno} ${css.campoInteiro}`}>
               <span>Responsável</span>
@@ -687,6 +757,8 @@ function Detalhe({ id, aoFechar }: { id: string; aoFechar: () => void }) {
 
 function AdicaoRapida() {
   const [texto, setTexto] = useState("");
+  const [prazo, setPrazo] = useState("");
+  const [repetir, setRepetir] = useState<Recorrencia | "">("");
   const criar = useCriarTarefa();
   const avisar = useAvisar();
   const campo = useRef<HTMLInputElement>(null);
@@ -697,11 +769,19 @@ function AdicaoRapida() {
     e.preventDefault();
     if (lido.titulo.length < 2) return;
     criar.mutate(
-      { titulo: lido.titulo, prazo: lido.prazo, responsavelTexto: lido.responsavel },
+      {
+        // Com a data escolhida no calendário, palavras como "sábado" ficam no título (não viram prazo).
+        titulo: prazo ? texto.replace(/@[\p{L}\d._-]+/gu, "").replace(/\s+/g, " ").trim() : lido.titulo,
+        prazo: prazo || lido.prazo,
+        responsavelTexto: lido.responsavel,
+        recorrencia: repetir || null,
+      },
       {
         onSuccess: (t) => {
           setTexto("");
-          avisar(`${t.codigo} criada.`);
+          setPrazo("");
+          setRepetir("");
+          avisar(`${t.codigo} criada${t.recorrencia ? `, repete ${NOME_RECORRENCIA[t.recorrencia].toLowerCase()}` : ""}.`);
         },
         onError: (erro) => avisar(textoDoErro(erro), "erro"),
       },
@@ -725,10 +805,27 @@ function AdicaoRapida() {
       />
       {(lido.prazo || lido.responsavel) && texto && (
         <span className={css.rapidaLido} aria-live="polite">
-          {lido.prazo && <span>{rotuloPrazo(lido.prazo)}</span>}
+          {lido.prazo && !prazo && <span>{rotuloPrazo(lido.prazo)}</span>}
           {lido.responsavel && <span>@{lido.responsavel}</span>}
         </span>
       )}
+      <label className={css.rapidaCampo} title="Prazo">
+        <CalendarDays size={14} aria-hidden="true" />
+        <span className="so-leitor">Prazo</span>
+        <input type="date" value={prazo} onChange={(e) => setPrazo(e.target.value)} />
+      </label>
+      <label className={css.rapidaCampo} title="Repetir">
+        <Repeat size={14} aria-hidden="true" />
+        <span className="so-leitor">Repetir</span>
+        <select value={repetir} onChange={(e) => setRepetir(e.target.value as Recorrencia | "")}>
+          <option value="">Não repete</option>
+          {RECORRENCIAS.map((r) => (
+            <option key={r} value={r}>
+              {NOME_RECORRENCIA[r]}
+            </option>
+          ))}
+        </select>
+      </label>
       <button type="submit" className="botao botao-primario botao-pequeno" disabled={lido.titulo.length < 2 || criar.isPending}>
         Adicionar
       </button>

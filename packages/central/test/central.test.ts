@@ -285,6 +285,17 @@ describe("API da Central (só leitura)", () => {
     await expect(api.testar()).rejects.toThrow(/401/);
   });
 
+  it("abre listas dentro das linhas (clientes → semanas), como o comparativo semanal", () => {
+    const lido = lerRespostaCentral({
+      clientes: [{ nome_fantasia: "ROLEMAR", semanas: [{ periodo: "05/10 - 11/10", total_entregas: 153, ticket_medio: 5.99 }, { periodo: "12/10 - 18/10", total_entregas: 152, ticket_medio: 6.14 }], resumo: { total_semanas: 2 } }],
+    });
+    const semanas = lido.tabelas.find((t) => t.caminho === "clientes.semanas")!;
+    expect(semanas.linhas).toEqual([
+      { nome_fantasia: "ROLEMAR", resumo_total_semanas: 2, periodo: "05/10 - 11/10", total_entregas: 153, ticket_medio: 5.99 },
+      { nome_fantasia: "ROLEMAR", resumo_total_semanas: 2, periodo: "12/10 - 18/10", total_entregas: 152, ticket_medio: 6.14 },
+    ]);
+  });
+
   it("limparSensiveis tira as chaves pessoais em qualquer nível", () => {
     expect(limparSensiveis({ a: [{ pix_key: 1, nome: "x", dados: { agencia: "1", conta: "2", valor: 3 } }] })).toEqual({ a: [{ nome: "x", dados: { valor: 3 } }] });
   });

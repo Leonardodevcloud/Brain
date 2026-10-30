@@ -22,6 +22,7 @@ import {
   type RegistroLinha,
   type StatusTarefa,
   type TarefaLinha,
+  type Recorrencia,
 } from "@cerebro/db";
 import { ESCOPO_AGENDA } from "@cerebro/integracoes";
 import type { z } from "zod";
@@ -42,6 +43,63 @@ function exigirPessoa(ator: Ator) {
   if (!ator.usuarioId && ator.canal !== "worker") throw AppError.semPermissao("Faça login para mexer nas tarefas.");
 }
 
+function somarDias(iso: string, dias: number) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/** A data da próxima repetição. Mês: mesmo dia no mês seguinte (31 → último dia do mês). */
+export function proximaData(prazo: string, r: Recorrencia): string {
+  if (r === "diaria") return somarDias(prazo, 1);
+  if (r === "semanal") return somarDias(prazo, 7);
+  if (r === "quinzenal") return somarDias(prazo, 14);
+  const [a, m, d] = prazo.split("-").map(Number) as [number, number, number];
+  const ultimo = new Date(Date.UTC(a, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(a, m, Math.min(d, ultimo), 12)).toISOString().slice(0, 10);
+}
+
+/**
+ * Tarefas que se repetem: quando a data da repetição mais recente chega (ou ela é concluída),
+ * cria a próxima, com o mesmo título, descrição, responsável e registros ligados.
+ * Se ficou para trás (worker parado), pula direto para a próxima data a partir de hoje.
+ */
+export async function gerarRecorrencias(ctx: Contexto, serieId?: string): Promise<number> {
+  const hoje = hojeLocal(ctx.agora());
+  let criadas = 0;
+  for (const t of await tarefas.ultimasDasSeries(ctx.pool, serieId)) {
+    if (!t.recorrencia || !t.prazo) continue;
+    if (t.prazo > hoje && t.status !== "feita") continue;
+    let proxima = proximaData(t.prazo, t.recorrencia);
+    while (proxima < hoje) proxima = proximaData(proxima, t.recorrencia);
+    const id = await emTransacao(ctx.pool, async (db) => {
+      if (await tarefas.existeNaSerie(db, t.serieId!, proxima)) return null;
+      const novo = await tarefas.inserir(db, {
+        titulo: t.titulo,
+        descricao: t.descricao,
+        responsavelId: t.responsavelId,
+        responsavelTexto: t.responsavelTexto,
+        prazo: proxima,
+        origem: t.origem === "ata" ? "manual" : t.origem,
+        origemRegistroId: t.origemRegistroId,
+        clienteRef: t.clienteRef,
+        criadoPor: t.criadoPor,
+        recorrencia: t.recorrencia,
+        serieId: t.serieId,
+      });
+      if (!novo) return null;
+      for (const l of await tarefas.ligacoes(db, [t.id])) if (l.registroId !== t.origemRegistroId) await tarefas.ligar(db, novo, l.registroId);
+      await auditar(db, { usuarioId: null, papel: "sistema", canal: "worker" }, "tarefa.criada", { entidade: "tarefa", id: novo }, { origem: "recorrencia", de: t.codigo });
+      return novo;
+    }).catch((erro: Error) => {
+      ctx.log.warn({ erro: erro.message, tarefa: t.codigo }, "não consegui criar a repetição da tarefa");
+      return null;
+    });
+    if (id) criadas++;
+  }
+  return criadas;
+}
+
 /** Monta o DTO com os registros ligados (origem primeiro). */
 function paraDto(t: TarefaLinha, ligacoes: LigacaoTarefa[], hoje: string): TarefaDTO {
   const minhas = ligacoes.filter((l) => l.tarefaId === t.id);
@@ -60,6 +118,8 @@ function paraDto(t: TarefaLinha, ligacoes: LigacaoTarefa[], hoje: string): Taref
     responsavel: t.responsavelId ? { id: t.responsavelId, nome: t.responsavelNome ?? "?" } : t.responsavelTexto ? { id: null, nome: t.responsavelTexto } : null,
     prazo: t.prazo,
     atrasada: t.status !== "feita" && !!t.prazo && t.prazo < hoje,
+    venceEmBreve: t.status !== "feita" && !!t.prazo && t.prazo >= hoje && t.prazo <= somarDias(hoje, 1),
+    recorrencia: t.recorrencia,
     origem: t.origem,
     clienteRef: t.clienteRef,
     evento: t.eventoId ? { id: t.eventoId, titulo: t.eventoTitulo ?? "Reunião", inicio: t.eventoInicio?.toISOString() ?? null, url: t.eventoUrl } : null,
@@ -134,7 +194,9 @@ export async function obterTarefa(ctx: Contexto, idOuCodigo: string): Promise<De
         h.acao === "tarefa.movida" && typeof h.detalhes.para === "string"
           ? `moveu para ${NOME_STATUS[h.detalhes.para as StatusTarefa] ?? h.detalhes.para}`
           : h.acao === "tarefa.criada" && typeof h.detalhes.origem === "string" && h.detalhes.origem !== "manual"
-            ? `criou ${h.detalhes.origem === "ata" ? "a partir da ata" : h.detalhes.origem === "argos" ? "pelo Argos" : "pelo Claude"}`
+            ? h.detalhes.origem === "recorrencia"
+              ? `criou a repetição${typeof h.detalhes.de === "string" ? ` (depois de ${h.detalhes.de})` : ""}`
+              : `criou ${h.detalhes.origem === "ata" ? "a partir da ata" : h.detalhes.origem === "argos" ? "pelo Argos" : "pelo Claude"}`
             : (DESCRICAO_ACAO[h.acao] ?? h.acao),
     })),
   };
@@ -168,12 +230,15 @@ export async function criarTarefa(
       criadoPor: ator.usuarioId,
     });
     if (!novo) throw AppError.conflito("Essa tarefa já existe.");
+    // Tarefa que se repete: a série começa nela; sem prazo, a primeira vence hoje.
+    if (e.recorrencia) await tarefas.atualizar(db, novo, { recorrencia: e.recorrencia, serieId: novo, prazo: e.prazo ?? hojeLocal(ctx.agora()) });
     for (const r of e.registros) {
       if (await registros.buscarPorId(db, r)) await tarefas.ligar(db, novo, r);
     }
     await auditar(db, ator, "tarefa.criada", { entidade: "tarefa", id: novo }, { origem: extras.origem ?? "manual", titulo: e.titulo });
     return novo;
   });
+  if (e.recorrencia) await gerarRecorrencias(ctx, id);
   return obterTarefa(ctx, id);
 }
 
@@ -197,6 +262,7 @@ export async function criarTarefaDaAta(db: Executor, ator: Ator, ata: RegistroLi
 export async function atualizarTarefa(ctx: Contexto, ator: Ator, idOuCodigo: string, entrada: unknown): Promise<DetalheTarefaDTO> {
   exigirPessoa(ator);
   const m = esquemaAtualizarTarefa.parse(entrada);
+  let serie: string | null = null;
   await emTransacao(ctx.pool, async (db) => {
     const t = await exigirTarefa(db, idOuCodigo);
     const campos: Parameters<typeof tarefas.atualizar>[2] = {
@@ -209,16 +275,27 @@ export async function atualizarTarefa(ctx: Contexto, ator: Ator, idOuCodigo: str
     if (m.responsavelId !== undefined) Object.assign(campos, { responsavelId: m.responsavelId, responsavelTexto: null });
     else if (m.responsavelTexto !== undefined) Object.assign(campos, await resolverResponsavel(db, m.responsavelTexto));
     if (m.status && m.status !== t.status) campos.ordem = await tarefas.ordemEntre(db, m.status, null);
+    if (m.recorrencia !== undefined) {
+      campos.recorrencia = m.recorrencia;
+      if (m.recorrencia) {
+        campos.serieId = t.serieId ?? t.id;
+        if (!t.prazo && !m.prazo) campos.prazo = hojeLocal(ctx.agora());
+      }
+    }
     await tarefas.atualizar(db, t.id, campos);
+    serie = (campos.serieId as string | undefined) ?? t.serieId;
     const acao = m.status && m.status !== t.status ? (m.status === "feita" ? "tarefa.concluida" : t.status === "feita" ? "tarefa.reaberta" : "tarefa.movida") : "tarefa.editada";
     await auditar(db, ator, acao, { entidade: "tarefa", id: t.id }, { para: m.status, campos: Object.keys(m) });
   });
+  // Ligou a repetição ou concluiu uma repetição: a próxima já aparece.
+  if (serie && (m.recorrencia || m.status === "feita")) await gerarRecorrencias(ctx, serie);
   return obterTarefa(ctx, idOuCodigo);
 }
 
 /** Arrastar no quadro: muda a coluna e a posição. */
 export async function moverTarefa(ctx: Contexto, ator: Ator, idOuCodigo: string, destino: { status: StatusTarefa; antesDe: string | null }) {
   exigirPessoa(ator);
+  let serieMovida: string | null = null;
   await emTransacao(ctx.pool, async (db) => {
     const t = await exigirTarefa(db, idOuCodigo);
     const ordem = await tarefas.ordemEntre(db, destino.status, destino.antesDe && destino.antesDe !== t.id ? destino.antesDe : null);
@@ -227,7 +304,9 @@ export async function moverTarefa(ctx: Contexto, ator: Ator, idOuCodigo: string,
       const acao = destino.status === "feita" ? "tarefa.concluida" : t.status === "feita" ? "tarefa.reaberta" : "tarefa.movida";
       await auditar(db, ator, acao, { entidade: "tarefa", id: t.id }, { de: t.status, para: destino.status });
     }
+    serieMovida = destino.status === "feita" ? t.serieId : null;
   });
+  if (serieMovida) await gerarRecorrencias(ctx, serieMovida);
   return obterTarefa(ctx, idOuCodigo);
 }
 

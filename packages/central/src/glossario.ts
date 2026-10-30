@@ -61,6 +61,7 @@ ENTREGAS (bi_entregas):
 - Tempo médio: ROUND(AVG(tempo_execucao_minutos) FILTER (WHERE tempo_execucao_minutos >= 0), 1).
 - Retornos (como o dashboard conta): ocorrencia contendo 'cliente fechado', 'clienteaus', 'cliente ausente', 'loja fechada' ou 'produto incorreto' (LOWER + LIKE). Conte por OS: COUNT(DISTINCT os).
 - Entregas x OS: COUNT(*) = entregas; COUNT(DISTINCT os) = OS.
+- TICKET MÉDIO do BI (o da tela): (SUM(valor) − SUM(valor_prof)) / COUNT(entregas), somando TODAS as linhas de entrega (ponto >= 2) SEM DISTINCT por OS, só OS concluídas. Ticket bruto = SUM(valor) / COUNT(entregas). Semana = semana ISO (EXTRACT(WEEK), segunda a domingo). Prefira a ação "central" (bi.comparativo_semanal_clientes ou bi.dashboard): é exatamente esse cálculo.
 - Meta geral de SLA: 85%. Cliente 767 (Grupo Comollati): prazo fixo de 120 min, SLA por tempo_execucao_minutos <= 120, meta 95%.
 - Clientes 949, 1165, 1151, 1178, 1188, 35, 794, 249, 1206, 1222: consolidar todos os centros de custo numa linha.
 - Nomes parciais: use ILIKE '%parte%' (ex.: "goiânia" → centro_custo ILIKE '%goi%nia%').

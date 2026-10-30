@@ -3,7 +3,7 @@ import cron from "node-cron";
 import { pino } from "pino";
 import { sincronizarAcesso } from "@cerebro/central";
 import { criarPool, jobs, migrar } from "@cerebro/db";
-import { agendarRegrasDoCodigo, conhecimento, criarContexto, fontes, lerAmbiente } from "@cerebro/servicos";
+import { agendarRegrasDoCodigo, conhecimento, criarContexto, fontes, lerAmbiente, tarefas } from "@cerebro/servicos";
 import { executarProximo } from "./processar.js";
 
 const ambiente = lerAmbiente();
@@ -45,6 +45,8 @@ if (ambiente.ARGOS_DB_SENHA) {
 }
 // 05:10 — relê as regras de negócio do código da Central (só os arquivos que mudaram).
 if (ambiente.CENTRAL_GITHUB_TOKEN) agendar("regras_codigo_central", "10 5 * * *", () => agendarRegrasDoCodigo(ctx));
+// 00:10 — tarefas que se repetem: cria a próxima quando a data chega.
+agendar("tarefas_recorrentes", "10 0 * * *", () => tarefas.gerarRecorrencias(ctx));
 // Domingo 03:00 — limpa jobs concluídos há mais de 30 dias.
 agendar("limpar_fila", "0 3 * * 0", () => jobs.limparConcluidos(pool, 30));
 
