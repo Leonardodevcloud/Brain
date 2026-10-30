@@ -9,6 +9,9 @@ import {
   type RegistroResumoDTO,
 } from "@cerebro/core";
 import {
+  ENDPOINTS_CENTRAL,
+  lerRespostaCentral,
+  resumoEndpointsCentral,
   CONSULTAS_PRONTAS,
   REGRAS_NEGOCIO,
   carregarCatalogo,
@@ -194,6 +197,45 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
   };
 
   servidor.registerTool(
+    "indicador_central",
+    {
+      title: "Indicador da Central (mesmo número da tela)",
+      description:
+        "Chama a MESMA rota que as telas do BI e do BI Financeiro da Central usam: taxa de prazo, entregas, ticket médio, comparativo semanal, garantido, faturamento, margem, saques. " +
+        "PREFIRA esta ferramenta para qualquer indicador: o número bate com o que a pessoa vê no sistema. Use consultar_central só quando não houver rota. " +
+        "Só leitura; CPF, PIX, contas, telefones e endereços são tirados da resposta.\n\nRotas (* = obrigatório):\n" +
+        resumoEndpointsCentral(),
+      inputSchema: {
+        endpoint: z.enum(ENDPOINTS_CENTRAL.map((e) => e.id) as [string, ...string[]]),
+        parametros: z.record(z.string(), z.unknown()).optional().describe("Datas em AAAA-MM-DD; cod_cliente em número ou lista separada por vírgula."),
+        tabela: z.string().max(80).optional().describe("Qual lista da resposta mostrar (ex.: porCliente, clientes.semanas). Sem ela, vem a principal."),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    ({ endpoint, parametros, tabela }) =>
+      seguro(ctx, async () => {
+        if (!ctx.centralApi) return falha("A API da Central não está ligada (faltam CENTRAL_API_URL e CENTRAL_API_SEGREDO no serviço mcp). Use consultar_central.");
+        const r = await ctx.centralApi.consultar(endpoint, parametros ?? {});
+        const { numeros, tabelas } = lerRespostaCentral(r.dados);
+        const fim = (c: string) => c.split(".").at(-1)!.toLowerCase();
+        const escolhida =
+          (tabela ? tabelas.find((t) => t.caminho.toLowerCase() === tabela.toLowerCase() || fim(t.caminho) === tabela.toLowerCase()) : undefined) ??
+          (r.endpoint.tabelaPadrao ? tabelas.find((t) => fim(t.caminho) === r.endpoint.tabelaPadrao!.toLowerCase()) : undefined) ??
+          [...tabelas].sort((a, b) => b.linhas.length - a.linhas.length)[0];
+        await auditar(ctx.pool, ator, "argos.consulta_central", undefined, { origem: `mcp:api:${endpoint}`, linhas: escolhida?.linhas.length ?? 0, ms: r.ms });
+        const colunas = escolhida ? [...new Set(escolhida.linhas.slice(0, 50).flatMap((l) => Object.keys(l)))] : [];
+        const outras = tabelas.filter((t) => t !== escolhida).map((t) => `${t.caminho} (${t.linhas.length})`);
+        const nums = Object.entries(numeros).slice(0, 40).map(([k, v]) => `${k}: ${v}`).join("; ");
+        return texto(
+          `## ${r.endpoint.descricao.split(/[:.(]/)[0]} — GET ${r.url}\n` +
+            (nums ? `Números: ${nums}\n` : "") +
+            (escolhida ? `\nTabela ${escolhida.caminho} (${escolhida.linhas.length} linhas):\n${tabelaMarkdown(colunas, escolhida.linhas.slice(0, 200))}` : "\n(sem tabela)") +
+            (outras.length ? `\n\nOutras tabelas nesta resposta (use \`tabela\`): ${outras.join("; ")}` : ""),
+        );
+      }),
+  );
+
+  servidor.registerTool(
     "catalogo_central",
     {
       title: "Tabelas da Central",
@@ -235,7 +277,8 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
     {
       title: "Consultar dados da Central",
       description:
-        "Roda uma consulta SÓ DE LEITURA no banco da Central e devolve até 200 linhas. Mande `sql` (um SELECT/WITH em PostgreSQL, " +
+        "Para indicadores do BI e do BI Financeiro (prazo, ticket, comparativo semanal, garantido, faturamento) use indicador_central: é o número da tela. " +
+        "Esta roda uma consulta SÓ DE LEITURA no banco da Central e devolve até 200 linhas. Mande `sql` (um SELECT/WITH em PostgreSQL, " +
         "sem ponto e vírgula e sem prefixo de schema) ou `pronta` com `parametros`. CPF, PIX, dados bancários, senhas e tokens não existem nesse acesso. " +
         "Datas de 'hoje' usam o fuso America/Bahia.",
       inputSchema: {

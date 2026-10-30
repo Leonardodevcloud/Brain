@@ -78,6 +78,7 @@ describe("MCP", () => {
       "colunas_central",
       "consultar_central",
       "criar_tarefa",
+      "indicador_central",
       "ler_registro",
       "listar_pendencias",
       "listar_tarefas",
@@ -135,7 +136,7 @@ describe("MCP", () => {
     await cliente.connect(
       new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }),
     );
-    expect((await cliente.listTools()).tools).toHaveLength(10);
+    expect((await cliente.listTools()).tools).toHaveLength(11);
     await cliente.close();
   });
 });
