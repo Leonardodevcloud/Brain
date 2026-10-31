@@ -135,3 +135,28 @@ label.importar:focus-within,
     grid-template-columns: 1fr;
   }
 }
+
+.passos {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.passos code {
+  font-size: 12.5px;
+}
+.modelos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.textoProjeto {
+  width: 100%;
+  font-family: var(--fonte-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}

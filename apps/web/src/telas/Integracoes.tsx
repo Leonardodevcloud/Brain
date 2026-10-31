@@ -42,6 +42,94 @@ function useCopiar() {
     );
 }
 
+/** O texto que vai nas instruções de cada Projeto (pasta) do Claude. */
+export function instrucoesDoProjeto(nome: string, foco: string) {
+  const n = nome.trim() || "Geral";
+  return [
+    `Projeto: ${n}`,
+    `Este projeto faz parte da Central Tutts (entregas rápidas de autopeças com motoboys).${foco.trim() ? ` Aqui cuidamos de: ${foco.trim()}` : ""}`,
+    "",
+    "Use sempre o conector \u201cCérebro Tutts\u201d nesta pasta:",
+    "- Antes de responder sobre regras, processos, clientes ou decisões da Tutts, consulte o Cérebro (buscar_conhecimento) e cite os códigos (ex.: POL-002).",
+    "- Números da operação vêm da Central, nunca de cabeça: use indicador_central primeiro (é o mesmo número da tela do BI) e consultar_central só quando não houver rota. Diga o período do dado.",
+    `- Quando eu ensinar ou corrigir uma regra, fórmula, apelido, decisão ou processo, guarde no Cérebro (guardar_no_cerebro) com projeto "${n}" e me avise em uma frase.`,
+    "- Combinados e próximos passos viram tarefas no Cérebro (criar_tarefa), com prazo quando eu disser.",
+    "- Se o conector não estiver ligado nesta conversa, me avise para ligar: botão + › Conectores › Cérebro Tutts.",
+  ].join("\n");
+}
+
+const MODELOS_PROJETO = [
+  { nome: "Financeiro", foco: "margem por cliente, BI Financeiro, garantido, saques dos motoboys e cobrança." },
+  { nome: "Operações", foco: "disponibilidade e escala dos motoboys, prazo (SLA), retornos e ocorrências das lojas." },
+  { nome: "Comercial", foco: "clientes, propostas, precificação e acompanhamento de contratos." },
+];
+
+/** Passo a passo para ligar o Claude ao Cérebro e o texto pronto para cada Projeto (pasta). */
+function ProjetosClaude() {
+  const copiar = useCopiar();
+  const [nome, setNome] = useState("Financeiro");
+  const [foco, setFoco] = useState(MODELOS_PROJETO[0]!.foco);
+  const texto = instrucoesDoProjeto(nome, foco);
+  return (
+    <div className={css.extra}>
+      <span className="rotulo">Como ligar o Claude ao Cérebro (uma vez só)</span>
+      <ol className={css.passos}>
+        <li>
+          Acima, gere um endereço (ex.: “Claude do Leonardo”) e copie. Um endereço serve para todos os seus Projetos do Claude.
+        </li>
+        <li>
+          No claude.ai: <b>Personalizar</b> (Customize) › <b>Conectores</b> (Connectors) › <b>+ Adicionar</b> › <b>Adicionar conector personalizado</b>.
+          Nome: <code>Cérebro Tutts</code>. URL: cole o endereço. Clique em <b>Continuar</b>, escolha <b>Sem login</b> (No sign in) e clique em <b>Adicionar</b>.
+          <span className="suave"> Em plano Team/Enterprise, quem adiciona é o dono da conta, em Configurações da organização › Conectores; depois cada pessoa clica em Conectar.</span>
+        </li>
+        <li>
+          Em cada conversa: botão <b>+</b> no canto de baixo da caixa de mensagem › <b>Conectores</b> › ligue <b>Cérebro Tutts</b>.
+        </li>
+        <li>
+          Em cada Projeto (pasta) do Claude: abra o projeto › <b>Instruções</b> (Instructions) › cole o texto abaixo. Ele vale para todas as conversas da pasta.
+        </li>
+      </ol>
+
+      <span className="rotulo">Texto para as instruções do Projeto</span>
+      <div className={css.modelos} role="group" aria-label="Modelos de projeto">
+        {MODELOS_PROJETO.map((m) => (
+          <button
+            key={m.nome}
+            type="button"
+            className={`botao botao-pequeno ${nome === m.nome ? "botao-primario" : ""}`}
+            onClick={() => {
+              setNome(m.nome);
+              setFoco(m.foco);
+            }}
+          >
+            {m.nome}
+          </button>
+        ))}
+      </div>
+      <div className={css.formLinha}>
+        <div className="campo" style={{ flex: "1 1 160px" }}>
+          <label htmlFor="proj-nome">Nome do projeto</label>
+          <input id="proj-nome" className="entrada" value={nome} onChange={(e) => setNome(e.target.value)} />
+        </div>
+        <div className="campo" style={{ flex: "3 1 280px" }}>
+          <label htmlFor="proj-foco">Do que esse projeto cuida</label>
+          <input id="proj-foco" className="entrada" value={foco} onChange={(e) => setFoco(e.target.value)} />
+        </div>
+      </div>
+      <textarea className={`area-texto ${css.textoProjeto}`} readOnly rows={11} value={texto} aria-label="Texto para as instruções do projeto" />
+      <div>
+        <button type="button" className="botao botao-primario botao-pequeno" onClick={() => copiar(texto, `Texto do projeto ${nome.trim() || "Geral"} copiado.`)}>
+          <Copy size={14} aria-hidden="true" /> Copiar texto do projeto
+        </button>
+      </div>
+      <p className="ajuda">
+        O que o Claude guardar numa conversa entra em <b>Revisar</b> com o nome do projeto, e o Argos já passa a usar. Mesmo sem esse texto, o
+        conector avisa o Claude de que ele está ligado à Central; o texto do projeto deixa isso mais firme e marca de qual pasta veio cada memória.
+      </p>
+    </div>
+  );
+}
+
 function Estado({ s }: { s: StatusIntegracaoDTO }) {
   const e = ESTADO[s.estado];
   return (
@@ -184,24 +272,15 @@ function ConectorClaude() {
     <div className={css.extra}>
       {novo ? (
         <div className={css.segredo}>
-          <span className="rotulo">1. Endereço do servidor</span>
+          <span className="rotulo">Endereço do conector (cole no Claude)</span>
           <div className={css.formLinha}>
-            <code className={css.codigo}>{`${location.origin}/mcp`}</code>
-            <button type="button" className="botao botao-pequeno" onClick={() => copiar(`${location.origin}/mcp`, "Endereço copiado.")}>
-              <Copy size={14} aria-hidden="true" /> Copiar
-            </button>
-          </div>
-          <span className="rotulo">2. Cabeçalho Authorization</span>
-          <div className={css.formLinha}>
-            <code className={css.codigo}>{`Bearer ${novo}`}</code>
-            <button type="button" className="botao botao-primario botao-pequeno" onClick={() => copiar(`Bearer ${novo}`, "Cabeçalho copiado.")}>
+            <code className={css.codigo}>{`${location.origin}/mcp/${novo}`}</code>
+            <button type="button" className="botao botao-primario botao-pequeno" onClick={() => copiar(`${location.origin}/mcp/${novo}`, "Endereço copiado.")}>
               <Copy size={14} aria-hidden="true" /> Copiar
             </button>
           </div>
           <p className="ajuda">
-            O token aparece só agora: trate como senha. No Claude: Personalizar › Conectores › + Adicionar › Adicionar conector
-            personalizado. Cole o endereço, escolha “Sem login” e, em Cabeçalhos da requisição, crie <code>Authorization</code> com o valor
-            acima. Se preferir sem cabeçalho, use o endereço com o token no fim: <code>{`${location.origin}/mcp/${novo}`}</code>
+            Aparece só agora: trate como senha (quem tiver o endereço lê o Cérebro). Siga o passo a passo abaixo para colar no Claude.
           </p>
           <div>
             <button type="button" className="botao botao-fantasma botao-pequeno" onClick={() => setNovo(null)}>
@@ -386,7 +465,12 @@ export default function Integracoes() {
                           </button>
                         }
                       >
-                        {aberto === "claude" && <ConectorClaude />}
+                        {aberto === "claude" && (
+                          <>
+                            <ConectorClaude />
+                            <ProjetosClaude />
+                          </>
+                        )}
                       </Linha>
                     );
                   case "fathom":

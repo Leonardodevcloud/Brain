@@ -4,7 +4,7 @@
  * Vira um rascunho de nota no Cérebro — o Argos já usa na próxima pergunta, e a tela Revisar
  * continua servindo para aprovar ou descartar.
  */
-import { AREAS, esquemaCriarRegistro, type Area, type MemoriaGuardadaDTO } from "@cerebro/core";
+import { AREAS, AppError, esquemaCriarRegistro, type Area, type MemoriaGuardadaDTO } from "@cerebro/core";
 import { registros } from "@cerebro/db";
 import { SISTEMA_MEMORIA, embrulharDados, lerJson, mascarar, restaurar, type MemoriaExtraida } from "@cerebro/ia";
 import { nomesNoTexto, type TurnoAnterior } from "./agente.js";
@@ -27,6 +27,51 @@ export interface TrocaParaMemoria {
   pergunta: string;
   resposta: string;
   historico?: TurnoAnterior[];
+}
+
+export interface MemoriaDoClaude {
+  /** Pasta (Projeto) do Claude de onde veio: "Financeiro", "Operações"… */
+  projeto?: string | null;
+  titulo: string;
+  conteudo: string;
+  area?: string | null;
+  /** O que é: regra, decisão, apelido, processo, preferência ou nota. */
+  natureza?: string | null;
+  /** Código de uma memória existente que esta corrige. */
+  atualiza?: string | null;
+}
+
+/**
+ * O Claude (conector) guardando o que a pessoa ensinou numa conversa de um Projeto.
+ * Mesmas regras da memória do Argos: rascunho para revisar, sem dados pessoais, sem duplicar,
+ * uma regra já aprovada nunca é mexida sozinha (vira um rascunho apontando para ela).
+ */
+export async function guardarDoClaude(ctx: Contexto, ator: Ator, m: MemoriaDoClaude): Promise<MemoriaGuardadaDTO & { aviso?: string }> {
+  const titulo = m.titulo.replace(/\s+/g, " ").trim().slice(0, 120);
+  const conteudo = m.conteudo.trim().slice(0, 6000);
+  const projeto = m.projeto?.replace(/\s+/g, " ").trim().slice(0, 80) || null;
+  if (titulo.length < 4 || conteudo.length < 10) throw AppError.requisicaoInvalida("Mande um título e o conteúdo completo do que deve ser guardado.");
+  if (DADO_PESSOAL.test(`${titulo}\n${conteudo}`)) throw AppError.requisicaoInvalida("Isso tem dado pessoal (CPF, PIX, conta, senha, telefone): o Cérebro não guarda. Tire esses dados e tente de novo.");
+  const area: Area = m.area && (AREAS as readonly string[]).includes(m.area) ? (m.area as Area) : "operacoes";
+  const origem = { via: "claude", projeto, natureza: m.natureza?.slice(0, 30) ?? null };
+
+  const alvo = m.atualiza ? await registros.buscarPorCodigo(ctx.pool, m.atualiza.trim().toUpperCase()) : null;
+  if (alvo && alvo.status === "rascunho" && ["claude", VIA_MEMORIA].includes((alvo.dados as { via?: string } | null)?.via ?? "")) {
+    const r = await atualizarRegistro(ctx, ator, alvo.id, { titulo, conteudo, motivo: `Corrigida pelo Claude${projeto ? ` (projeto ${projeto})` : ""}` });
+    await indexarRegistro(ctx, r.id).catch(() => undefined);
+    return { registroId: r.id, codigo: r.codigo, titulo: r.titulo, acao: "atualizada" };
+  }
+  // Mesmo assunto já guardado (título igual): não duplica.
+  const parecidos = (await buscar(ctx, { pergunta: titulo, incluirRascunhos: true, incluirRestritos: false }).catch(() => [])).slice(0, 5);
+  const igual = parecidos.find((e) => sem(e.titulo) === sem(titulo));
+  if (igual && !alvo) return { registroId: igual.registroId, codigo: igual.codigo, titulo: igual.titulo, acao: "atualizada", aviso: `Já existe ${igual.codigo} com esse título; nada novo foi criado. Para corrigir, mande atualiza="${igual.codigo}".` };
+
+  const corpo = `${conteudo}${alvo ? `\n\n_Atualiza ${alvo.codigo} (${alvo.titulo})._` : ""}\n\n_Guardado pelo Claude${projeto ? ` · projeto ${projeto}` : ""}._`;
+  const entrada = esquemaCriarRegistro.parse({ tipo: "nota", titulo, conteudo: corpo, area, dados: { ...origem, ...(alvo ? { atualiza: alvo.codigo } : {}) } });
+  const r = await criarRegistro(ctx, ator, entrada, { origem: "claude", sempreRascunho: true });
+  await indexarRegistro(ctx, r.id).catch(() => undefined);
+  await auditar(ctx.pool, ator, "argos.memoria", undefined, { codigos: [r.codigo], via: "claude", projeto });
+  return { registroId: r.id, codigo: r.codigo, titulo: r.titulo, acao: "nova" };
 }
 
 /** Vale chamar a IA? Cumprimentos, comandos de tela e perguntas curtíssimas não têm o que guardar. */

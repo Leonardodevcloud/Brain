@@ -26,7 +26,7 @@ export {
 } from "./assistente.js";
 export { agenteArgos, lerGrafico, resultadoDaCentral, limparFala, separarContexto, endpointProvavel, type TurnoAnterior } from "./agente.js";
 export { sincronizarRegrasDoCodigo, agendarRegrasDoCodigo, fonteGithub, limparCodigo, arquivoDeRegra, montarConteudoRegras, VIA_CODIGO, type FonteCodigo, type ResultadoRegras } from "./regrasCodigo.js";
-export { memorizar, VIA_MEMORIA } from "./memoria.js";
+export { memorizar, guardarDoClaude, VIA_MEMORIA, type MemoriaDoClaude } from "./memoria.js";
 export { guardarPlanilha, consultarPlanilha, lerAnexo, LIMITE_PLANILHA_BYTES } from "./planilhas.js";
 export { consultarCentral, planoRapido } from "./central.js";
 export { listarConversas, obterConversa, gravarConversa, apagarConversa } from "./conversas.js";

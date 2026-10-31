@@ -22,7 +22,7 @@ import {
   validarSql,
 } from "@cerebro/central";
 import { lacunas, registros as repoRegistros } from "@cerebro/db";
-import { auditar, buscar, conhecimento, painel, tarefas, type Ator, type Contexto } from "@cerebro/servicos";
+import { auditar, buscar, conhecimento, guardarDoClaude, painel, tarefas, type Ator, type Contexto } from "@cerebro/servicos";
 import { z } from "zod";
 
 const texto = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
@@ -42,6 +42,23 @@ function formatarFontes(fontes: FonteDTO[], urlWeb: string) {
     )
     .join("\n\n");
 }
+
+/**
+ * O que o Claude recebe ao se conectar, em toda conversa (vale para qualquer Projeto/pasta do Claude).
+ * É isso que faz ele já saber que está ligado à Central, sem a pessoa pedir.
+ */
+export const INSTRUCOES_CONECTOR = [
+  "Você está ligado ao Cérebro da Central Tutts — empresa de entregas rápidas de autopeças com motoboys em várias cidades — e aos dados da Central (só leitura).",
+  "",
+  "SEMPRE, sem esperar a pessoa pedir:",
+  "1. Antes de responder sobre como a empresa funciona (regras, processos, clientes, decisões, fórmulas, apelidos), use buscar_conhecimento e cite os códigos (POP-014, POL-002). Regra vigente vale mais que nota não revisada.",
+  "2. Para números da operação use os dados de verdade, nunca de cabeça: indicador_central primeiro (taxa de prazo, entregas, ticket médio, comparativo semanal, garantido, faturamento, saques — é o mesmo número da tela do BI); consultar_central (com as consultas prontas ou SQL) só quando não houver rota. Diga a data/período do dado.",
+  "3. Quando a pessoa ENSINAR algo que continua valendo (uma regra ou fórmula, um apelido de cliente, como ela quer uma análise, uma decisão, um processo) ou CORRIGIR algo, chame guardar_no_cerebro na hora e avise em uma frase (Guardei no Cérebro: …). Não guarde números do dia, perguntas, nem dados pessoais. Use as palavras e a unidade dela (por dia, por motoboy, por OS).",
+  "4. Combinados e próximos passos viram tarefas com criar_tarefa (com prazo quando houver).",
+  "",
+  "PROJETO: se as instruções da pasta (Projeto do Claude) disserem o nome do projeto (ex.: Projeto: Financeiro), mande esse nome no campo `projeto` ao guardar ou salvar rascunho, e priorize o assunto do projeto.",
+  "Tudo que você guarda entra como rascunho em Revisar no Cérebro; o assistente Argos já passa a usar e alguém aprova ou descarta.",
+].join("\n");
 
 /** Erros de negócio voltam como texto para o Claude explicar; o resto vai para o log. */
 async function seguro<T>(ctx: Contexto, fn: () => Promise<T>) {
@@ -63,14 +80,7 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
   const servidor = new McpServer(
     { name: "cerebro-tutts", version: "0.1.0" },
     {
-      instructions:
-        "Base de conhecimento oficial da Central Tutts (POPs, decisões, regras, clientes, atas). " +
-        "Antes de responder sobre como a operação funciona, use buscar_conhecimento e cite os códigos (ex.: POP-014). " +
-        "Quando a conversa produzir uma decisão, regra ou procedimento novo, ofereça salvar com salvar_rascunho — " +
-        "o rascunho só vale depois que alguém aprova no Cérebro. " +
-        "Para números da operação (disponibilidade, entregas e SLA do BI, faturamento, saques, clientes do CS…) use os dados da Central: " +
-        "catalogo_central para achar as tabelas, colunas_central para ver as colunas e consultar_central para rodar um SELECT (só leitura). " +
-        "Combinados e próximos passos viram tarefas com criar_tarefa; listar_tarefas mostra o que está aberto.",
+      instructions: INSTRUCOES_CONECTOR,
     },
   );
 
@@ -165,9 +175,10 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
         area: z.enum(AREAS).optional(),
         cliente: z.string().max(120).optional(),
         substitui: z.string().max(20).optional().describe("Código do registro que este substitui, se houver."),
+        projeto: z.string().max(80).optional().describe("Nome do Projeto (pasta) do Claude, se as instruções da pasta disserem."),
       },
     },
-    ({ tipo, titulo, conteudo, area, cliente, substitui }) =>
+    ({ tipo, titulo, conteudo, area, cliente, substitui, projeto }) =>
       seguro(ctx, async () => {
         const relacoes = [];
         if (substitui) {
@@ -175,11 +186,40 @@ export function criarServidorMcp(ctx: Contexto, ator: Ator) {
           if (!antigo) return falha(`Não encontrei ${substitui} para marcar como substituído.`);
           relacoes.push({ destinoId: antigo.id, tipo: "substitui" as const });
         }
-        const entrada = esquemaCriarRegistro.parse({ tipo, titulo, conteudo, area, clienteRef: cliente, relacoes });
+        const entrada = esquemaCriarRegistro.parse({ tipo, titulo, conteudo, area, clienteRef: cliente, relacoes, dados: { via: "claude", projeto: projeto?.trim() || null } });
         const r = await conhecimento.criarRegistro(ctx, ator, entrada, { origem: "claude", sempreRascunho: true });
         return texto(
           `Rascunho ${r.codigo} salvo. Ele aparece em "Revisar" no Cérebro e só passa a valer depois de aprovado: ` +
             `${urlWeb.replace(/\/$/, "")}/registros/${r.codigo}`,
+        );
+      }),
+  );
+
+  servidor.registerTool(
+    "guardar_no_cerebro",
+    {
+      title: "Guardar no Cérebro (memória)",
+      description:
+        "Guarda na memória do Cérebro o que a pessoa ENSINOU ou CORRIGIU nesta conversa e continua valendo: regra ou fórmula de cálculo, apelido de cliente/loja, " +
+        "decisão, processo, preferência de análise. Chame sozinho, na hora, sem pedir licença, e avise em uma frase. " +
+        "Escreva o conteúdo autossuficiente (quem ler sem ver a conversa entende), com as palavras e unidades da pessoa e um exemplo se ela deu. " +
+        "NÃO use para números do dia, perguntas, resultados de consulta ou dados pessoais. Entra como rascunho em Revisar e o Argos já passa a usar.",
+      inputSchema: {
+        titulo: z.string().min(4).max(120).describe("Curto e específico, ex.: 'Margem por motoboy do cliente 767 em Brasília'."),
+        conteudo: z.string().min(10).max(6000).describe("A regra/decisão completa em Markdown curto."),
+        natureza: z.enum(["regra", "decisao", "apelido", "processo", "preferencia", "nota"]).default("regra"),
+        area: z.enum(AREAS).optional(),
+        projeto: z.string().max(80).optional().describe("Nome do Projeto (pasta) do Claude, das instruções da pasta (ex.: 'Financeiro')."),
+        atualiza: z.string().max(20).optional().describe("Código da memória que esta corrige (ex.: NOT-004), se for uma correção."),
+      },
+    },
+    (m) =>
+      seguro(ctx, async () => {
+        const r = await guardarDoClaude(ctx, ator, m);
+        if (r.aviso) return texto(r.aviso);
+        return texto(
+          `${r.acao === "nova" ? "Guardado" : "Atualizado"} no Cérebro como ${r.codigo} (rascunho, aparece em Revisar)${m.projeto ? ` · projeto ${m.projeto}` : ""}. ` +
+            `O Argos já usa nas próximas respostas. ${urlWeb.replace(/\/$/, "")}/registros/${r.codigo}`,
         );
       }),
   );

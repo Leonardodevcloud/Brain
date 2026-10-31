@@ -78,6 +78,7 @@ describe("MCP", () => {
       "colunas_central",
       "consultar_central",
       "criar_tarefa",
+      "guardar_no_cerebro",
       "indicador_central",
       "ler_registro",
       "listar_pendencias",
@@ -116,6 +117,31 @@ describe("MCP", () => {
     await cliente.close();
   });
 
+  it("o Claude recebe as instruções e guarda o que foi ensinado, com o projeto", async () => {
+    const cliente = await conectar(`${base}/mcp/${token}`);
+    expect(cliente.getInstructions()).toContain("guardar_no_cerebro");
+    expect(cliente.getInstructions()).toContain("indicador_central");
+    const r = (await cliente.callTool({
+      name: "guardar_no_cerebro",
+      arguments: {
+        titulo: "Margem por motoboy do cliente 767 em Brasília",
+        conteudo: "Para cada motoboy, no dia: 250 recebidos da loja − 80 da moto − o que ele produziu. Cada motoboy conta uma vez por dia.",
+        natureza: "regra",
+        area: "financeiro",
+        projeto: "Financeiro",
+      },
+    })) as Resultado;
+    expect(r.content[0]!.text).toMatch(/Guardado no Cérebro como NOT-\d+ .*projeto Financeiro/);
+    const { rows } = await pool.query(`SELECT status, origem, dados->>'projeto' AS projeto, dados->>'via' AS via FROM cerebro.registros WHERE titulo = 'Margem por motoboy do cliente 767 em Brasília'`);
+    expect(rows[0]).toEqual({ status: "rascunho", origem: "claude", projeto: "Financeiro", via: "claude" });
+    // de novo, mesmo título: não duplica
+    const repetido = (await cliente.callTool({ name: "guardar_no_cerebro", arguments: { titulo: "Margem por motoboy do cliente 767 em Brasília", conteudo: "Mesma regra, de novo, sem nada novo." } })) as Resultado;
+    expect(repetido.content[0]!.text).toContain("nada novo foi criado");
+    const pessoal = (await cliente.callTool({ name: "guardar_no_cerebro", arguments: { titulo: "PIX do Fulano", conteudo: "A chave pix dele é 123.456.789-09" } })) as Resultado;
+    expect(pessoal.isError).toBe(true);
+    await cliente.close();
+  });
+
   it("cria e lista tarefas; sem a Central ligada, explica o que falta", async () => {
     const cliente = await conectar(`${base}/mcp/${token}`);
     const t = (await cliente.callTool({
@@ -136,7 +162,7 @@ describe("MCP", () => {
     await cliente.connect(
       new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }),
     );
-    expect((await cliente.listTools()).tools).toHaveLength(11);
+    expect((await cliente.listTools()).tools).toHaveLength(12);
     await cliente.close();
   });
 });

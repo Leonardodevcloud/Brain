@@ -208,7 +208,8 @@ function Detalhe({ id }: { id: string }) {
         <div className={css.metaDetalhe}>
           <EtiquetaTipo tipo={r.tipo} />
           <span className="suave pequeno">
-            {NOME_ORIGEM[r.origem]} · {relativo(r.criadoEm)}
+            {NOME_ORIGEM[r.origem]}
+            {typeof r.dados.projeto === "string" && r.dados.projeto ? ` · projeto ${r.dados.projeto}` : ""} · {relativo(r.criadoEm)}
             {r.status === "revisar" && r.revisarEm && ` · revisão vencida em ${dataCurta(r.revisarEm)}`}
           </span>
         </div>
