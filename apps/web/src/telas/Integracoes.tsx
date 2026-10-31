@@ -1,6 +1,6 @@
 import type { StatusIntegracaoDTO } from "@cerebro/core/publico";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Copy, Upload } from "lucide-react";
+import { ChevronDown, Copy, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/cliente";
@@ -106,14 +106,14 @@ function ProjetosClaude() {
           </button>
         ))}
       </div>
-      <div className={css.formLinha}>
-        <div className="campo" style={{ flex: "1 1 160px" }}>
-          <label htmlFor="proj-nome">Nome do projeto</label>
+      <div className={`${css.formLinha} ${css.camposProjeto}`}>
+        <div className="campo" style={{ flex: "1 1 180px" }}>
+          <label htmlFor="proj-nome">Nome do projeto (o mesmo da pasta no Claude)</label>
           <input id="proj-nome" className="entrada" value={nome} onChange={(e) => setNome(e.target.value)} />
         </div>
-        <div className="campo" style={{ flex: "3 1 280px" }}>
+        <div className="campo" style={{ flex: "3 1 320px" }}>
           <label htmlFor="proj-foco">Do que esse projeto cuida</label>
-          <input id="proj-foco" className="entrada" value={foco} onChange={(e) => setFoco(e.target.value)} />
+          <textarea id="proj-foco" className={`area-texto ${css.focoProjeto}`} rows={2} value={foco} onChange={(e) => setFoco(e.target.value)} />
         </div>
       </div>
       <textarea className={`area-texto ${css.textoProjeto}`} readOnly rows={11} value={texto} aria-label="Texto para as instruções do projeto" />
@@ -140,18 +140,49 @@ function Estado({ s }: { s: StatusIntegracaoDTO }) {
   );
 }
 
-function Linha({ s, acao, children }: { s: StatusIntegracaoDTO; acao?: ReactNode; children?: ReactNode }) {
+/**
+ * Uma integração: texto | situação | ações, sempre nas mesmas colunas.
+ * Com `detalhe`, o cartão abre e fecha ao clicar no texto (seta à direita do nome).
+ */
+function Linha({
+  s,
+  acao,
+  children,
+  detalhe,
+  aberto = false,
+  aoAlternar,
+}: {
+  s: StatusIntegracaoDTO;
+  acao?: ReactNode;
+  children?: ReactNode;
+  detalhe?: ReactNode;
+  aberto?: boolean;
+  aoAlternar?: () => void;
+}) {
+  const texto = (
+    <>
+      <span className={css.nome}>
+        {INFO[s.nome].nome}
+        {detalhe !== undefined && <ChevronDown size={16} aria-hidden="true" className={`${css.seta} ${aberto ? css.setaAberta : ""}`} />}
+      </span>
+      <span className="suave">{INFO[s.nome].descricao}</span>
+      <span className="pequeno suave">{s.detalhe}</span>
+    </>
+  );
   return (
-    <li className={css.linha}>
+    <li className={`${css.linha} ${aberto ? css.linhaAberta : ""}`}>
       <div className={css.cabecalhoLinha}>
-        <div className={css.textoLinha}>
-          <span className={css.nome}>{INFO[s.nome].nome}</span>
-          <span className="suave">{INFO[s.nome].descricao}</span>
-          <span className="pequeno suave">{s.detalhe}</span>
-        </div>
+        {detalhe !== undefined ? (
+          <button type="button" className={`${css.textoLinha} ${css.textoBotao}`} aria-expanded={aberto} onClick={aoAlternar}>
+            {texto}
+          </button>
+        ) : (
+          <div className={css.textoLinha}>{texto}</div>
+        )}
         <Estado s={s} />
-        {acao}
+        <div className={css.acoes}>{acao}</div>
       </div>
+      {aberto && detalhe}
       {children}
     </li>
   );
@@ -418,6 +449,20 @@ export default function Integracoes() {
     onError: (e) => avisar(textoDoErro(e), "erro"),
   });
   const [confirmandoGoogle, setConfirmandoGoogle] = useState(false);
+  const tokens = useTokens();
+  const [confirmandoClaude, setConfirmandoClaude] = useState(false);
+  // Desconectar o Claude = revogar todos os endereços do conector (o Claude perde o acesso na hora).
+  const desconectarClaude = useMutation({
+    mutationFn: async () => {
+      for (const t of tokens.data ?? []) await api(`/conector/tokens/${t.id}`, { metodo: "DELETE" });
+    },
+    onSuccess: () => {
+      avisar("Claude desconectado: os endereços foram revogados. Para voltar, gere um endereço novo.");
+      void qc.invalidateQueries({ queryKey: chaves.tokens });
+      void qc.invalidateQueries({ queryKey: chaves.integracoes });
+    },
+    onError: (e) => avisar(textoDoErro(e), "erro"),
+  });
 
   // Enquanto o código está sendo lido (ou na fila), o cartão se atualiza sozinho.
   const lendoCodigo = Boolean(status.data?.some((s) => s.nome === "codigo_central" && /^(Lendo|Na fila)/.test(s.detalhe)));
@@ -435,7 +480,7 @@ export default function Integracoes() {
   const ia = (["deepseek", "embeddings", "voz", "fala"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
 
   return (
-    <div className={`${pg.pagina} ${pg.estreita}`}>
+    <div className={`${pg.pagina} ${css.pagina}`}>
       <header className={pg.titulos}>
         <h1>Integrações</h1>
         <p className="suave">De onde o cérebro aprende e para onde ele envia.</p>
@@ -459,32 +504,52 @@ export default function Integracoes() {
                       <Linha
                         key={s.nome}
                         s={s}
-                        acao={
-                          <button type="button" className="botao botao-pequeno" aria-expanded={aberto === "claude"} onClick={() => alternar("claude")}>
-                            {aberto === "claude" ? "Fechar" : "Conectar"}
-                          </button>
-                        }
-                      >
-                        {aberto === "claude" && (
+                        aberto={aberto === "claude"}
+                        aoAlternar={() => alternar("claude")}
+                        detalhe={
                           <>
                             <ConectorClaude />
                             <ProjetosClaude />
                           </>
-                        )}
-                      </Linha>
+                        }
+                        acao={
+                          (tokens.data?.length ?? 0) > 0 ? (
+                            confirmandoClaude ? (
+                              <span className={css.confirmar}>
+                                <span className="pequeno suave">Revogar {tokens.data!.length === 1 ? "o endereço" : `os ${tokens.data!.length} endereços`}?</span>
+                                <button type="button" className="botao botao-pequeno" onClick={() => setConfirmandoClaude(false)}>
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="botao botao-pequeno botao-perigo"
+                                  disabled={desconectarClaude.isPending}
+                                  onClick={() => desconectarClaude.mutate(undefined, { onSettled: () => setConfirmandoClaude(false) })}
+                                >
+                                  Desconectar
+                                </button>
+                              </span>
+                            ) : (
+                              <button type="button" className="botao botao-pequeno" onClick={() => setConfirmandoClaude(true)}>
+                                Desconectar
+                              </button>
+                            )
+                          ) : (
+                            <button type="button" className="botao botao-primario botao-pequeno" onClick={() => setAberto("claude")}>
+                              Conectar
+                            </button>
+                          )
+                        }
+                      />
                     );
                   case "fathom":
                     return (
                       <Linha
                         key={s.nome}
                         s={s}
-                        acao={
-                          <button type="button" className="botao botao-pequeno" aria-expanded={aberto === "fathom"} onClick={() => alternar("fathom")}>
-                            {aberto === "fathom" ? "Fechar" : "Configurar"}
-                          </button>
-                        }
-                      >
-                        {aberto === "fathom" && (
+                        aberto={aberto === "fathom"}
+                        aoAlternar={() => alternar("fathom")}
+                        detalhe={
                           <div className={css.extra}>
                             <span className="rotulo">Endereço do webhook</span>
                             <div className={css.formLinha}>
@@ -495,11 +560,12 @@ export default function Integracoes() {
                             </div>
                             <p className="ajuda">
                               Na Fathom: Settings › API Access › Add webhook, cole o endereço e marque “Transcript”. Copie o segredo
-                              (whsec_…) para a variável FATHOM_WEBHOOK_SEGREDO no Railway.
+                              (whsec_…) para a variável FATHOM_WEBHOOK_SEGREDO no Railway. Para desconectar, apague o webhook na Fathom
+                              e a variável no Railway.
                             </p>
                           </div>
-                        )}
-                      </Linha>
+                        }
+                      />
                     );
                   case "google":
                     return (
@@ -510,7 +576,7 @@ export default function Integracoes() {
                           admin &&
                           s.estado !== "desligado" &&
                           (confirmandoGoogle ? (
-                            <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            <span className={css.confirmar}>
                               <span className="pequeno suave">Desconectar a agenda?</span>
                               <button type="button" className="botao botao-pequeno" onClick={() => setConfirmandoGoogle(false)}>
                                 Cancelar
@@ -521,16 +587,16 @@ export default function Integracoes() {
                                 disabled={desconectarGoogle.isPending}
                                 onClick={() => desconectarGoogle.mutate(undefined, { onSettled: () => setConfirmandoGoogle(false) })}
                               >
-                                Desconectar Google Agenda
+                                Desconectar
                               </button>
                             </span>
                           ) : (
-                            <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+                            <span className={css.confirmar}>
                               <button type="button" className="botao botao-pequeno" disabled={conectarGoogle.isPending} onClick={() => conectarGoogle.mutate()}>
                                 {s.estado === "ativo" ? "Reconectar" : "Conectar"}
                               </button>
                               {s.detalhe.includes("onectad") && (
-                                <button type="button" className="botao botao-pequeno botao-fantasma" onClick={() => setConfirmandoGoogle(true)}>
+                                <button type="button" className="botao botao-pequeno" onClick={() => setConfirmandoGoogle(true)}>
                                   Desconectar
                                 </button>
                               )}
