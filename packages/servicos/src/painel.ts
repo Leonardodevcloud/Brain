@@ -103,13 +103,24 @@ export async function statusIntegracoes(ctx: Contexto, ator: Ator): Promise<Stat
   const quando = (d: Date | string | null | undefined) =>
     d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Bahia", dateStyle: "short", timeStyle: "short" }) : null;
 
+  const doClaude = tokens.filter((t) => t.uso === "claude");
+  const deSistema = tokens.filter((t) => t.uso === "sistema");
+  const ultimoUsoSistema = deSistema.map((t) => t.ultimoUsoEm).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0];
+
   return [
     {
       nome: "claude",
-      estado: tokens.length ? "ativo" : "incompleto",
-      detalhe: tokens.length
-        ? `${tokens.length} token(s) ativo(s). Última importação do histórico: ${quando(importacao?.config.ultimaEm as string) ?? "nunca"}.`
+      estado: doClaude.length ? "ativo" : "incompleto",
+      detalhe: doClaude.length
+        ? `${doClaude.length} token(s) ativo(s). Última importação do histórico: ${quando(importacao?.config.ultimaEm as string) ?? "nunca"}.`
         : "Crie um token para conectar o Claude ao cérebro.",
+    },
+    {
+      nome: "sistemas",
+      estado: deSistema.length ? (ultimoUsoSistema ? "ativo" : "incompleto") : "desligado",
+      detalhe: deSistema.length
+        ? `${deSistema.length} sistema(s) com acesso. Última chamada: ${quando(ultimoUsoSistema) ?? "nenhuma ainda — cole o token no outro sistema e clique em Testar"}.`
+        : "Gere um token para o Prospect Team ler o Cérebro e mandar o que aprende como rascunho.",
     },
     {
       nome: "fathom",

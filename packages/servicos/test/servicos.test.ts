@@ -180,6 +180,14 @@ describe("acesso", () => {
     await acesso.revogarTokenConector(ctx, atorMembro, id);
     await expect(acesso.autenticarConector(ctx, token)).rejects.toMatchObject({ status: 401 });
   });
+
+  it("token de sistema não abre o conector do Claude, e o do Claude não abre a API externa", async () => {
+    const sistema = await acesso.criarTokenConector(ctx, atorMembro, "Prospect Team", "sistema");
+    const claude = await acesso.criarTokenConector(ctx, atorMembro, "Claude");
+    expect(await acesso.autenticarConector(ctx, sistema.token, "sistema")).toMatchObject({ usuarioId: membro.id });
+    await expect(acesso.autenticarConector(ctx, sistema.token)).rejects.toMatchObject({ status: 401 });
+    await expect(acesso.autenticarConector(ctx, claude.token, "sistema")).rejects.toMatchObject({ status: 401 });
+  });
 });
 
 describe("registros", () => {

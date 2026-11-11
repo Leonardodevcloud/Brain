@@ -2,6 +2,7 @@ export { lerAmbiente, type Ambiente } from "./config.js";
 export { criarContexto, auditar, hojeLocal, ATOR_SISTEMA, type Ator, type Contexto, type Log } from "./contexto.js";
 export { JOB, fila, type TipoJob } from "./fila.js";
 export * as acesso from "./acesso.js";
+export * as externo from "./externo.js";
 export * as conhecimento from "./registros.js";
 export { buscar, responder, invalidarCacheBusca } from "./busca.js";
 export { indexarRegistro } from "./indexacao.js";

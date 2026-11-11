@@ -204,8 +204,11 @@ export function rotasPainel({ ctx }: Deps) {
   });
 
   r.post("/conector/tokens", async (req, res) => {
-    const { nome } = validar(z.object({ nome: z.string().trim().min(2).max(60) }), req.body);
-    res.status(201).json(await acesso.criarTokenConector(ctx, ator(req), nome));
+    const { nome, uso } = validar(
+      z.object({ nome: z.string().trim().min(2).max(60), uso: z.enum(["claude", "sistema"]).default("claude") }),
+      req.body,
+    );
+    res.status(201).json(await acesso.criarTokenConector(ctx, ator(req), nome, uso));
   });
 
   r.delete("/conector/tokens/:id", async (req, res) => {

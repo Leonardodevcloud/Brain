@@ -1,6 +1,7 @@
 import type { Executor } from "../conexao.js";
 
-export type Canal = "web" | "mcp" | "worker" | "webhook";
+/** "externo" = outro sistema da empresa (ex.: Prospect Team) usando o token de uma pessoa. */
+export type Canal = "web" | "mcp" | "worker" | "webhook" | "externo";
 
 export const auditoria = {
   async registrar(

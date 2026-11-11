@@ -21,6 +21,10 @@ const ESTADO: Record<StatusIntegracaoDTO["estado"], { texto: string; cor: string
 
 const INFO: Record<StatusIntegracaoDTO["nome"], { nome: string; descricao: string }> = {
   claude: { nome: "Conector do Claude", descricao: "O Claude consulta o cérebro e salva rascunhos nas suas conversas." },
+  sistemas: {
+    nome: "Outros sistemas (Prospect Team)",
+    descricao: "O Prospect Team lê o que está valendo (sem restritos e sem dados pessoais) e manda o que aprende como rascunho.",
+  },
   fathom: { nome: "Fathom", descricao: "Grava o Meet e envia a transcrição; o cérebro gera a ata." },
   google: { nome: "Google Agenda", descricao: "Mostra as próximas reuniões, coloca tarefas na pauta e cria lembretes." },
   email: { nome: "E-mail", descricao: "Lê a caixa dedicada e sugere rascunhos do que for conhecimento." },
@@ -276,7 +280,8 @@ function EscolherVoz() {
 // ── Claude: tokens pessoais ──
 
 function ConectorClaude() {
-  const tokens = useTokens();
+  const todos = useTokens();
+  const tokens = { data: todos.data?.filter((t) => t.uso !== "sistema") };
   const qc = useQueryClient();
   const copiar = useCopiar();
   const avisar = useAvisar();
@@ -343,6 +348,103 @@ function ConectorClaude() {
               <span>
                 <span style={{ fontWeight: 500 }}>{t.nome}</span>{" "}
                 <span className="mono suave pequeno">{t.prefixo}…</span>
+              </span>
+              <span className="suave pequeno">{t.ultimoUsoEm ? `usado ${relativo(t.ultimoUsoEm)}` : "nunca usado"}</span>
+              <button type="button" className="botao botao-fantasma botao-pequeno botao-perigo" onClick={() => revogar.mutate(t.id)}>
+                Revogar {t.nome}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Outros sistemas (Prospect Team): token de sistema para a API externa ──
+
+function OutrosSistemas() {
+  const todos = useTokens();
+  const tokens = todos.data?.filter((t) => t.uso === "sistema") ?? [];
+  const qc = useQueryClient();
+  const copiar = useCopiar();
+  const avisar = useAvisar();
+  const [nome, setNome] = useState("Prospect Team");
+  const [novo, setNovo] = useState<string | null>(null);
+  const endereco = `${location.origin}/api/externo`;
+  const atualizar = () => {
+    void qc.invalidateQueries({ queryKey: chaves.tokens });
+    void qc.invalidateQueries({ queryKey: chaves.integracoes });
+  };
+  const criar = useMutation({
+    mutationFn: () => api<{ token: string }>("/conector/tokens", { metodo: "POST", corpo: { nome, uso: "sistema" } }),
+    onSuccess: (r) => {
+      setNovo(r.token);
+      atualizar();
+    },
+    onError: (e) => avisar(textoDoErro(e), "erro"),
+  });
+  const revogar = useMutation({
+    mutationFn: (id: string) => api(`/conector/tokens/${id}`, { metodo: "DELETE" }),
+    onSuccess: () => {
+      avisar("Token revogado. O outro sistema perde o acesso na próxima chamada.");
+      atualizar();
+    },
+    onError: (e) => avisar(textoDoErro(e), "erro"),
+  });
+
+  return (
+    <div className={css.extra}>
+      {novo ? (
+        <div className={css.segredo}>
+          <span className="rotulo">Endereço do Cérebro</span>
+          <div className={css.formLinha}>
+            <code className={css.codigo}>{endereco}</code>
+            <button type="button" className="botao botao-pequeno" onClick={() => copiar(endereco, "Endereço copiado.")}>
+              <Copy size={14} aria-hidden="true" /> Copiar
+            </button>
+          </div>
+          <span className="rotulo">Token</span>
+          <div className={css.formLinha}>
+            <code className={css.codigo}>{novo}</code>
+            <button type="button" className="botao botao-primario botao-pequeno" onClick={() => copiar(novo, "Token copiado.")}>
+              <Copy size={14} aria-hidden="true" /> Copiar
+            </button>
+          </div>
+          <p className="ajuda">
+            O token aparece só agora: trate como senha. No Prospect Team: Integrações › Segundo cérebro › cole o endereço e o token › Testar.
+            Ele age em seu nome: lê o que está valendo (restritos e rascunhos não saem; e-mail, CPF, telefone e afins saem mascarados) e
+            tudo o que manda entra como rascunho em Revisar.
+          </p>
+          <div>
+            <button type="button" className="botao botao-fantasma botao-pequeno" onClick={() => setNovo(null)}>
+              Já colei
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form
+          className={css.formLinha}
+          onSubmit={(e) => {
+            e.preventDefault();
+            criar.mutate();
+          }}
+        >
+          <div className="campo" style={{ flexGrow: 1 }}>
+            <label htmlFor="nome-token-sistema">Nome do sistema</label>
+            <input id="nome-token-sistema" className="entrada" value={nome} onChange={(e) => setNome(e.target.value)} />
+          </div>
+          <button type="submit" className="botao" disabled={nome.trim().length < 2 || criar.isPending}>
+            Gerar token
+          </button>
+        </form>
+      )}
+      {tokens.length > 0 && (
+        <ul className={`lista ${css.tokens}`}>
+          {tokens.map((t) => (
+            <li key={t.id}>
+              <span>
+                <span style={{ fontWeight: 500 }}>{t.nome}</span> <span className="mono suave pequeno">{t.prefixo}…</span>
               </span>
               <span className="suave pequeno">{t.ultimoUsoEm ? `usado ${relativo(t.ultimoUsoEm)}` : "nunca usado"}</span>
               <button type="button" className="botao botao-fantasma botao-pequeno botao-perigo" onClick={() => revogar.mutate(t.id)}>
@@ -449,7 +551,9 @@ export default function Integracoes() {
     onError: (e) => avisar(textoDoErro(e), "erro"),
   });
   const [confirmandoGoogle, setConfirmandoGoogle] = useState(false);
-  const tokens = useTokens();
+  const todosTokens = useTokens();
+  // O botão Desconectar do Claude não mexe nos tokens dos outros sistemas.
+  const tokens = { data: todosTokens.data?.filter((t) => t.uso !== "sistema") };
   const [confirmandoClaude, setConfirmandoClaude] = useState(false);
   // Desconectar o Claude = revogar todos os endereços do conector (o Claude perde o acesso na hora).
   const desconectarClaude = useMutation({
@@ -476,7 +580,7 @@ export default function Integracoes() {
   const porNome = (nome: StatusIntegracaoDTO["nome"]) => status.data?.find((s) => s.nome === nome);
   const urlWebhook = `${location.origin}/api/webhooks/fathom`;
 
-  const fontes = (["central", "central_api", "codigo_central", "claude", "fathom", "google", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
+  const fontes = (["central", "central_api", "codigo_central", "claude", "sistemas", "fathom", "google", "email"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
   const ia = (["deepseek", "embeddings", "voz", "fala"] as const).map(porNome).filter(Boolean) as StatusIntegracaoDTO[];
 
   return (
@@ -539,6 +643,21 @@ export default function Integracoes() {
                               Conectar
                             </button>
                           )
+                        }
+                      />
+                    );
+                  case "sistemas":
+                    return (
+                      <Linha
+                        key={s.nome}
+                        s={s}
+                        aberto={aberto === "sistemas"}
+                        aoAlternar={() => alternar("sistemas")}
+                        detalhe={<OutrosSistemas />}
+                        acao={
+                          <button type="button" className="botao botao-primario botao-pequeno" onClick={() => setAberto("sistemas")}>
+                            {s.estado === "desligado" ? "Conectar" : "Gerenciar"}
+                          </button>
                         }
                       />
                     );

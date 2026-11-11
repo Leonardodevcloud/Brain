@@ -89,6 +89,24 @@ Add custom connector, URL `https://<domínio>/mcp`, "No sign in" e o cabeçalho 
 Ferramentas: `buscar_conhecimento`, `ler_registro`, `listar_pendencias`, `salvar_rascunho`.
 O token vale como senha: revogue na mesma tela.
 
+**Outros sistemas (Prospect Team) — `/api/externo`.** Integrações › Outros sistemas › Gerar token. Cole no outro
+sistema o endereço `https://<domínio>/api/externo` e o token `cbr_…` (vale como senha; revogue na mesma tela).
+O token é "de sistema": não abre o conector do Claude (que lê a Central), e o token do Claude não abre esta API.
+Quem usa o token age em nome de quem o gerou, no canal `externo` da auditoria. Cabeçalhos:
+`Authorization: Bearer cbr_…` e, opcional, `X-Sistema: Prospect Team`. Limite: 120 chamadas por minuto.
+
+| Rota | O que faz |
+| --- | --- |
+| `GET /api/externo/saude` | Testa o token: devolve de quem é e o que dá para fazer |
+| `POST /api/externo/buscar` | `{ pergunta, tipo?, area?, cliente?, limite? }` → até 6 trechos do que está valendo |
+| `GET /api/externo/registros/:codigo` | O registro inteiro (ex.: `POL-002`) |
+| `POST /api/externo/rascunhos` | `{ titulo, conteudo, tipo?: nota\|indicador\|ocorrencia, area? (marketing), cliente?, idExterno? }` |
+
+Só sai o que está vigente ou em revisão e não é restrito; rascunho, obsoleto e restrito respondem 404.
+E-mail, CPF, CNPJ, telefone, placa, conta e PIX saem mascarados (`[EMAIL_1]`…). Busca sem resultado vira lacuna.
+O que chega entra sempre como rascunho (origem "Outro sistema") em Revisar; com `idExterno` mandar de novo
+não duplica (devolve `jaExistia: true`). Regra e decisão não podem ser criadas por sistema.
+
 **Histórico do Claude.** Exportar dados no Claude e enviar o `.zip` em Integrações. Só conversas novas são analisadas.
 
 **Fathom.** User Settings › API Access › Manage › Add Webhook para `https://<domínio>/api/webhooks/fathom` com a transcrição.

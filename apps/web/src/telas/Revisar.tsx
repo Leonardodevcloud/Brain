@@ -262,7 +262,7 @@ function Lacunas() {
               <div className={css.lacunaTexto}>
                 <span style={{ fontWeight: 500 }}>“{l.pergunta}”</span>
                 <span className="suave pequeno">
-                  Perguntado {l.canal === "mcp" ? "no Claude" : "no Second Brain"} {relativo(l.criadoEm)} · nada registrado sobre isso
+                  Perguntado {l.canal === "mcp" ? "no Claude" : l.canal === "externo" ? "pelo Prospect Team" : "no Second Brain"} {relativo(l.criadoEm)} · nada registrado sobre isso
                 </span>
               </div>
               <div className={pg.acoes}>
@@ -288,7 +288,7 @@ function Lacunas() {
 }
 
 const EXPLICA_ABA: Record<Aba, string> = {
-  aprovar: "Rascunhos vindos do Claude, de atas, e-mails, documentos e do Argos. Só viram conhecimento depois que você aprova.",
+  aprovar: "Rascunhos vindos do Claude, de atas, e-mails, documentos, do Argos e do Prospect Team. Só viram conhecimento depois que você aprova.",
   vencidos: "Registros publicados cujo prazo de revisão passou. Confirme que continuam valendo ou atualize.",
   lacunas: "Perguntas que ninguém conseguiu responder com o que está registrado.",
 };

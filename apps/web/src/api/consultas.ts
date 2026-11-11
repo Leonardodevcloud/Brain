@@ -26,6 +26,7 @@ export interface Lacuna {
 export interface TokenConector {
   id: string;
   nome: string;
+  uso: "claude" | "sistema";
   prefixo: string;
   ultimoUsoEm: string | null;
   criadoEm: string;

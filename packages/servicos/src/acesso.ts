@@ -9,7 +9,7 @@ import {
   type EmissorTokens,
 } from "@cerebro/auth";
 import { AppError, type Papel, type UsuarioDTO } from "@cerebro/core";
-import { emTransacao, sessoes, tokensConector, usuarios } from "@cerebro/db";
+import { emTransacao, sessoes, tokensConector, usuarios, type UsoToken } from "@cerebro/db";
 import { auditar, type Ator, type Contexto } from "./contexto.js";
 
 export const VALIDADE_SESSAO_DIAS = 30;
@@ -162,13 +162,13 @@ export async function trocarSenha(ctx: Contexto, ator: Ator, atual: string, nova
 
 // ───────────────────────────── Tokens do conector do Claude ─────────────────────────────
 
-export async function criarTokenConector(ctx: Contexto, ator: Ator, nome: string) {
+export async function criarTokenConector(ctx: Contexto, ator: Ator, nome: string, uso: UsoToken = "claude") {
   if (!ator.usuarioId) throw AppError.naoAutenticado();
   const { token, prefixo, hash } = gerarTokenConector();
-  const linha = await tokensConector.criar(ctx.pool, { usuarioId: ator.usuarioId, nome, prefixo, tokenHash: hash });
-  await auditar(ctx.pool, ator, "conector.token_criado", { entidade: "token", id: linha.id });
+  const linha = await tokensConector.criar(ctx.pool, { usuarioId: ator.usuarioId, nome, prefixo, tokenHash: hash, uso });
+  await auditar(ctx.pool, ator, "conector.token_criado", { entidade: "token", id: linha.id }, { uso });
   // O token completo só existe nesta resposta.
-  return { id: linha.id, nome: linha.nome, prefixo, token };
+  return { id: linha.id, nome: linha.nome, uso, prefixo, token };
 }
 
 export async function listarTokensConector(ctx: Contexto, ator: Ator) {
@@ -182,12 +182,20 @@ export async function revogarTokenConector(ctx: Contexto, ator: Ator, id: string
   await auditar(ctx.pool, ator, "conector.token_revogado", { entidade: "token", id });
 }
 
-/** Valida o token enviado pelo Claude e devolve o ator correspondente. */
-export async function autenticarConector(ctx: Contexto, token: string): Promise<Ator> {
+/**
+ * Valida o token e devolve o ator correspondente. Cada token vale só onde foi criado para valer:
+ * o do Claude no MCP, o de sistema na API externa.
+ */
+export async function autenticarConector(ctx: Contexto, token: string, uso: UsoToken = "claude"): Promise<Ator> {
   if (!token.startsWith("cbr_")) throw AppError.naoAutenticado("Token do conector inválido.");
-  const usuarioId = await tokensConector.usar(ctx.pool, hashToken(token));
-  if (!usuarioId) throw AppError.naoAutenticado("Token do conector inválido ou revogado.");
+  const usuarioId = await tokensConector.usar(ctx.pool, hashToken(token), uso);
+  if (!usuarioId) {
+    throw AppError.naoAutenticado(
+      uso === "sistema" ? "Token do Cérebro inválido ou revogado. Gere um em Integrações › Outros sistemas." : "Token do conector inválido ou revogado.",
+    );
+  }
   const u = await usuarios.buscarPorId(ctx.pool, usuarioId);
-  if (!u) throw AppError.naoAutenticado();
+  // Pessoa desativada perde o acesso também pelo conector e pelos outros sistemas.
+  if (!u || !u.ativo) throw AppError.naoAutenticado("Este usuário foi desativado no Cérebro.");
   return { usuarioId, papel: u.papel, canal: "mcp" };
 }

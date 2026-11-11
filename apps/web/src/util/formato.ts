@@ -17,6 +17,7 @@ export const NOME_ORIGEM: Record<Origem, string> = {
   importacao: "Histórico do Claude",
   email: "E-mail",
   upload: "Documento enviado",
+  externo: "Outro sistema",
 };
 
 /** Cor da etiqueta de cada tipo — poucas cores, só para escanear a lista. */

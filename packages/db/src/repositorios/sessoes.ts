@@ -38,43 +38,47 @@ export const sessoes = {
   },
 };
 
+/** "claude" = conector MCP do Claude; "sistema" = API externa (/api/externo), ex.: Prospect Team. */
+export type UsoToken = "claude" | "sistema";
+
 export interface TokenConectorLinha {
   id: string;
   usuarioId: string;
   nome: string;
+  uso: UsoToken;
   prefixo: string;
   ultimoUsoEm: Date | null;
   criadoEm: Date;
 }
 
 export const tokensConector = {
-  async criar(db: Executor, dados: { usuarioId: string; nome: string; prefixo: string; tokenHash: string }) {
+  async criar(db: Executor, dados: { usuarioId: string; nome: string; prefixo: string; tokenHash: string; uso?: UsoToken }) {
     const { rows } = await db.query<TokenConectorLinha>(
-      `INSERT INTO cerebro.tokens_conector (usuario_id, nome, prefixo, token_hash)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, usuario_id AS "usuarioId", nome, prefixo, ultimo_uso_em AS "ultimoUsoEm", criado_em AS "criadoEm"`,
-      [dados.usuarioId, dados.nome, dados.prefixo, dados.tokenHash],
+      `INSERT INTO cerebro.tokens_conector (usuario_id, nome, prefixo, token_hash, uso)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, usuario_id AS "usuarioId", nome, uso, prefixo, ultimo_uso_em AS "ultimoUsoEm", criado_em AS "criadoEm"`,
+      [dados.usuarioId, dados.nome, dados.prefixo, dados.tokenHash, dados.uso ?? "claude"],
     );
     return rows[0]!;
   },
 
-  /** Token ativo de um usuário ativo; atualiza o último uso no mesmo comando. */
-  async usar(db: Executor, tokenHash: string) {
+  /** Token ativo, do uso pedido, de um usuário ativo; atualiza o último uso no mesmo comando. */
+  async usar(db: Executor, tokenHash: string, uso: UsoToken = "claude") {
     const { rows } = await db.query<{ usuarioId: string }>(
       `UPDATE cerebro.tokens_conector t
           SET ultimo_uso_em = now()
          FROM cerebro.usuarios u
-        WHERE t.token_hash = $1 AND t.revogado_em IS NULL
+        WHERE t.token_hash = $1 AND t.revogado_em IS NULL AND t.uso = $2
           AND u.id = t.usuario_id AND u.ativo
         RETURNING t.usuario_id AS "usuarioId"`,
-      [tokenHash],
+      [tokenHash, uso],
     );
     return rows[0]?.usuarioId ?? null;
   },
 
   async listarDoUsuario(db: Executor, usuarioId: string) {
     const { rows } = await db.query<TokenConectorLinha>(
-      `SELECT id, usuario_id AS "usuarioId", nome, prefixo, ultimo_uso_em AS "ultimoUsoEm", criado_em AS "criadoEm"
+      `SELECT id, usuario_id AS "usuarioId", nome, uso, prefixo, ultimo_uso_em AS "ultimoUsoEm", criado_em AS "criadoEm"
          FROM cerebro.tokens_conector
         WHERE usuario_id = $1 AND revogado_em IS NULL
         ORDER BY criado_em DESC`,

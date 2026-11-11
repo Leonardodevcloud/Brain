@@ -5,6 +5,7 @@ import helmet from "helmet";
 import { exigirLogin, tratarErros, type Deps } from "./http/base.js";
 import { rotasAgenda } from "./rotas/agenda.js";
 import { rotasAuth } from "./rotas/auth.js";
+import { rotasExterno } from "./rotas/externo.js";
 import { rotasFala, rotasPainel } from "./rotas/painel.js";
 import { rotasPublicas } from "./rotas/publicas.js";
 import { rotasRegistros } from "./rotas/registros.js";
@@ -39,6 +40,8 @@ export function criarApp(deps: Deps) {
   api.use(cookieParser());
   api.use(rotasAuth(deps));
   api.use(rotasFala(deps));
+  // Outros sistemas (Prospect Team): token cbr_ próprio, antes do login de tela.
+  api.use(rotasExterno(deps));
 
   const protegida = Router();
   protegida.use(exigirLogin(deps));

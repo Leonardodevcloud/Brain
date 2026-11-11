@@ -168,3 +168,114 @@ describe("API", () => {
     expect(JSON.stringify(lista.corpo)).not.toContain(r.corpo.token);
   });
 });
+
+describe("API externa (Prospect Team)", () => {
+  let token: string;
+  let cbr: string;
+  const externo = (caminho: string, init: RequestInit & { json?: unknown } = {}) =>
+    chamar(`/externo${caminho}`, { ...init, token: cbr, headers: { "x-sistema": "Prospect Team", ...(init.headers ?? {}) } });
+
+  beforeAll(async () => {
+    const r = await chamar("/auth/entrar", { method: "POST", json: { email: "admin@tutts.com.br", senha: "senhaForte123" } });
+    token = r.corpo.tokenAcesso;
+    cbr = (await chamar("/conector/tokens", { method: "POST", token, json: { nome: "Prospect Team", uso: "sistema" } })).corpo.token;
+    const criar = (json: unknown) => chamar("/registros", { method: "POST", token, json });
+    await criar({
+      tipo: "politica",
+      titulo: "Tom de voz da marca Tutts",
+      conteudo: "Falamos direto com o lojista de autopeças. Contato comercial: vendas@tutts.com.br ou (71) 99999-1234.",
+      area: "marketing",
+      publicar: true,
+    });
+    await criar({ tipo: "nota", titulo: "Margem secreta da marca", conteudo: "Margem da marca é 42% e não sai daqui.", area: "marketing", confidencialidade: "restrito", publicar: true });
+    await criar({ tipo: "nota", titulo: "Rascunho sobre a marca", conteudo: "Ideia ainda não aprovada sobre a marca.", area: "marketing" });
+  });
+
+  it("recusa sem token, com token inválido, com login de tela e com o token do Claude", async () => {
+    expect((await chamar("/externo/saude")).status).toBe(401);
+    expect((await chamar("/externo/saude", { token: "cbr_nao_existe" })).status).toBe(401);
+    expect((await chamar("/externo/saude", { token })).status).toBe(401);
+    const doClaude = (await chamar("/conector/tokens", { method: "POST", token, json: { nome: "Claude" } })).corpo.token;
+    expect((await chamar("/externo/saude", { token: doClaude })).status).toBe(401);
+  });
+
+  it("mostra o cartão de outros sistemas e separa os tokens por uso", async () => {
+    const lista = (await chamar("/conector/tokens", { token })).corpo as { nome: string; uso: string }[];
+    expect(lista.find((t) => t.nome === "Prospect Team")?.uso).toBe("sistema");
+    const status = (await chamar("/integracoes", { token })).corpo as { nome: string; estado: string }[];
+    expect(status.find((s) => s.nome === "sistemas")).toBeTruthy();
+  });
+
+  it("testa a conexão e diz de quem é o token", async () => {
+    const r = await externo("/saude");
+    expect(r.status).toBe(200);
+    expect(r.corpo).toMatchObject({ ok: true, usuario: { nome: "Admin" }, pode: { buscar: true, guardarRascunho: true } });
+  });
+
+  it("busca só o que vale e não é restrito, com dados pessoais mascarados", async () => {
+    const r = await externo("/buscar", { method: "POST", json: { pergunta: "marca" } });
+    expect(r.status).toBe(200);
+    const titulos = r.corpo.itens.map((i: { titulo: string }) => i.titulo);
+    expect(titulos).toContain("Tom de voz da marca Tutts");
+    expect(titulos).not.toContain("Margem secreta da marca");
+    expect(titulos).not.toContain("Rascunho sobre a marca");
+    const tudo = JSON.stringify(r.corpo);
+    expect(tudo).not.toContain("vendas@tutts.com.br");
+    expect(tudo).not.toContain("99999-1234");
+    expect(r.corpo.itens[0].link).toMatch(/^http:\/\/web\.teste\/registros\//);
+  });
+
+  it("anota como lacuna o que não acha", async () => {
+    const r = await externo("/buscar", { method: "POST", json: { pergunta: "zebra listrada voadora" } });
+    expect(r.corpo).toEqual({ itens: [], lacuna: true });
+  });
+
+  it("lê o registro inteiro mascarado e esconde restrito e rascunho", async () => {
+    const lista = (await chamar("/registros?porPagina=50", { token })).corpo.itens as { codigo: string; titulo: string }[];
+    const codigoDe = (t: string) => lista.find((x) => x.titulo === t)!.codigo;
+    const tom = await externo(`/registros/${codigoDe("Tom de voz da marca Tutts")}`);
+    expect(tom.status).toBe(200);
+    expect(tom.corpo.conteudo).toContain("lojista de autopeças");
+    expect(tom.corpo.conteudo).toContain("[EMAIL_1]");
+    expect(tom.corpo.conteudo).not.toContain("vendas@tutts.com.br");
+    expect((await externo(`/registros/${codigoDe("Margem secreta da marca")}`)).status).toBe(404);
+    expect((await externo(`/registros/${codigoDe("Rascunho sobre a marca")}`)).status).toBe(404);
+    expect((await externo("/registros/nada")).status).toBe(400);
+  });
+
+  it("guarda aprendizado como rascunho, sem duplicar pelo idExterno", async () => {
+    const corpo = {
+      titulo: "Aprendizados do Instagram — semana 45",
+      conteudo: "Carrosséis com antes e depois tiveram o dobro de salvamentos.",
+      idExterno: "aprendizados-2026-W45",
+    };
+    const primeira = await externo("/rascunhos", { method: "POST", json: corpo });
+    expect(primeira.status).toBe(201);
+    expect(primeira.corpo).toMatchObject({ status: "rascunho", jaExistia: false });
+    const segunda = await externo("/rascunhos", { method: "POST", json: corpo });
+    expect(segunda.status).toBe(200);
+    expect(segunda.corpo).toMatchObject({ codigo: primeira.corpo.codigo, jaExistia: true });
+
+    const registro = (await chamar(`/registros/${primeira.corpo.codigo}`, { token })).corpo;
+    expect(registro).toMatchObject({ status: "rascunho", origem: "externo", area: "marketing", tipo: "nota" });
+    expect(registro.conteudo).toContain("Enviado por Prospect Team.");
+  });
+
+  it("não deixa sistema de fora criar regra nem publicar", async () => {
+    const r = await externo("/rascunhos", { method: "POST", json: { tipo: "politica", titulo: "Nova regra", conteudo: "Tentando criar regra de fora." } });
+    expect(r.status).toBe(400);
+    const p = await externo("/rascunhos", { method: "POST", json: { titulo: "Publica já", conteudo: "Pedindo para publicar direto.", publicar: true } });
+    expect(p.status).toBe(201);
+    expect(p.corpo.status).toBe("rascunho");
+  });
+
+  it("token de quem foi desativado para de funcionar", async () => {
+    const novo = await chamar("/usuarios", { method: "POST", token, json: { nome: "Saiu", email: "saiu@tutts.com.br", senha: "senhaForte123", papel: "membro" } });
+    expect(novo.status).toBe(201);
+    const entrar = await chamar("/auth/entrar", { method: "POST", json: { email: "saiu@tutts.com.br", senha: "senhaForte123" } });
+    const dele = (await chamar("/conector/tokens", { method: "POST", token: entrar.corpo.tokenAcesso, json: { nome: "PT", uso: "sistema" } })).corpo.token;
+    expect((await chamar("/externo/saude", { token: dele })).status).toBe(200);
+    await chamar(`/usuarios/${novo.corpo.id}`, { method: "PATCH", token, json: { ativo: false } });
+    expect((await chamar("/externo/saude", { token: dele })).status).toBe(401);
+  });
+});

@@ -32,7 +32,7 @@ export type Area = (typeof AREAS)[number];
 export const EMPRESAS = ["todas", "tutts", "fiix", "ig"] as const;
 export type Empresa = (typeof EMPRESAS)[number];
 
-export const ORIGENS = ["manual", "claude", "reuniao", "importacao", "email", "upload"] as const;
+export const ORIGENS = ["manual", "claude", "reuniao", "importacao", "email", "upload", "externo"] as const;
 export type Origem = (typeof ORIGENS)[number];
 
 export const CONFIDENCIALIDADES = ["interno", "restrito"] as const;
